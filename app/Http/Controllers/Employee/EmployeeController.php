@@ -77,48 +77,78 @@ class EmployeeController extends Controller
 }
 
 
-    public function submitLeaveRequest(Request $request)
-    {
+   public function submitLeaveRequest(Request $request)
+{
+    $user = $request->user()->load('employee');
+    $employeeId = $user->employee?->employee_id;
 
+    if (!$employeeId) {
+        abort(400, 'Employee profile not found for user.');
+    }
 
+    $validated = $request->validate([
+        'leave_type_id' => ['required', 'exists:leave_types,id'],
+        'date_from' => ['required', 'date'],
+        'date_to' => ['required', 'date', 'after_or_equal:date_from'],
+        'reason' => ['required', 'string'],
+        'details' => ['required', 'string'],
+        'attachment' => ['nullable', 'file', 'max:10240'],
+    ]);
 
+    // Get leave type and check if it's SL or VL
+    $leaveType = LeaveType::findOrFail($validated['leave_type_id']);
+    $code = strtoupper($leaveType->code);
 
-        $user = $request->user()->load('employee');
-        $employeeId = $user->employee?->employee_id;
+    // Check balance for SL and VL leave types
+    if (in_array($code, ['SL', 'VL'])) {
+        $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
 
-        if (!$employeeId) {
-            abort(400, 'Employee profile not found for user.');
-        }
-
-
-
-        $validated = $request->validate([
-            'leave_type_id' => ['required', 'exists:leave_types,id'],
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date', 'after_or_equal:date_from'],
-            'reason' => ['required', 'string'],
-            'details' => ['required', 'string'], // Changed to string since we're sending JSON
-            'attachment' => ['nullable', 'file', 'max:10240'],
-        ]);
-
-        // Check for overlapping leave requests
-        $overlappingRequest = LeaveRequest::where('employee_id', $employeeId)
-            ->whereIn('status', ['pending', 'approved'])
-            ->where(function ($query) use ($validated) {
-                $query->whereBetween('date_from', [$validated['date_from'], $validated['date_to']])
-                    ->orWhereBetween('date_to', [$validated['date_from'], $validated['date_to']])
-                    ->orWhere(function ($q) use ($validated) {
-                        $q->where('date_from', '<=', $validated['date_from'])
-                            ->where('date_to', '>=', $validated['date_to']);
-                    });
-            })
-            ->first();
-
-        if ($overlappingRequest) {
+        if (!$leaveCredit) {
             return back()->withErrors([
-                'date_from' => 'The selected dates overlap with an existing leave request.',
+                'balance' => 'No leave credits found for your account.',
             ])->withInput();
         }
+
+        // Calculate working days (excluding weekends)
+        $startDate = new \DateTime($validated['date_from']);
+        $endDate = new \DateTime($validated['date_to']);
+        $workingDays = 0;
+
+        for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
+            $dayOfWeek = $date->format('N'); // 1 (Monday) through 7 (Sunday)
+            if ($dayOfWeek < 6) { // Monday to Friday
+                $workingDays++;
+            }
+        }
+
+        // Check available balance
+        $availableBalance = $code === 'SL' ? $leaveCredit->sl_balance : $leaveCredit->vl_balance;
+
+        if ($workingDays > $availableBalance) {
+            return back()->withErrors([
+                'balance' => "You only have {$availableBalance} {$leaveType->name} credits left. You requested {$workingDays} days. Please adjust your request.",
+            ])->withInput();
+        }
+    }
+
+    // Continue with existing validation for overlapping requests...
+    $overlappingRequest = LeaveRequest::where('employee_id', $employeeId)
+        ->whereIn('status', ['pending', 'approved'])
+        ->where(function ($query) use ($validated) {
+            $query->whereBetween('date_from', [$validated['date_from'], $validated['date_to']])
+                ->orWhereBetween('date_to', [$validated['date_from'], $validated['date_to']])
+                ->orWhere(function ($q) use ($validated) {
+                    $q->where('date_from', '<=', $validated['date_from'])
+                        ->where('date_to', '>=', $validated['date_to']);
+                });
+        })
+        ->first();
+
+    if ($overlappingRequest) {
+        return back()->withErrors([
+            'date_from' => 'The selected dates overlap with an existing leave request.',
+        ])->withInput();
+    }
 
         $leaveType = LeaveType::findOrFail($validated['leave_type_id']);
         $code = strtoupper($leaveType->code);

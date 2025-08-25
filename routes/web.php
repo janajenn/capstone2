@@ -49,11 +49,11 @@ Route::middleware('auth')->group(function () {
 // Group all role-based dashboards under auth middleware
 Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
-    Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve']);
-    Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject']);
-
-    Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests']);
+    Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve'])->name('admin.leave-requests.approve');
+    Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject'])->name('admin.leave-requests.reject');
+    Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests'])->name('admin.updated-requests');
 });
+
 
 
 

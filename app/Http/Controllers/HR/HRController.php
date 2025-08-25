@@ -157,8 +157,10 @@ public function addMonthlyCredits()
 //LEAVE TYPES
 public function leaveTypes()
 {
+    $leaveTypes = LeaveType::paginate(8); // 10 items per page
+
     return Inertia::render('HR/LeaveTypes', [
-        'leaveTypes' => LeaveType::all()
+        'leaveTypes' => $leaveTypes,
     ]);
 }
 

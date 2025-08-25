@@ -2,6 +2,24 @@ import EmployeeLayout from '@/Layouts/EmployeeLayout';
 import { useForm, usePage, router } from '@inertiajs/react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 
+// Function to calculate working days (excluding weekends)
+const calculateWorkingDays = (startDate, endDate) => {
+  if (!startDate || !endDate) return 0;
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  let count = 0;
+
+  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    const day = date.getDay();
+    if (day !== 0 && day !== 6) { // Skip weekends (0 = Sunday, 6 = Saturday)
+      count++;
+    }
+  }
+
+  return count;
+};
+
 const typeSpecificFields = (code) => {
   const upper = (code || '').toUpperCase();
   switch (upper) {
@@ -81,9 +99,6 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const datePickerRef = useRef(null);
-
-
-
 
   // Close date picker when clicking outside
   useEffect(() => {
@@ -227,18 +242,18 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
               ))}
             </div>
 
-                         <div className="grid grid-cols-7 gap-1">
-               {days.map((day, index) => {
-                 const isDisabled = isDateDisabled(day.date);
+            <div className="grid grid-cols-7 gap-1">
+              {days.map((day, index) => {
+                const isDisabled = isDateDisabled(day.date);
 
-                 // Format current day for comparison
-                 const year = day.date.getFullYear();
-                 const month = String(day.date.getMonth() + 1).padStart(2, '0');
-                 const dayOfMonth = String(day.date.getDate()).padStart(2, '0');
-                 const formattedDay = `${year}-${month}-${dayOfMonth}`;
+                // Format current day for comparison
+                const year = day.date.getFullYear();
+                const month = String(day.date.getMonth() + 1).padStart(2, '0');
+                const dayOfMonth = String(day.date.getDate()).padStart(2, '0');
+                const formattedDay = `${year}-${month}-${dayOfMonth}`;
 
-                 const isSelected = value === formattedDay;
-                 const isToday = day.date.toDateString() === new Date().toDateString();
+                const isSelected = value === formattedDay;
+                const isToday = day.date.toDateString() === new Date().toDateString();
 
                 return (
                   <button
@@ -273,24 +288,13 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
 
 export default function RequestLeave() {
   const { props } = usePage();
-  const { leaveTypes, flash, existingRequests, leaveCredits } = props;
+  const { leaveTypes, flash, existingRequests, leaveCredits, errors } = props;
 
   const [selectedTypeId, setSelectedTypeId] = useState(null);
   const selectedType = useMemo(() => leaveTypes?.find((lt) => lt.id === selectedTypeId) || null, [leaveTypes, selectedTypeId]);
   const specificFields = useMemo(() => typeSpecificFields(selectedType?.code), [selectedType]);
 
-  // Calculate if the selected leave type has insufficient balance
-  const hasInsufficientBalance = useMemo(() => {
-    if (!selectedType) return false;
-
-    const code = selectedType.code.toUpperCase();
-    if (code === 'SL') return (leaveCredits?.sl || 0) < 1;
-    if (code === 'VL') return (leaveCredits?.vl || 0) < 1;
-
-    return false;
-  }, [selectedType, leaveCredits]);
-
-  const { data, setData, post, processing, errors, reset } = useForm({
+  const { data, setData, post, processing, reset } = useForm({
     leave_type_id: '',
     date_from: '',
     date_to: '',
@@ -299,22 +303,45 @@ export default function RequestLeave() {
     details: '',
   });
 
+  // Calculate if the selected leave type has insufficient balance
+  const hasInsufficientBalance = useMemo(() => {
+    if (!selectedType) return false;
+
+    const code = selectedType.code.toUpperCase();
+
+    // Only check balance for SL and VL
+    if (code !== 'SL' && code !== 'VL') return false;
+
+    const availableBalance = code === 'SL' ? (leaveCredits?.sl || 0) : (leaveCredits?.vl || 0);
+    const requestedDays = calculateWorkingDays(data.date_from, data.date_to);
+
+    return requestedDays > availableBalance;
+  }, [selectedType, leaveCredits, data.date_from, data.date_to]);
+
+  // Calculate balance error message
+  const balanceError = useMemo(() => {
+    if (!selectedType || !hasInsufficientBalance) return null;
+
+    const code = selectedType.code.toUpperCase();
+    const availableBalance = code === 'SL' ? (leaveCredits?.sl || 0) : (leaveCredits?.vl || 0);
+    const requestedDays = calculateWorkingDays(data.date_from, data.date_to);
+
+    return `❌ You only have ${availableBalance} ${selectedType.name} credits left. You requested ${requestedDays} days. Please adjust your request.`;
+  }, [selectedType, leaveCredits, data.date_from, data.date_to, hasInsufficientBalance]);
+
   const submit = (e) => {
     e.preventDefault();
 
-    // Prevent submission if balance is insufficient
+    // Prevent submission if balance is insufficient for SL/VL
     if (hasInsufficientBalance) {
       return;
     }
+
     // Collect all dynamic field values
     const details = specificFields.map((f) => ({
       field_name: f.name,
       field_value: data[f.name] || '',
     }));
-
-    console.log('Details to send:', details);
-    console.log('Form data before submit:', data);
-    console.log('Specific fields:', specificFields);
 
     // Create FormData manually
     const formData = new FormData();
@@ -359,30 +386,6 @@ export default function RequestLeave() {
         </div>
       )}
 
-      {/* Existing Leave Requests Warning
-      {existingRequests && existingRequests.length > 0 && (
-        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-          <h3 className="text-sm font-medium text-yellow-800 mb-2">Existing Leave Requests</h3>
-          <div className="text-xs text-yellow-700 space-y-1">
-            {existingRequests.map((request, index) => (
-              <div key={index} className="flex justify-between">
-                <span>
-                  {new Date(request.start).toLocaleDateString()} - {new Date(request.end).toLocaleDateString()}
-                </span>
-                <span className={`px-2 py-1 rounded text-xs ${
-                  request.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {request.status}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-yellow-600 mt-2">
-            These dates are disabled in the date picker to prevent conflicts.
-          </p>
-        </div>
-      )} */}
-
       {/* Leave Type Cards */}
       <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
         {leaveTypes?.map((lt) => (
@@ -405,18 +408,37 @@ export default function RequestLeave() {
           {errors.leave_type_id && <div className="text-xs text-rose-600">{errors.leave_type_id}</div>}
           <input type="hidden" name="leave_type_id" value={data.leave_type_id} />
 
-          {['SL', 'VL'].includes(selectedType.code.toUpperCase()) && (
-            <div className={`mt-2 text-sm ${hasInsufficientBalance ? 'text-rose-600' : 'text-blue-600'}`}>
-              Your current <strong>{selectedType.code}</strong> balance:
-              <strong> {selectedType.code.toUpperCase() === 'SL' ? leaveCredits?.sl ?? 0 : leaveCredits?.vl ?? 0} points</strong>
-              {hasInsufficientBalance && (
-                <div className="mt-1 text-rose-600">
-                  Insufficient balance! You need at least 1 point to request this leave type.
-                </div>
-              )}
+          {/* Server-side balance error */}
+          {errors.balance && (
+            <div className="p-4 bg-rose-100 border border-rose-200 rounded-lg">
+              <div className="text-sm text-rose-700">
+                {errors.balance}
+              </div>
             </div>
           )}
 
+          {/* Balance Information for SL/VL */}
+          {['SL', 'VL'].includes(selectedType.code.toUpperCase()) && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-sm text-blue-800">
+                <div className="font-semibold">Leave Balance Information</div>
+                <div className="mt-1">
+                  Your current <strong>{selectedType.code}</strong> balance:
+                  <strong> {selectedType.code.toUpperCase() === 'SL' ? leaveCredits?.sl ?? 0 : leaveCredits?.vl ?? 0} days</strong>
+                </div>
+                {data.date_from && data.date_to && (
+                  <div className="mt-1">
+                    Requested working days (excluding weekends): <strong>{calculateWorkingDays(data.date_from, data.date_to)} days</strong>
+                  </div>
+                )}
+                {balanceError && (
+                  <div className="mt-2 p-2 bg-rose-100 border border-rose-200 rounded text-rose-700">
+                    {balanceError}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <DateInput
@@ -505,7 +527,12 @@ export default function RequestLeave() {
                     : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
-              {processing ? 'Submitting...' : 'Submit Request'}
+              {processing
+                ? 'Submitting...'
+                : hasInsufficientBalance
+                  ? 'Insufficient Balance'
+                  : 'Submit Request'
+              }
             </button>
           </div>
         </form>
@@ -513,4 +540,3 @@ export default function RequestLeave() {
     </EmployeeLayout>
   );
 }
-

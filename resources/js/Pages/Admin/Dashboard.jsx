@@ -16,7 +16,7 @@ export default function Dashboard({
     const { post } = useForm();
     const pollingIntervalRef = useRef(null);
     const isMountedRef = useRef(true);
-    const isInitialLoadRef = useRef(true); // Add this flag
+    const isInitialLoadRef = useRef(true);
     const knownRequestIds = useRef(
         new Set(initialLeaveRequests.map((r) => r.id))
     );
@@ -34,7 +34,7 @@ export default function Dashboard({
 
             try {
                 setIsPolling(true);
-                const response = await fetch("/admin/updated-requests");
+                const response = await fetch(route('admin.updated-requests'));
 
                 if (!response.ok)
                     throw new Error("Network response was not ok");
@@ -51,17 +51,14 @@ export default function Dashboard({
                             (r) => !existingIds.has(r.id)
                         );
 
-                        // Find truly new requests that we haven't seen before
                         const trulyNewRequests = filteredNewRequests.filter(
                             (r) => !knownRequestIds.current.has(r.id)
                         );
 
-                        // Add new IDs to our known set
                         trulyNewRequests.forEach((r) =>
                             knownRequestIds.current.add(r.id)
                         );
 
-                        // Only show notification during polling (not initial load) for new requests
                         if (
                             !isInitialLoadRef.current &&
                             pollingIntervalRef.current &&
@@ -86,15 +83,13 @@ export default function Dashboard({
             } finally {
                 if (isMountedRef.current) {
                     setIsPolling(false);
-                    isInitialLoadRef.current = false; // Mark initial load as complete
+                    isInitialLoadRef.current = false;
                 }
             }
         };
 
-        // Initial fetch - won't show notifications
         fetchUpdatedRequests();
 
-        // Set up polling interval
         pollingIntervalRef.current = setInterval(fetchUpdatedRequests, 5000);
 
         return () => {
@@ -103,37 +98,47 @@ export default function Dashboard({
     }, []);
 
     const handleApprove = (id) => {
-        Swal.fire({
-            title: "Approve this leave request?",
-            text: "This will move the request to the next approval stage",
-            icon: "question",
-            showCancelButton: true,
-            confirmButtonText: "Yes, approve",
-            cancelButtonText: "Cancel",
-        }).then((result) => {
-            if (result.isConfirmed) {
-                post(`/admin/leave-requests/${id}/approve`, {
-                    onSuccess: () => {
-                        setLeaveRequests((prev) =>
-                            prev.filter((r) => r.id !== id)
-                        );
-                        Swal.fire(
-                            "Approved!",
-                            "The leave request has been approved.",
-                            "success"
-                        );
-                    },
-                    onError: () => {
-                        Swal.fire(
-                            "Error",
-                            "There was a problem approving the request",
-                            "error"
-                        );
-                    },
-                });
-            }
-        });
-    };
+    Swal.fire({
+        title: "Approve this leave request?",
+        text: "This will approve the leave request and deduct leave credits if applicable",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Yes, approve",
+        cancelButtonText: "Cancel",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            post(route('admin.leave-requests.approve', id), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setLeaveRequests((prev) =>
+                        prev.filter((r) => r.id !== id)
+                    );
+                    Swal.fire(
+                        "Approved!",
+                        "The leave request has been approved.",
+                        "success"
+                    );
+                },
+                onError: (errors) => {
+                    console.error('Approval error:', errors);
+                    let errorMessage = "There was a problem approving the request";
+
+                    if (errors.error) {
+                        errorMessage = errors.error;
+                    } else if (errors.message) {
+                        errorMessage = errors.message;
+                    }
+
+                    Swal.fire(
+                        "Error",
+                        errorMessage,
+                        "error"
+                    );
+                },
+            });
+        }
+    });
+};
 
     const handleReject = (id) => {
         if (!rejectRemarks.trim()) {
@@ -141,8 +146,8 @@ export default function Dashboard({
             return;
         }
 
-        post(`/admin/leave-requests/${id}/reject`, {
-            remarks: rejectRemarks,
+        post(route('admin.leave-requests.reject', id), {
+            data: { remarks: rejectRemarks },
             onSuccess: () => {
                 setLeaveRequests((prev) => prev.filter((r) => r.id !== id));
                 setRejectingId(null);

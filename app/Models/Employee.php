@@ -61,4 +61,9 @@ class Employee extends Model
     {
         return $this->hasMany(BiometricLog::class, 'biometric_id', 'biometric_id');
     }
+
+    public function leaveCreditLogs()
+{
+    return $this->hasMany(LeaveCreditLog::class);
+}
 }
