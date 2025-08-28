@@ -10,11 +10,11 @@ export default function HRLayout({ children }) {
 
     return (
         <div className="flex min-h-screen bg-gray-50">
-            {/* Sidebar */}
+            {/* Fixed Sidebar */}
             <div
-                className={`transition-all duration-300 ease-in-out bg-gradient-to-b from-indigo-800 to-indigo-900 text-white ${
+                className={`fixed left-0 top-0 h-screen transition-all duration-300 ease-in-out bg-gradient-to-b from-indigo-800 to-indigo-900 text-white ${
                     collapsed ? "w-16" : "w-64"
-                } relative`}
+                } z-50`}
             >
                 <div className="flex items-center justify-between p-4 border-b border-indigo-700">
                     {!collapsed && (
@@ -127,6 +127,23 @@ export default function HRLayout({ children }) {
                             </div>
                         )}
                     </Link>
+
+
+                       <Link
+    href="/hr/leave-calendar"
+    className="flex items-center p-3 rounded-lg hover:bg-indigo-700 transition-all duration-200 group"
+>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+    </svg>
+    {!collapsed && <span className="ml-3">Leave Calendar</span>}
+    {collapsed && (
+        <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+            Leave Calendar
+        </div>
+    )}
+</Link>
+
                 </nav>
 
                 {/* Logout Button */}
@@ -150,8 +167,16 @@ export default function HRLayout({ children }) {
                 </div>
             </div>
 
-            {/* Main content */}
-            <div className="flex-1 p-6 overflow-auto">{children}</div>
+            {/* Main content with proper spacing */}
+            <div
+                className={`flex-1 transition-all duration-300 ease-in-out ${
+                    collapsed ? "ml-16" : "ml-64"
+                } min-h-screen overflow-auto`}
+            >
+                <div className="p-6">
+                    {children}
+                </div>
+            </div>
         </div>
     );
 }

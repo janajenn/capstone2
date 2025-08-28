@@ -1,9 +1,10 @@
 import HRLayout from '@/Layouts/HRLayout';
-import { usePage, useForm ,router} from '@inertiajs/react';
+import { usePage, useForm, router } from '@inertiajs/react';
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 
 export default function LeaveCredits() {
-    const { employees, alreadyCredited, flash } = usePage().props;
+    const { employees, alreadyCredited, flash, creditedMonth, creditedYear } = usePage().props;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
@@ -34,39 +35,64 @@ export default function LeaveCredits() {
         put(route('hr.leave-credits.update', selectedEmployee.id), {
             onSuccess: () => {
                 closeModal();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: 'Leave credits updated successfully.',
+                    timer: 3000,
+                    showConfirmButton: false
+                });
             },
         });
     };
 
     const handleMonthlyCredit = () => {
-    if (alreadyCredited) return;
+        if (alreadyCredited) {
+            const monthYear = `${creditedMonth} ${creditedYear}`;
+            Swal.fire({
+                icon: 'warning',
+                title: 'Already Added',
+                text: `Leave credits for ${monthYear} have already been added.`,
+                confirmButtonText: 'OK'
+            });
+            return;
+        }
 
-    router.post(route('hr.leave-credits.monthly-add'), {}, {
-        preserveScroll: true,
-    });
-};
+        router.post(route('hr.leave-credits.monthly-add'), {}, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                const { creditedMonth, creditedYear } = page.props;
+                const monthYear = `${creditedMonth} ${creditedYear}`;
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: `Monthly leave credits for ${monthYear} were successfully added.`,
+                    timer: 3000,
+                    showConfirmButton: false
+                });
+            },
+            onError: (errors) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to add monthly credits. Please try again.',
+                    confirmButtonText: 'OK'
+                });
+            }
+        });
+    };
+
     return (
         <HRLayout>
             <h1 className="text-2xl font-bold mb-4">Manage Leave Credits</h1>
-
-            {/* Flash Messages */}
-            {flash.success && (
-                <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-2 mb-4 rounded">
-                    {flash.success}
-                </div>
-            )}
-            {flash.error && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 mb-4 rounded">
-                    {flash.error}
-                </div>
-            )}
 
             {/* Add Monthly Credit Button */}
             <div className="mb-4">
                 <button
                     onClick={handleMonthlyCredit}
-                    className={`px-4 py-2 rounded text-white ${alreadyCredited ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-                    disabled={alreadyCredited}
+                    className={`px-4 py-2 rounded text-white ${alreadyCredited ? 'bg-gray-400 ' : 'bg-blue-600 hover:bg-blue-700'}`}
+
                 >
                     {alreadyCredited ? 'Monthly Credits Already Added' : 'Add Monthly Leave Credits (+1.25)'}
                 </button>

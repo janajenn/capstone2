@@ -1,10 +1,11 @@
 import HRLayout from '@/Layouts/HRLayout';
-import { useForm, usePage, Link } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { useForm, usePage, Link, router } from '@inertiajs/react';
+import { useState } from 'react';
 
-export default function Employees({ employees, departments }) {
+export default function Employees({ employees, departments, filters }) {
     const { flash } = usePage().props;
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [selectedDepartment, setSelectedDepartment] = useState(filters?.department || '');
 
     const { data, setData, post, reset, errors } = useForm({
         firstname: '',
@@ -25,6 +26,18 @@ export default function Employees({ employees, departments }) {
         password: '',
         role: 'employee'
     });
+
+    // Handle department filter change
+    const handleFilterChange = (departmentId) => {
+        setSelectedDepartment(departmentId);
+        router.get(route('hr.employees'), {
+            department: departmentId || null
+        }, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
 
     const submit = (e) => {
         e.preventDefault();
@@ -63,6 +76,35 @@ export default function Employees({ employees, departments }) {
                         {flash.success}
                     </div>
                 )}
+
+                {/* Department Filter */}
+                <div className="mb-6 bg-white rounded-xl shadow-sm p-4">
+                    <div className="flex items-center space-x-4">
+                        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                            Filter by Department:
+                        </label>
+                        <select
+                            value={selectedDepartment}
+                            onChange={(e) => handleFilterChange(e.target.value)}
+                            className="w-full md:w-64 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                        >
+                            <option value="">All Departments</option>
+                            {departments.map(dept => (
+                                <option key={dept.id} value={dept.id}>
+                                    {dept.name}
+                                </option>
+                            ))}
+                        </select>
+                        {selectedDepartment && (
+                            <button
+                                onClick={() => handleFilterChange('')}
+                                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                            >
+                                Clear Filter
+                            </button>
+                        )}
+                    </div>
+                </div>
 
                 {/* Modal Backdrop */}
                 {isModalOpen && (
@@ -330,10 +372,14 @@ export default function Employees({ employees, departments }) {
                     </div>
                 </div>
 
-                {/* Employees Table */}
+               {/* Employees Table */}
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                         <h2 className="text-xl font-semibold text-gray-800">Employee List</h2>
+                        <span className="text-sm text-gray-500">
+                            {employees.length} employee{employees.length !== 1 ? 's' : ''} found
+                            {selectedDepartment && ` in ${departments.find(d => d.id == selectedDepartment)?.name}`}
+                        </span>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full table-auto bg-white shadow rounded-lg">
@@ -371,6 +417,13 @@ export default function Employees({ employees, departments }) {
                                         </td>
                                     </tr>
                                 ))}
+                                {employees.length === 0 && (
+                                    <tr>
+                                        <td colSpan="5" className="p-8 text-center text-gray-500">
+                                            No employees found{selectedDepartment && ` in this department`}.
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>

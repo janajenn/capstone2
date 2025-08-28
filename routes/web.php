@@ -83,6 +83,10 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
     Route::put('/hr/leave-types/{leaveType}', [HRController::class, 'updateLeaveType'])->name('hr.leave-types.update');
     Route::delete('/hr/leave-types/{leaveType}', [HRController::class, 'deleteLeaveType'])->name('hr.leave-types.delete');
 
+    //calendar side
+   // routes/web.php
+    Route::get('/hr/leave-calendar', [HRController::class, 'leaveCalendar'])->name('hr.leave-calendar');
+
 
 
 

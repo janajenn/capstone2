@@ -19,13 +19,21 @@ class HRController extends Controller
 {
 
     //EMPLOYEE MANAGEMENT
-    public function employees()
-    {
-        return Inertia::render('HR/Employees', [
-            'employees' => Employee::with('department')->latest()->get(),
-            'departments' => Department::all(),
-        ]);
-    }
+   public function employees(Request $request)
+{
+    $employees = Employee::with('department')
+        ->when($request->department, function ($query, $department) {
+            return $query->where('department_id', $department);
+        })
+        ->latest()
+        ->get();
+
+    return Inertia::render('HR/Employees', [
+        'employees' => $employees,
+        'departments' => Department::all(),
+        'filters' => $request->only(['department']),
+    ]);
+}
 
    public function storeEmployee(Request $request)
 {
@@ -87,8 +95,20 @@ public function leaveCredits()
 {
     $employees = User::with('leaveCredit')->get();
 
+    $now = Carbon::now();
+    $year = $now->year;
+    $month = $now->month;
+
+    // Check if already added this month
+    $alreadyCredited = MonthlyCreditLog::where('year', $year)
+        ->where('month', $month)
+        ->exists();
+
     return Inertia::render('HR/LeaveCredits', [
         'employees' => $employees,
+        'alreadyCredited' => $alreadyCredited,
+        'creditedMonth' => $now->format('F'), // Full month name (e.g., "August")
+        'creditedYear' => $year,
     ]);
 }
 
@@ -127,7 +147,11 @@ public function addMonthlyCredits()
         ->exists();
 
     if ($alreadyCredited) {
-        return redirect()->back()->with('error', 'Leave credits already added this month.');
+        return redirect()->back()->with([
+            'alreadyCredited' => true,
+            'creditedMonth' => $now->format('F'),
+            'creditedYear' => $year
+        ]);
     }
 
     // Get all roles that should receive leave credits
@@ -141,18 +165,19 @@ public function addMonthlyCredits()
 
         $credit->increment('sl_balance', 1.25);
         $credit->increment('vl_balance', 1.25);
-
-        MonthlyCreditLog::create([
-            'employee_id' => $employee->id,
-            'year' => $year,
-            'month' => $month,
-        ]);
     }
 
-    return redirect()->back()->with('success', 'Monthly leave credits added successfully.');
+    MonthlyCreditLog::create([
+        'year' => $year,
+        'month' => $month,
+    ]);
+
+    return redirect()->back()->with([
+        'success' => 'Monthly leave credits added successfully.',
+        'creditedMonth' => $now->format('F'),
+        'creditedYear' => $year
+    ]);
 }
-
-
 
 //LEAVE TYPES
 public function leaveTypes()
@@ -205,7 +230,7 @@ public function deleteLeaveType(LeaveType $leaveType)
 public function departments()
 {
     return Inertia::render('HR/Departments', [
-        'departments' => Department::all(),
+        'departments' => Department::with('head')->get(),
     ]);
 }
 
@@ -451,6 +476,82 @@ public function show($id)
     return Inertia::render('HR/EmployeeShow', [
         'employee' => $employee,
     ]);
+}
+
+//Calendar View
+// Add this method to your HRController
+public function leaveCalendar()
+{
+    // Get fully approved leave requests (all three approvals: hr, dept_head, admin)
+    $approvedLeaveRequests = LeaveRequest::where('status', 'approved')
+        ->whereHas('approvals', function ($query) {
+            $query->where('role', 'hr')->where('status', 'approved');
+        })
+        ->whereHas('approvals', function ($query) {
+            $query->where('role', 'dept_head')->where('status', 'approved');
+        })
+        ->whereHas('approvals', function ($query) {
+            $query->where('role', 'admin')->where('status', 'approved');
+        })
+        ->with(['employee', 'leaveType', 'approvals' => function ($query) {
+            $query->with('approver');
+        }])
+        ->get()
+        ->map(function ($leaveRequest) {
+            return [
+                'id' => $leaveRequest->id,
+                'title' => $leaveRequest->leaveType->code, // Just the code
+                'start' => $leaveRequest->date_from, // Only use start date
+                // Remove the 'end' property to make it a single-day event
+                'allDay' => true,
+                'backgroundColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
+                'borderColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
+                'extendedProps' => [
+                    'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
+                    'leave_type' => $leaveRequest->leaveType->name,
+                    'leave_type_code' => $leaveRequest->leaveType->code,
+                    'start_date' => $leaveRequest->date_from,
+                    'end_date' => $leaveRequest->date_to,
+                    'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1,
+                    'reason' => $leaveRequest->reason,
+                    'approvals' => $leaveRequest->approvals->map(function ($approval) {
+                        return [
+                            'role' => $approval->role,
+                            'status' => $approval->status,
+                            'approver_name' => $approval->approver->name ?? 'Unknown',
+                            'approved_at' => $approval->approved_at,
+                            'remarks' => $approval->remarks
+                        ];
+                    })
+                ]
+            ];
+        });
+
+    return Inertia::render('HR/LeaveCalendar', [
+        'events' => $approvedLeaveRequests,
+    ]);
+}
+// Helper method to assign colors based on leave type
+private function getLeaveTypeColor($leaveTypeCode)
+{
+    $colors = [
+        'VL'    => '#3B82F6', // Vacation Leave - Blue
+        'SL'    => '#EF4444', // Sick Leave - Red
+        'ML'    => '#EC4899', // Maternity Leave - Pink
+        'PL'    => '#10B981', // Paternity Leave - Green
+        'FL'    => '#6B7280', // Forced Leave - Gray
+        'SPL'   => '#F97316', // Special Privilege Leave - Orange
+        'SOLOPL'=> '#14B8A6', // Solo Parent Leave - Teal
+        'STL'   => '#F59E0B', // Study Leave - Amber
+        '10DVL' => '#8B5CF6', // 10-Day VAWC Leave - Purple
+        'RP'    => '#4B5563', // Rehabilitation Privilege - Dark Gray
+        'SLBW'  => '#D946EF', // Special Leave Benefits for Women - Violet
+        'SE'    => '#06B6D4', // Special Emergency Leave - Cyan
+        'AL'    => '#84CC16', // Adoption Leave - Lime Green
+    ];
+
+    // Default color kung wala sa list
+    return $colors[$leaveTypeCode] ?? '#9CA3AF';
 }
 
 }

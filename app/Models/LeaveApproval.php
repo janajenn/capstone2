@@ -9,6 +9,8 @@ class LeaveApproval extends Model
 {
     use HasFactory;
 
+    protected $primaryKey = 'approval_id'; // Specify the custom primary key
+
     protected $fillable = ['leave_id', 'approved_by', 'role', 'status', 'remarks', 'approved_at', 'signature_image', 'comments'];
 
     public function leaveRequest()
