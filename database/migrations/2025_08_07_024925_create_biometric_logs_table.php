@@ -20,6 +20,8 @@ return new class extends Migration
         $table->integer('late_minutes')->nullable();
         $table->string('import_batch');
         $table->timestamps();
+
+
     });
 }
 

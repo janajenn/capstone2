@@ -95,7 +95,7 @@ const typeSpecificFields = (code) => {
 };
 
 // Custom Date Input Component
-const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error, helperText }) => {
+const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error, helperText, allowPastDates = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const datePickerRef = useRef(null);
@@ -152,8 +152,8 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Check if date is before today
-    if (date < today) return true;
+    // Only check if date is before today if allowPastDates is false
+    if (!allowPastDates && date < today) return true;
 
     // Check if date is in disabled dates
     return disabledDates.some(disabledDate => {
@@ -218,7 +218,7 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
                 className="p-1 hover:bg-gray-100 rounded"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  <path strokeLinecap="round" strokeLinejoin='round' strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
               <span className="font-medium">
@@ -229,7 +229,7 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
                 className="p-1 hover:bg-gray-100 rounded"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  <path strokeLinecap="round" strokeLinejoin='round' strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
             </div>
@@ -303,37 +303,55 @@ export default function RequestLeave() {
     details: '',
   });
 
-  // Calculate if the selected leave type has insufficient balance
-  const hasInsufficientBalance = useMemo(() => {
-    if (!selectedType) return false;
+  // Calculate working days for sick leave validation
+  const workingDays = useMemo(() => {
+    return calculateWorkingDays(data.date_from, data.date_to);
+  }, [data.date_from, data.date_to]);
+
+  // Check if document is required for sick leave
+  const isDocumentRequired = useMemo(() => {
+    if (!selectedType || selectedType.code.toUpperCase() !== 'SL') return false;
+    return workingDays > 5;
+  }, [selectedType, workingDays]);
+
+  // Allow past dates only for sick leave
+  const allowPastDates = selectedType?.code.toUpperCase() === 'SL';
+
+  // Calculate balance information
+  const balanceInfo = useMemo(() => {
+    if (!selectedType) return null;
 
     const code = selectedType.code.toUpperCase();
 
-    // Only check balance for SL and VL
-    if (code !== 'SL' && code !== 'VL') return false;
+    // Only show balance for SL and VL
+    if (code !== 'SL' && code !== 'VL') return null;
 
     const availableBalance = code === 'SL' ? (leaveCredits?.sl || 0) : (leaveCredits?.vl || 0);
-    const requestedDays = calculateWorkingDays(data.date_from, data.date_to);
+    const requestedDays = workingDays;
 
-    return requestedDays > availableBalance;
-  }, [selectedType, leaveCredits, data.date_from, data.date_to]);
+    // Only count whole days for paid leave (floor the available balance)
+    const wholeDaysAvailable = Math.floor(availableBalance);
 
-  // Calculate balance error message
-  const balanceError = useMemo(() => {
-    if (!selectedType || !hasInsufficientBalance) return null;
+    const isInsufficient = requestedDays > wholeDaysAvailable;
+    const daysWithPay = Math.min(wholeDaysAvailable, requestedDays);
+    const daysWithoutPay = Math.max(0, requestedDays - daysWithPay);
 
-    const code = selectedType.code.toUpperCase();
-    const availableBalance = code === 'SL' ? (leaveCredits?.sl || 0) : (leaveCredits?.vl || 0);
-    const requestedDays = calculateWorkingDays(data.date_from, data.date_to);
-
-    return `❌ You only have ${availableBalance} ${selectedType.name} credits left. You requested ${requestedDays} days. Please adjust your request.`;
-  }, [selectedType, leaveCredits, data.date_from, data.date_to, hasInsufficientBalance]);
+    return {
+      availableBalance,
+      wholeDaysAvailable,
+      requestedDays,
+      isInsufficient,
+      daysWithPay,
+      daysWithoutPay
+    };
+  }, [selectedType, leaveCredits, workingDays]);
 
   const submit = (e) => {
     e.preventDefault();
 
-    // Prevent submission if balance is insufficient for SL/VL
-    if (hasInsufficientBalance) {
+    // Validate sick leave document requirement
+    if (selectedType?.code.toUpperCase() === 'SL' && isDocumentRequired && !data.attachment) {
+      alert('A medical certificate is required for sick leaves exceeding 5 days.');
       return;
     }
 
@@ -350,6 +368,7 @@ export default function RequestLeave() {
     formData.append('date_to', data.date_to);
     formData.append('reason', data.reason);
     formData.append('details', JSON.stringify(details));
+    formData.append('working_days', workingDays.toString());
 
     if (data.attachment) {
       formData.append('attachment', data.attachment);
@@ -360,7 +379,6 @@ export default function RequestLeave() {
       onSuccess: () => {
         reset();
         setSelectedTypeId(null);
-        // Redirect to My Requests page with success message
         router.visit('/employee/my-leave-requests', {
           data: { success: 'Leave request submitted successfully!' }
         });
@@ -408,33 +426,102 @@ export default function RequestLeave() {
           {errors.leave_type_id && <div className="text-xs text-rose-600">{errors.leave_type_id}</div>}
           <input type="hidden" name="leave_type_id" value={data.leave_type_id} />
 
-          {/* Server-side balance error */}
+          {/* Server-side validation errors */}
           {errors.balance && (
             <div className="p-4 bg-rose-100 border border-rose-200 rounded-lg">
-              <div className="text-sm text-rose-700">
-                {errors.balance}
+              <div className="text-sm text-rose-700">{errors.balance}</div>
+            </div>
+          )}
+
+          {/* Date Selection Notice */}
+          {selectedType && (
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+              <div className="text-sm text-gray-700">
+                <strong>Date Selection Rules:</strong>
+                <ul className="mt-1 list-disc list-inside">
+                  <li>
+                    {selectedType.code.toUpperCase() === 'SL'
+                      ? 'Sick Leave: Past and future dates are allowed'
+                      : `${selectedType.code}: Only current and future dates are allowed`
+                    }
+                  </li>
+                  {selectedType.code.toUpperCase() === 'SL' && (
+                    <li>Medical certificate is {workingDays > 5 ? 'required' : 'optional'} for {workingDays} days</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Sick Leave Information */}
+          {selectedType.code.toUpperCase() === 'SL' && data.date_from && data.date_to && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-sm text-blue-800">
+                <div className="font-semibold">Sick Leave Information</div>
+                <div className="mt-1">
+                  Duration: <strong>{workingDays} working days</strong>
+                </div>
+                {isDocumentRequired ? (
+                  <div className="mt-2 p-2 bg-yellow-100 border border-yellow-200 rounded text-yellow-800">
+                    <div className="font-medium">📋 Medical Certificate Required</div>
+                    <div className="mt-1">
+                      A medical certificate is mandatory for sick leaves exceeding 5 days.
+                    </div>
+                  </div>
+                ) : workingDays > 0 ? (
+                  <div className="mt-2 p-2 bg-green-100 border border-green-200 rounded text-green-800">
+                    <div className="font-medium">📄 Document Optional</div>
+                    <div className="mt-1">
+                      Medical certificate is optional for sick leaves of 1-5 days.
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}
 
           {/* Balance Information for SL/VL */}
-          {['SL', 'VL'].includes(selectedType.code.toUpperCase()) && (
+          {['SL', 'VL'].includes(selectedType?.code.toUpperCase()) && balanceInfo && (
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="text-sm text-blue-800">
                 <div className="font-semibold">Leave Balance Information</div>
                 <div className="mt-1">
                   Your current <strong>{selectedType.code}</strong> balance:
-                  <strong> {selectedType.code.toUpperCase() === 'SL' ? leaveCredits?.sl ?? 0 : leaveCredits?.vl ?? 0} days</strong>
+                  <strong> {balanceInfo.availableBalance} days</strong>
+                  {balanceInfo.availableBalance !== balanceInfo.wholeDaysAvailable && (
+                    <span className="text-sm text-gray-600 ml-1">
+                      ({balanceInfo.wholeDaysAvailable} whole days available for paid leave)
+                    </span>
+                  )}
                 </div>
                 {data.date_from && data.date_to && (
-                  <div className="mt-1">
-                    Requested working days (excluding weekends): <strong>{calculateWorkingDays(data.date_from, data.date_to)} days</strong>
-                  </div>
-                )}
-                {balanceError && (
-                  <div className="mt-2 p-2 bg-rose-100 border border-rose-200 rounded text-rose-700">
-                    {balanceError}
-                  </div>
+                  <>
+                    <div className="mt-1">
+                      Requested working days: <strong>{balanceInfo.requestedDays} days</strong>
+                    </div>
+                    {balanceInfo.isInsufficient ? (
+                      <div className="mt-2 p-2 bg-yellow-100 border border-yellow-200 rounded text-yellow-800">
+                        <div className="font-medium">Partial Leave Notice</div>
+                        <div className="mt-1">
+                          Your request will be automatically split (only whole days count for paid leave):
+                        </div>
+                        <div>• Days with pay: {balanceInfo.daysWithPay} days</div>
+                        <div>• Days without pay: {balanceInfo.daysWithoutPay} days</div>
+                        {balanceInfo.availableBalance > balanceInfo.wholeDaysAvailable && (
+                          <div className="mt-1 text-xs">
+                            Note: {balanceInfo.availableBalance - balanceInfo.wholeDaysAvailable} days of fractional credits cannot be used for paid leave
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-2 p-2 bg-green-100 border border-green-200 rounded text-green-800">
+                        <div className="font-medium">Full Pay Leave</div>
+                        <div className="mt-1">
+                          Your leave will be fully paid: {balanceInfo.requestedDays} days with pay
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -448,6 +535,7 @@ export default function RequestLeave() {
               disabledDates={existingRequests || []}
               error={errors.date_from}
               helperText={existingRequests && existingRequests.length > 0 ? "Conflicting dates are disabled" : ""}
+              allowPastDates={allowPastDates}
             />
 
             <DateInput
@@ -457,6 +545,7 @@ export default function RequestLeave() {
               disabledDates={existingRequests || []}
               error={errors.date_to}
               helperText="Must be after or equal to start date"
+              allowPastDates={allowPastDates}
             />
           </div>
 
@@ -467,6 +556,7 @@ export default function RequestLeave() {
               rows="3"
               value={data.reason}
               onChange={(e) => setData('reason', e.target.value)}
+              placeholder="Please provide a detailed reason for your leave request"
             />
             {errors.reason && <div className="text-xs text-rose-600 mt-1">{errors.reason}</div>}
           </div>
@@ -497,6 +587,7 @@ export default function RequestLeave() {
                       value={data[f.name] || ''}
                       onChange={(e) => setData(f.name, e.target.value)}
                       required={f.required}
+                      placeholder={f.required ? `Enter ${f.label}` : `${f.label} (Optional)`}
                     />
                   )}
                 </div>
@@ -505,34 +596,45 @@ export default function RequestLeave() {
           )}
 
           <div>
-            <label className="block text-sm text-gray-600">Attachment</label>
+            <label className="block text-sm text-gray-600">
+              Attachment {isDocumentRequired && <span className="text-rose-600">*</span>}
+              {!isDocumentRequired && selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 && (
+                <span className="text-gray-500"> (Optional)</span>
+              )}
+            </label>
             <input
               type="file"
               className="mt-1 w-full border rounded p-2"
               onChange={(e) => setData('attachment', e.target.files[0])}
-              accept="image/*,application/pdf"
+              accept="image/*,application/pdf,.doc,.docx"
+              required={isDocumentRequired}
             />
-            {errors.attachment && <div className="text-xs text-rose-600 mt-1">{errors.attachment}</div>}
+            {isDocumentRequired ? (
+              <div className="text-xs text-rose-600 mt-1">
+                📋 Medical certificate is required for sick leaves exceeding 5 days
+              </div>
+            ) : selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 ? (
+              <div className="text-xs text-gray-500 mt-1">
+                📄 Medical certificate is optional for sick leaves of 1-5 days (JPEG, PNG, PDF, DOC accepted)
+              </div>
+            ) : errors.attachment ? (
+              <div className="text-xs text-rose-600 mt-1">{errors.attachment}</div>
+            ) : (
+              <div className="text-xs text-gray-500 mt-1">
+                Supporting document (JPEG, PNG, PDF, DOC) - Optional
+              </div>
+            )}
           </div>
 
           <div className="pt-2">
             <button
               type="submit"
-              disabled={processing || hasInsufficientBalance}
+              disabled={processing}
               className={`px-4 py-2 text-white rounded ${
-                processing
-                  ? 'bg-blue-400'
-                  : hasInsufficientBalance
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700'
+                processing ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
               }`}
             >
-              {processing
-                ? 'Submitting...'
-                : hasInsufficientBalance
-                  ? 'Insufficient Balance'
-                  : 'Submit Request'
-              }
+              {processing ? 'Submitting...' : 'Submit Request'}
             </button>
           </div>
         </form>

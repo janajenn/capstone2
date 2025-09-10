@@ -11,13 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('notifications', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->string('type');
-            $table->morphs('notifiable');
-            $table->text('data');
-            $table->timestamp('read_at')->nullable();
-            $table->timestamps();
+        Schema::table('leave_requests', function (Blueprint $table) {
+            //
+            $table->integer('days_with_pay', 5,1)->default(0)->after('attachment_path');
+    $table->integer('days_without_pay', 5,1 )->default(0)->after('days_with_pay');
         });
     }
 
@@ -26,6 +23,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('notifications');
+        Schema::table('leave_requests', function (Blueprint $table) {
+            //
+        });
     }
 };

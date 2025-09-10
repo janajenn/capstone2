@@ -2,6 +2,20 @@ import HRLayout from '@/Layouts/HRLayout';
 import { usePage, router } from '@inertiajs/react';
 import { useEffect, useState, useRef } from 'react';
 import Swal from 'sweetalert2';
+import { 
+    BarChart, 
+    Bar, 
+    XAxis, 
+    YAxis, 
+    CartesianGrid, 
+    Tooltip, 
+    ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
+    LineChart,
+    Line
+} from 'recharts';
 
 const getStatusColor = (status) => {
   switch (status) {
@@ -26,7 +40,18 @@ const formatDate = (dateString) => {
 
 export default function Dashboard() {
     const { props } = usePage();
-    const { pendingCount, recentRequests, requestsByStatus } = props;
+    const { 
+        pendingCount, 
+        recentRequests, 
+        requestsByStatus,
+        totalEmployees,
+        totalDepartments,
+        fullyApprovedRequests,
+        rejectedRequests,
+        leaveTypeStats,
+        monthlyStats,
+        departmentStats
+    } = props;
 
     // State to track previous data for comparison
     const [previousData, setPreviousData] = useState({
@@ -226,167 +251,258 @@ export default function Dashboard() {
         };
     }, []);
 
+    // Chart colors
+    const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
+
     return (
         <HRLayout>
-            <div className="mb-6">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold">HR Dashboard</h1>
-                        <p className="text-gray-600">Welcome to the HR panel.</p>
+            <div className="min-h-screen bg-gray-50 p-6">
+                {/* Header Section */}
+                <div className="mb-6">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-800">HR Analytics Dashboard</h1>
+                            <p className="text-gray-600 mt-1">Comprehensive reports and analytics for human resources management</p>
+                        </div>
+                        <div className="mt-4 md:mt-0 flex items-center space-x-2">
+                            {notificationPermission === 'default' && (
+                                <button
+                                    onClick={requestNotificationPermission}
+                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center shadow-md hover:shadow-lg"
+                                >
+                                    <div className="p-1 rounded-lg bg-green-500 mr-2">
+                                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5v-5zM4.5 19.5L19.5 4.5" />
+                                        </svg>
+                                    </div>
+                                    Enable Notifications
+                                </button>
+                            )}
+                            {notificationPermission === 'granted' && (
+                                <span className="px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium">
+                                    ✓ Notifications Enabled
+                                </span>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                        {notificationPermission === 'default' && (
+                </div>
+
+                {/* Stats Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-lg bg-blue-50">
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                            </div>
+                            <div className="ml-4">
+                                <h2 className="text-2xl font-bold text-gray-800">{totalEmployees || 0}</h2>
+                                <p className="text-sm text-gray-600">Total Employees</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-lg bg-green-50">
+                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                </svg>
+                            </div>
+                            <div className="ml-4">
+                                <h2 className="text-2xl font-bold text-gray-800">{totalDepartments || 0}</h2>
+                                <p className="text-sm text-gray-600">Total Departments</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-lg bg-emerald-50">
+                                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <div className="ml-4">
+                                <h2 className="text-2xl font-bold text-gray-800">{fullyApprovedRequests || 0}</h2>
+                                <p className="text-sm text-gray-600">Fully Approved Requests</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-lg bg-red-50">
+                                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                            <div className="ml-4">
+                                <h2 className="text-2xl font-bold text-gray-800">{rejectedRequests || 0}</h2>
+                                <p className="text-sm text-gray-600">Rejected Requests</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Charts Section */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    {/* Leave Types Chart */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">Most Applied Leave Types</h3>
+                            <div className="p-2 rounded-lg bg-blue-50">
+                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={leaveTypeStats || []}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Bar dataKey="count" fill="#3B82F6" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Monthly Trends Chart */}
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">Leave Requests by Month</h3>
+                            <div className="p-2 rounded-lg bg-green-50">
+                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={monthlyStats || []}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="month" />
+                                    <YAxis />
+                                    <Tooltip />
+                                    <Line type="monotone" dataKey="count" stroke="#10B981" strokeWidth={2} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Department Comparison Chart */}
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800">Leave Requests by Department</h3>
+                        <div className="p-2 rounded-lg bg-purple-50">
+                            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={departmentStats || []}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip />
+                                <Bar dataKey="count" fill="#8B5CF6" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Recent Leave Requests */}
+                <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                    <div className="px-6 py-4 border-b border-gray-200">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-lg font-semibold text-gray-800">Recent Leave Requests</h2>
                             <button
-                                onClick={requestNotificationPermission}
-                                className="ml-2 px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600"
+                                onClick={() => router.visit('/hr/leave-requests')}
+                                className="text-blue-600 hover:text-blue-900 transition-colors flex items-center"
                             >
-                                Enable Notifications
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                View All
                             </button>
-                        )}
-                        {notificationPermission === 'granted' && (
-                            <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded">
-                                ✓ Notifications Enabled
-                            </span>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                        <div className="p-3 rounded-full bg-yellow-100 text-yellow-600">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </div>
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Pending Requests</p>
-                            <p className="text-2xl font-semibold text-gray-900">{pendingCount}</p>
                         </div>
                     </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                        <div className="p-3 rounded-full bg-green-100 text-green-600">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </div>
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Approved</p>
-                            <p className="text-2xl font-semibold text-gray-900">{requestsByStatus?.approved || 0}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                        <div className="p-3 rounded-full bg-red-100 text-red-600">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </div>
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Rejected</p>
-                            <p className="text-2xl font-semibold text-gray-900">{requestsByStatus?.rejected || 0}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-lg shadow p-6">
-                    <div className="flex items-center">
-                        <div className="p-3 rounded-full bg-blue-100 text-blue-600">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
-                        </div>
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-gray-600">Total Requests</p>
-                            <p className="text-2xl font-semibold text-gray-900">
-                                {(requestsByStatus?.pending || 0) + (requestsByStatus?.approved || 0) + (requestsByStatus?.rejected || 0)}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Recent Leave Requests */}
-            <div className="bg-white rounded-lg shadow">
-                <div className="px-6 py-4 border-b border-gray-200">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-lg font-semibold text-gray-900">Recent Leave Requests</h2>
-                        <button
-                            onClick={() => router.visit('/hr/leave-requests')}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                        >
-                            View All
-                        </button>
-                    </div>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Employee
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Leave Type
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Dates
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Status
-                                </th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                    Submitted
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {recentRequests && recentRequests.length > 0 ? (
-                                recentRequests.map((request) => (
-                                    <tr key={request.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div>
-                                                <div className="text-sm font-medium text-gray-900">
-                                                    {request.employee?.first_name} {request.employee?.last_name}
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Employee
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Leave Type
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Dates
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Status
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {recentRequests && recentRequests.length > 0 ? (
+                                    recentRequests.map((request) => (
+                                        <tr key={request.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="flex items-center">
+                                                    <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                                        <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                        </svg>
+                                                    </div>
+                                                    <div className="ml-4">
+                                                        <div className="text-sm font-medium text-gray-900">
+                                                            {request.employee?.first_name} {request.employee?.last_name}
+                                                        </div>
+                                                        <div className="text-sm text-gray-500">
+                                                            {request.employee?.department?.name}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="text-sm text-gray-500">
-                                                    {request.employee?.department?.name}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">{request.leave_type?.name}</div>
-                                            <div className="text-sm text-gray-500">{request.leave_type?.code}</div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                            {formatDate(request.date_from)} - {formatDate(request.date_to)}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(request.status)}`}>
-                                                {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                            {formatDate(request.created_at)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm text-gray-900">{request.leave_type?.name}</div>
+                                                <div className="text-sm text-gray-500">{request.leave_type?.code}</div>
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                                {formatDate(request.date_from)} - {formatDate(request.date_to)}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
+                                                    {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4" className="px-6 py-8 text-center">
+                                            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                            </svg>
+                                            <h3 className="mt-2 text-sm font-medium text-gray-900">No leave requests found</h3>
+                                            <p className="mt-1 text-sm text-gray-500">
+                                                Recent leave requests will appear here.
+                                            </p>
                                         </td>
                                     </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                                        No leave requests found
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </HRLayout>

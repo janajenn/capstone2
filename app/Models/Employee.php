@@ -16,6 +16,10 @@ class Employee extends Model
         'monthly_salary', 'daily_rate'
     ];
 
+    protected $primaryKey = 'employee_id';
+protected $keyType = 'int';
+public $incrementing = true;
+
     public function department()
     {
         return $this->belongsTo(Department::class, 'department_id');
@@ -66,4 +70,14 @@ class Employee extends Model
 {
     return $this->hasMany(LeaveCreditLog::class);
 }
+
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class, 'employee_id', 'employee_id');
+    }
+
+    public function unreadNotifications()
+    {
+        return $this->notifications()->unread();
+    }
 }

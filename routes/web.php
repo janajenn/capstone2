@@ -66,7 +66,10 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
     Route::post('/hr/employees', [HRController::class, 'storeEmployee'])->name('hr.employees.store');
 
     Route::get('/hr/employees/{employee}', [HRController::class, 'show'])->name('hr.employees.show');
-
+    // Add this route to your web.php file
+// Add these routes to your web.php file
+Route::get('/hr/employees/{employee}/edit', [\App\Http\Controllers\HR\HRController::class, 'editEmployee'])->name('hr.employees.edit');
+Route::put('/hr/employees/{employee}', [\App\Http\Controllers\HR\HRController::class, 'updateEmployee'])->name('hr.employees.update');
 
     // leave credits side
      Route::get('/hr/leave-credits', [HRController::class, 'leaveCredits'])->name('hr.leave-credits');
@@ -104,6 +107,17 @@ Route::post('/hr/leave-requests/{id}/approve', [HRController::class, 'approveLea
 Route::post('/hr/leave-requests/{id}/reject', [HRController::class, 'rejectLeaveRequest'])->name('hr.leave-requests.reject');
 Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'])->name('hr.leave-requests.bulk-action');
 
+// Leave Form Demo Route (for testing)
+Route::get('/leave-form-demo', function() {
+    return Inertia::render('LeaveFormDemo');
+})->name('leave-form-demo');
+
+// Credit Conversion Management Routes (HR)
+Route::get('/hr/credit-conversions', [HRController::class, 'creditConversions'])->name('hr.credit-conversions');
+Route::get('/hr/credit-conversions/{id}', [HRController::class, 'showCreditConversion'])->name('hr.credit-conversions.show');
+Route::post('/hr/credit-conversions/{id}/approve', [HRController::class, 'approveCreditConversion'])->name('hr.credit-conversions.approve');
+Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectCreditConversion'])->name('hr.credit-conversions.reject');
+
 
 });
 
@@ -139,9 +153,41 @@ Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'
 
     Route::middleware(['auth', 'role:employee'])->group(function () {
         Route::get('/employee/dashboard', [EmployeeController::class, 'dashboard'])->name('employee.dashboard');
+
         Route::get('/employee/leave', [EmployeeController::class, 'showLeaveRequest'])->name('employee.leave.request');
+
         Route::post('/employee/leave', [EmployeeController::class, 'submitLeaveRequest'])->name('employee.leave.submit');
+
         Route::get('/employee/my-leave-requests', [EmployeeController::class, 'myLeaveRequests'])->name('employee.my-leave-requests');
+
+        Route::get('/employee/leave-calendar', [EmployeeController::class, 'leaveCalendar'])->name('employee.leave-calendar');
+
+        // Credit Conversion Routes
+        Route::get('/employee/credit-conversion', [EmployeeController::class, 'showCreditConversion'])->name('employee.credit-conversion');
+        Route::post('/employee/credit-conversion', [EmployeeController::class, 'submitCreditConversion'])->name('employee.credit-conversion.submit');
+        Route::get('/employee/credit-conversions', [EmployeeController::class, 'myCreditConversions'])->name('employee.credit-conversions');
+        
+        // Notification Routes
+        Route::get('/employee/notifications', [\App\Http\Controllers\Employee\NotificationController::class, 'index'])->name('employee.notifications');
+        Route::post('/employee/notifications/{id}/read', [\App\Http\Controllers\Employee\NotificationController::class, 'markAsRead'])->name('employee.notifications.read');
+        Route::post('/employee/notifications/read-all', [\App\Http\Controllers\Employee\NotificationController::class, 'markAllAsRead'])->name('employee.notifications.read-all');
+        Route::get('/employee/notifications/unread-count', [\App\Http\Controllers\Employee\NotificationController::class, 'getUnreadCount'])->name('employee.notifications.unread-count');
+        
+        // Debug route (remove in production)
+        Route::get('/employee/debug', [EmployeeController::class, 'debugUserEmployee'])->name('employee.debug');
+        
+        // Debug notifications route
+        Route::get('/employee/debug-notifications', [\App\Http\Controllers\Employee\NotificationController::class, 'debugNotifications'])->name('employee.debug-notifications');
+        
+        // Test CSRF token route
+        Route::get('/employee/test-csrf', function() {
+            return response()->json([
+                'csrf_token' => csrf_token(),
+                'session_id' => session()->getId(),
+                'user_id' => auth()->id(),
+                'is_authenticated' => auth()->check()
+            ]);
+        })->name('employee.test-csrf');
     });
 
 require __DIR__.'/auth.php';

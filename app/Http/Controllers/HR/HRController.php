@@ -13,6 +13,10 @@ use App\Models\LeaveCredit;
 use App\Models\MonthlyCreditLog;
 use App\Models\LeaveType;
 use App\Models\LeaveRequest;
+use Illuminate\Validation\Rule;
+use App\Models\CreditConversion;
+use App\Services\CreditConversionService;
+use App\Services\NotificationService;
 
 
 class HRController extends Controller
@@ -49,7 +53,7 @@ class HRController extends Controller
         'contact_number' => 'required|string|max:20',
         'address' => 'required|string|max:255',
         'civil_status' => 'required|in:single,married,widowed,divorced',
-        'biometric_id' => 'required|integer|unique:employees,biometric_id',
+        'biometric_id' => 'nullable|integer|unique:employees,biometric_id',
         'monthly_salary' => 'required|numeric|min:0',
         'daily_rate' => 'required|numeric|min:0',
         'email' => 'required|email|unique:users,email',
@@ -57,36 +61,116 @@ class HRController extends Controller
         'role' => 'required|in:employee,hr,admin,dept_head',
     ]);
 
-    // 1. Create the employee
-    $employee = Employee::create([
-        'firstname' => $validated['firstname'],
-        'middlename' => $validated['middlename'],
-        'lastname' => $validated['lastname'],
-        'gender' => $validated['gender'],
-        'date_of_birth' => $validated['date_of_birth'],
-        'position' => $validated['position'],
-        'department_id' => $validated['department_id'],
-        'status' => $validated['status'],
-        'contact_number' => $validated['contact_number'],
-        'address' => $validated['address'],
-        'civil_status' => $validated['civil_status'],
-        'biometric_id' => $validated['biometric_id'],
-        'monthly_salary' => $validated['monthly_salary'],
-        'daily_rate' => $validated['daily_rate'],
-    ]);
+    try {
+        \DB::beginTransaction();
+        
+        // 1. Create the employee
+        $employee = Employee::create([
+            'firstname' => $validated['firstname'],
+            'middlename' => $validated['middlename'],
+            'lastname' => $validated['lastname'],
+            'gender' => $validated['gender'],
+            'date_of_birth' => $validated['date_of_birth'],
+            'position' => $validated['position'],
+            'department_id' => $validated['department_id'],
+            'status' => $validated['status'],
+            'contact_number' => $validated['contact_number'],
+            'address' => $validated['address'],
+            'civil_status' => $validated['civil_status'],
+            'biometric_id' => $validated['biometric_id']?? null,
+            'monthly_salary' => $validated['monthly_salary'],
+            'daily_rate' => $validated['daily_rate'],
+        ]);
 
-    // 2. Create the user and link to employee
-    User::create([
-        'name' => $validated['firstname'] . ' ' . $validated['lastname'],
-        'email' => $validated['email'],
-        'password' => bcrypt($validated['password']),
-        'role' => $validated['role'],
-        'employee_id' => $employee->id,
-    ]);
+        // 2. Create the user and link to employee
+        User::create([
+            'name' => $validated['firstname'] . ' ' . $validated['lastname'],
+            'email' => $validated['email'],
+            'password' => bcrypt($validated['password']),
+            'role' => $validated['role'],
+            'employee_id' => $employee->employee_id,
+        ]);
 
-    return redirect()->back()->with('success', 'Employee and user created successfully!');
+        // 3. Create default leave credit record for the new employee
+        LeaveCredit::create([
+            'employee_id' => $employee->employee_id,
+            'sl_balance' => 0,
+            'vl_balance' => 0,
+            'last_updated' => now(),
+            'remarks' => 'Initial balance for new employee',
+        ]);
+
+        \DB::commit();
+        
+        return redirect()->back()->with('success', 'Employee and user created successfully!');
+    } catch (\Exception $e) {
+        \DB::rollback();
+        \Log::error('Error creating employee: ' . $e->getMessage(), [
+            'data' => $validated,
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return redirect()->back()->withErrors(['error' => 'Failed to create employee: ' . $e->getMessage()]);
+    }
 }
 
+
+public function editEmployee(Employee $employee)
+{
+    // Laravel will automatically find the employee by employee_id
+    // because we defined $primaryKey in the model
+
+    $employee->load('user', 'department');
+
+    return Inertia::render('HR/EditEmployee', [
+        'employee' => $employee,
+        'departments' => Department::all(),
+    ]);
+}
+    /**
+     * Update employee information
+     */
+public function updateEmployee(Request $request, Employee $employee)
+{
+    // Validate the incoming data - all fields optional
+    $validated = $request->validate([
+        'firstname' => 'nullable|string|max:255',
+        'middlename' => 'nullable|string|max:255',
+        'lastname' => 'nullable|string|max:255',
+        'gender' => 'nullable|in:male,female',
+        'date_of_birth' => 'nullable|date',
+        'position' => 'nullable|string|max:255',
+        'department_id' => 'nullable|exists:departments,id',
+        'status' => 'nullable|in:active,inactive',
+        'contact_number' => 'nullable|string|max:20',
+        'address' => 'nullable|string|max:500',
+        'civil_status' => 'nullable|in:single,married,widowed,divorced',
+        'biometric_id' => [
+            'nullable',
+            'integer',
+            Rule::unique('employees')->ignore($employee->employee_id, 'employee_id')
+        ],
+        'monthly_salary' => 'nullable|numeric|min:0',
+        'daily_rate' => 'nullable|numeric|min:0',
+    ]);
+
+    // Prepare update data - only include fields that were actually provided
+    $updateData = [];
+
+    foreach ($validated as $field => $value) {
+        if ($value !== null) {
+            $updateData[$field] = $value;
+        }
+    }
+
+    // Update employee details only if there's data to update
+    if (!empty($updateData)) {
+        $employee->update($updateData);
+    }
+
+    return redirect()->route('hr.employees.show', $employee->employee_id)
+        ->with('success', 'Employee information updated successfully!');
+}
 
 
 //LEAVE CREDITS
@@ -197,7 +281,13 @@ public function storeLeaveType(Request $request)
         'earnable' => 'required|boolean',
         'deductible' => 'required|boolean',
         'document_required' => 'required|boolean',
+        'default_days' => 'nullable|integer|min:0',
     ]);
+
+    // Enforce rules: SL and VL cannot have default_days
+    if (in_array(strtoupper($validated['code']), ['SL', 'VL'])) {
+        $validated['default_days'] = null;
+    }
 
     LeaveType::create($validated);
 
@@ -212,7 +302,13 @@ public function updateLeaveType(Request $request, LeaveType $leaveType)
         'earnable' => 'required|boolean',
         'deductible' => 'required|boolean',
         'document_required' => 'required|boolean',
+        'default_days' => 'nullable|integer|min:0',
     ]);
+
+    // Enforce rules: SL and VL cannot have default_days
+    if (in_array(strtoupper($validated['code']), ['SL', 'VL'])) {
+        $validated['default_days'] = null;
+    }
 
     $leaveType->update($validated);
 
@@ -279,10 +375,62 @@ public function dashboard(Request $request)
         'rejected' => LeaveRequest::where('status', 'rejected')->count(),
     ];
 
+    // Analytics data for the dashboard
+    $totalEmployees = Employee::count();
+    $totalDepartments = Department::count();
+    $fullyApprovedRequests = LeaveRequest::where('status', 'approved')->count();
+    $rejectedRequests = LeaveRequest::where('status', 'rejected')->count();
+
+    // Leave type statistics
+    $leaveTypeStats = LeaveRequest::with('leaveType')
+        ->selectRaw('leave_type_id, count(*) as count')
+        ->groupBy('leave_type_id')
+        ->get()
+        ->map(function ($item) {
+            return [
+                'name' => $item->leaveType->name ?? 'Unknown',
+                'count' => $item->count
+            ];
+        });
+
+    // Monthly statistics (last 12 months)
+    $monthlyStats = LeaveRequest::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, count(*) as count')
+        ->where('created_at', '>=', now()->subMonths(12))
+        ->groupBy('month')
+        ->orderBy('month')
+        ->get()
+        ->map(function ($item) {
+            return [
+                'month' => date('M Y', strtotime($item->month . '-01')),
+                'count' => $item->count
+            ];
+        });
+
+    // Department statistics
+    $departmentStats = LeaveRequest::with('employee.department')
+        ->selectRaw('employees.department_id, count(*) as count')
+        ->join('employees', 'leave_requests.employee_id', '=', 'employees.employee_id')
+        ->groupBy('employees.department_id')
+        ->get()
+        ->map(function ($item) {
+            $department = Department::find($item->department_id);
+            return [
+                'name' => $department->name ?? 'Unknown',
+                'count' => $item->count
+            ];
+        });
+
     return Inertia::render('HR/Dashboard', [
         'pendingCount' => $pendingCount,
         'recentRequests' => $recentRequests,
         'requestsByStatus' => $requestsByStatus,
+        'totalEmployees' => $totalEmployees,
+        'totalDepartments' => $totalDepartments,
+        'fullyApprovedRequests' => $fullyApprovedRequests,
+        'rejectedRequests' => $rejectedRequests,
+        'leaveTypeStats' => $leaveTypeStats,
+        'monthlyStats' => $monthlyStats,
+        'departmentStats' => $departmentStats,
     ]);
 }
 
@@ -365,17 +513,38 @@ public function leaveRequests(Request $request)
 }
 public function showLeaveRequest($id)
 {
-    $leaveRequest = LeaveRequest::with(['leaveType', 'employee.department', 'details'])
+    $leaveRequest = LeaveRequest::with([
+            'leaveType',
+            'employee.department',
+            'details',
+            'approvals.approver'
+        ])
         ->findOrFail($id);
+
+    // Calculate working days (excluding weekends)
+    $startDate = new \DateTime($leaveRequest->date_from);
+    $endDate = new \DateTime($leaveRequest->date_to);
+    $workingDays = 0;
+
+    for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
+        $dayOfWeek = $date->format('N');
+        if ($dayOfWeek < 6) { // Monday to Friday
+            $workingDays++;
+        }
+    }
+
+    // Get leave balance information if available
+    $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
 
     return Inertia::render('HR/ShowLeaveRequest', [
         'leaveRequest' => $leaveRequest,
+        'workingDays' => $workingDays,
+        'leaveCredit' => $leaveCredit,
     ]);
 }
-
 public function approveLeaveRequest(Request $request, $id)
 {
-    $leaveRequest = LeaveRequest::findOrFail($id);
+    $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
 
     // Validate that the request is pending
     if ($leaveRequest->status !== 'pending') {
@@ -395,13 +564,24 @@ public function approveLeaveRequest(Request $request, $id)
         'approved_at' => now(),
     ]);
 
+    // Send notification to employee
+    $notificationService = new NotificationService();
+    $notificationService->createLeaveRequestNotification(
+        $leaveRequest->employee_id,
+        'approved',
+        $id,
+        $leaveRequest->leaveType->name ?? 'Leave',
+        $leaveRequest->date_from,
+        $leaveRequest->date_to
+    );
+
     return redirect()->route('hr.leave-requests')
         ->with('success', 'Leave request approved successfully.');
 }
 
 public function rejectLeaveRequest(Request $request, $id)
 {
-    $leaveRequest = LeaveRequest::findOrFail($id);
+    $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
 
     // Validate that the request is pending
     if ($leaveRequest->status !== 'pending') {
@@ -424,6 +604,17 @@ public function rejectLeaveRequest(Request $request, $id)
         'remarks' => $request->remarks,
         'approved_at' => now(),
     ]);
+
+    // Send notification to employee
+    $notificationService = new NotificationService();
+    $notificationService->createLeaveRequestNotification(
+        $leaveRequest->employee_id,
+        'rejected',
+        $id,
+        $leaveRequest->leaveType->name ?? 'Leave',
+        $leaveRequest->date_from,
+        $leaveRequest->date_to
+    );
 
     return redirect()->route('hr.leave-requests')
         ->with('success', 'Leave request rejected successfully.');
@@ -553,5 +744,180 @@ private function getLeaveTypeColor($leaveTypeCode)
     // Default color kung wala sa list
     return $colors[$leaveTypeCode] ?? '#9CA3AF';
 }
+
+    /**
+     * Show credit conversion requests for HR approval
+     */
+    public function creditConversions(Request $request)
+    {
+        $conversions = CreditConversion::with(['employee.department'])
+            ->when($request->status, function ($query, $status) {
+                return $query->where('status', $status);
+            })
+            ->when($request->employee, function ($query, $employee) {
+                return $query->whereHas('employee', function ($q) use ($employee) {
+                    $q->where('firstname', 'like', "%{$employee}%")
+                      ->orWhere('lastname', 'like', "%{$employee}%");
+                });
+            })
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($conversion) {
+                // Map leave type codes to readable names
+                $leaveTypeNames = [
+                    'SL' => 'Sick Leave',
+                    'VL' => 'Vacation Leave'
+                ];
+                
+                return [
+                    'conversion_id' => $conversion->conversion_id,
+                    'employee_id' => $conversion->employee_id,
+                    'leave_type_code' => $conversion->leave_type,
+                    'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+                    'credits_requested' => $conversion->credits_requested,
+                    'equivalent_cash' => $conversion->equivalent_cash,
+                    'status' => $conversion->status,
+                    'submitted_at' => $conversion->submitted_at,
+                    'approved_at' => $conversion->approved_at,
+                    'approved_by' => $conversion->approved_by,
+                    'remarks' => $conversion->remarks,
+                    'created_at' => $conversion->created_at,
+                    'updated_at' => $conversion->updated_at,
+                    'employee' => $conversion->employee ? [
+                        'employee_id' => $conversion->employee->employee_id,
+                        'firstname' => $conversion->employee->firstname,
+                        'lastname' => $conversion->employee->lastname,
+                        'position' => $conversion->employee->position,
+                        'department' => $conversion->employee->department ? [
+                            'id' => $conversion->employee->department->id,
+                            'name' => $conversion->employee->department->name,
+                        ] : null,
+                    ] : null,
+                ];
+            });
+
+        return Inertia::render('HR/CreditConversions', [
+            'conversions' => $conversions,
+            'filters' => $request->only(['status', 'employee']),
+        ]);
+    }
+
+    /**
+     * Show specific credit conversion request
+     */
+    public function showCreditConversion($id)
+    {
+        $conversion = CreditConversion::with(['employee.department', 'approver'])
+            ->findOrFail($id);
+
+        // Map leave type codes to readable names
+        $leaveTypeNames = [
+            'SL' => 'Sick Leave',
+            'VL' => 'Vacation Leave'
+        ];
+
+        // Flatten the conversion data
+        $flattenedConversion = [
+            'conversion_id' => $conversion->conversion_id,
+            'employee_id' => $conversion->employee_id,
+            'leave_type_code' => $conversion->leave_type,
+            'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+            'credits_requested' => $conversion->credits_requested,
+            'equivalent_cash' => $conversion->equivalent_cash,
+            'status' => $conversion->status,
+            'submitted_at' => $conversion->submitted_at,
+            'approved_at' => $conversion->approved_at,
+            'approved_by' => $conversion->approved_by,
+            'remarks' => $conversion->remarks,
+            'created_at' => $conversion->created_at,
+            'updated_at' => $conversion->updated_at,
+            'employee' => $conversion->employee ? [
+                'employee_id' => $conversion->employee->employee_id,
+                'firstname' => $conversion->employee->firstname,
+                'lastname' => $conversion->employee->lastname,
+                'position' => $conversion->employee->position,
+                'department' => $conversion->employee->department ? [
+                    'id' => $conversion->employee->department->id,
+                    'name' => $conversion->employee->department->name,
+                ] : null,
+            ] : null,
+            'approver' => $conversion->approver ? [
+                'id' => $conversion->approver->id,
+                'name' => $conversion->approver->name,
+            ] : null,
+        ];
+
+        return Inertia::render('HR/ShowCreditConversion', [
+            'conversion' => $flattenedConversion,
+        ]);
+    }
+
+    /**
+     * Approve credit conversion request
+     */
+    public function approveCreditConversion(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'remarks' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $creditConversionService = new CreditConversionService();
+            $conversion = $creditConversionService->approveConversion(
+                $id,
+                $request->user()->id,
+                $validated['remarks']
+            );
+
+            // Send notification to employee
+            $notificationService = new NotificationService();
+            $notificationService->createCreditConversionNotification(
+                $conversion->employee_id,
+                'approved',
+                $id,
+                $conversion->leave_type,
+                $conversion->credits_requested,
+                $conversion->equivalent_cash
+            );
+
+            return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request approved successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Reject credit conversion request
+     */
+    public function rejectCreditConversion(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'remarks' => ['required', 'string', 'max:500'],
+        ]);
+
+        try {
+            $creditConversionService = new CreditConversionService();
+            $conversion = $creditConversionService->rejectConversion(
+                $id,
+                $request->user()->id,
+                $validated['remarks']
+            );
+
+            // Send notification to employee
+            $notificationService = new NotificationService();
+            $notificationService->createCreditConversionNotification(
+                $conversion->employee_id,
+                'rejected',
+                $id,
+                $conversion->leave_type,
+                $conversion->credits_requested,
+                $conversion->equivalent_cash
+            );
+
+            return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request rejected successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+        }
 
 }

@@ -4,6 +4,7 @@ import Dropdown from '@/Components/Dropdown';
 import NavLink from '@/Components/NavLink';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink';
 import { Link } from '@inertiajs/react';
+import PageTransition from '@/Components/PageTransition';
 
 export default function Authenticated({ user, header, children }) {
     const [showingNavigationDropdown, setShowingNavigationDropdown] = useState(false);
@@ -119,7 +120,15 @@ export default function Authenticated({ user, header, children }) {
                 </header>
             )}
 
-            <main>{children}</main>
+            <main>
+                <PageTransition 
+                    animation="fade-slide-up"
+                    duration={400}
+                    delay={100}
+                >
+                    {children}
+                </PageTransition>
+            </main>
         </div>
     );
 }

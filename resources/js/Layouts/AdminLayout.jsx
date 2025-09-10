@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@inertiajs/react';
+import PageTransition from '@/Components/PageTransition';
 
 export default function AdminLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
@@ -42,7 +43,16 @@ export default function AdminLayout({ children }) {
             </div>
 
             {/* Main content */}
-            <div className="flex-1 p-6">{children}</div>
+            <div className="flex-1">
+                <PageTransition 
+                    animation="fade-slide-up"
+                    duration={400}
+                    delay={100}
+                    className="p-6"
+                >
+                    {children}
+                </PageTransition>
+            </div>
         </div>
     );
 }

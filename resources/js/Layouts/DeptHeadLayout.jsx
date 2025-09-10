@@ -1,9 +1,10 @@
-// resources/js/Layouts/EmployeeLayout.jsx
+// resources/js/Layouts/DeptHeadLayout.jsx
 
 import { useState } from 'react';
 import { Link } from '@inertiajs/react';
+import PageTransition from '@/Components/PageTransition';
 
-export default function EmployeeLayout({ children }) {
+export default function DeptHeadLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
 
     const toggleSidebar = () => {
@@ -39,7 +40,16 @@ export default function EmployeeLayout({ children }) {
                 </nav>
             </div>
 
-            <div className="flex-1 p-6">{children}</div>
+            <div className="flex-1">
+                <PageTransition 
+                    animation="fade-slide-up"
+                    duration={400}
+                    delay={100}
+                    className="p-6"
+                >
+                    {children}
+                </PageTransition>
+            </div>
         </div>
     );
 }

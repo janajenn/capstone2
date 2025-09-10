@@ -20,7 +20,12 @@ return new class extends Migration
         $table->text('reason');
         $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
         $table->string('attachment_path')->nullable();
+
+        $table->integer('days_with_pay')->default(0);
+            $table->integer('days_without_pay')->default(0);
+
         $table->timestamps();
+
 
         $table->foreign('employee_id')->references('employee_id')->on('employees')->onDelete('cascade');
         $table->foreign('leave_type_id')->references('id')->on('leave_types')->onDelete('cascade');

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "@inertiajs/react";
+import PageTransition from "@/Components/PageTransition";
 
 export default function HRLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
@@ -128,21 +129,51 @@ export default function HRLayout({ children }) {
                         )}
                     </Link>
 
+                    <Link
+                        href="/hr/credit-conversions"
+                        className="flex items-center p-3 rounded-lg hover:bg-indigo-700 transition-all duration-200 group"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092c.938-.177 1.791-.604 2.353-1.253a1 1 0 10-1.51-1.31c.163.187.452.377.843.504v-1.941c-.622-.117-1.196-.342-1.676-.662C9.398 10.235 9 9.99 9 8c0-.99.398-1.765 1.324-2.246.48-.32 1.054-.545 1.676-.662V7z" clipRule="evenodd" />
+                        </svg>
+                        {!collapsed && <span className="ml-3">Credit Conversions</span>}
+                        {collapsed && (
+                            <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                Credit Conversions
+                            </div>
+                        )}
+                    </Link>
 
-                       <Link
-    href="/hr/leave-calendar"
-    className="flex items-center p-3 rounded-lg hover:bg-indigo-700 transition-all duration-200 group"
->
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-    </svg>
-    {!collapsed && <span className="ml-3">Leave Calendar</span>}
-    {collapsed && (
-        <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-            Leave Calendar
-        </div>
-    )}
-</Link>
+                    <Link
+                        href="/hr/leave-calendar"
+                        className="flex items-center p-3 rounded-lg hover:bg-indigo-700 transition-all duration-200 group"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                        </svg>
+                        {!collapsed && <span className="ml-3">Leave Calendar</span>}
+                        {collapsed && (
+                            <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                Leave Calendar
+                            </div>
+                        )}
+                    </Link>
+
+                    <Link
+                        href="/leave-form-demo"
+                        className="flex items-center p-3 rounded-lg hover:bg-indigo-700 transition-all duration-200 group"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" clipRule="evenodd" />
+                        </svg>
+                        {!collapsed && <span className="ml-3">Leave Form Demo</span>}
+                        {collapsed && (
+                            <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                Leave Form Demo
+                            </div>
+                        )}
+                    </Link>
 
                 </nav>
 
@@ -173,9 +204,14 @@ export default function HRLayout({ children }) {
                     collapsed ? "ml-16" : "ml-64"
                 } min-h-screen overflow-auto`}
             >
-                <div className="p-6">
+                <PageTransition 
+                    animation="fade-slide-up"
+                    duration={400}
+                    delay={100}
+                    className="p-6"
+                >
                     {children}
-                </div>
+                </PageTransition>
             </div>
         </div>
     );

@@ -9,7 +9,7 @@ class LeaveBalance extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['employee_id', 'leave_type', 'year', 'total_earned', 'total_used', 'balance', 'remarks'];
+    protected $fillable = ['employee_id', 'leave_type_id', 'year', 'total_earned', 'total_used', 'balance', 'remarks'];
 
     public function employee()
     {
@@ -18,6 +18,6 @@ class LeaveBalance extends Model
 
     public function leaveType()
     {
-        return $this->belongsTo(LeaveType::class, 'leave_type', 'code');
+        return $this->belongsTo(LeaveType::class, 'leave_type_id', 'id');
     }
 }

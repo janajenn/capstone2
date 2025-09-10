@@ -90,6 +90,17 @@ class LeaveCreditService
         Log::info('📝 Creating credit log entry...');
 
         try {
+            // Get the current leave credit record to retrieve balance_before
+            $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
+            
+            if (!$leaveCredit) {
+                Log::error("❌ No leave credits found for employee: {$leaveRequest->employee_id}");
+                throw new \Exception('No leave credits found for this employee.');
+            }
+
+            // Calculate balance_before (current balance + points deducted)
+            $balanceBefore = $newBalance + $daysDeducted;
+
             $log = LeaveCreditLog::create([
                 'employee_id' => $leaveRequest->employee_id,
                 'type' => $typeCode, // Use the code directly (SL, VL)
@@ -97,11 +108,12 @@ class LeaveCreditService
                 'year' => now()->year,
                 'month' => now()->month,
                 'points_deducted' => $daysDeducted,
+                'balance_before' => $balanceBefore,
                 'balance_after' => $newBalance,
                 'remarks' => "Auto deducted after Admin approval of leave request ID #{$leaveRequest->id}",
             ]);
 
-            Log::info('✅ Credit log created with ID: ' . $log->id);
+            Log::info("✅ Credit log created with ID: {$log->id} - Balance before: {$balanceBefore}, Balance after: {$newBalance}");
             return $log;
         } catch (\Exception $e) {
             Log::error('❌ Failed to create credit log: ' . $e->getMessage());
