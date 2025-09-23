@@ -30,4 +30,9 @@ class LeaveRequest extends Model
     {
         return $this->hasMany(LeaveRequestDetail::class, 'leave_request_id');
     }
+
+    public function recalls()
+    {
+        return $this->hasMany(LeaveRecall::class, 'leave_request_id');
+    }
 }

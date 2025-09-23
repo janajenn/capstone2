@@ -149,7 +149,7 @@ export default function LeaveCredits() {
                                                 </div>
                                                 <div className="ml-4">
                                                     <div className="text-sm font-medium text-gray-900">{employee.name}</div>
-                                                    <div className="text-sm text-gray-500">{employee.department || 'No department'}</div>
+                                                    
                                                 </div>
                                             </div>
                                         </td>

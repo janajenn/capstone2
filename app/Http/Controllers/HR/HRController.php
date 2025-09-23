@@ -17,6 +17,7 @@ use Illuminate\Validation\Rule;
 use App\Models\CreditConversion;
 use App\Services\CreditConversionService;
 use App\Services\NotificationService;
+use App\Models\LeaveRecall;
 
 
 class HRController extends Controller
@@ -39,7 +40,7 @@ class HRController extends Controller
     ]);
 }
 
-   public function storeEmployee(Request $request)
+public function storeEmployee(Request $request)
 {
     $validated = $request->validate([
         'firstname' => 'required|string|max:255',
@@ -59,6 +60,7 @@ class HRController extends Controller
         'email' => 'required|email|unique:users,email',
         'password' => 'required|string|min:6',
         'role' => 'required|in:employee,hr,admin,dept_head',
+        'is_primary' => 'nullable|boolean', // Add this validation
     ]);
 
     try {
@@ -77,21 +79,28 @@ class HRController extends Controller
             'contact_number' => $validated['contact_number'],
             'address' => $validated['address'],
             'civil_status' => $validated['civil_status'],
-            'biometric_id' => $validated['biometric_id']?? null,
+            'biometric_id' => $validated['biometric_id'] ?? null,
             'monthly_salary' => $validated['monthly_salary'],
             'daily_rate' => $validated['daily_rate'],
         ]);
 
-        // 2. Create the user and link to employee
+        // 2. Determine if this user should be primary admin
+        $isPrimary = false;
+        if ($validated['role'] === 'admin' && isset($validated['is_primary']) && $validated['is_primary']) {
+            $isPrimary = true;
+        }
+
+        // 3. Create the user and link to employee
         User::create([
             'name' => $validated['firstname'] . ' ' . $validated['lastname'],
             'email' => $validated['email'],
             'password' => bcrypt($validated['password']),
             'role' => $validated['role'],
             'employee_id' => $employee->employee_id,
+            'is_primary' => $isPrimary, // Add this
         ]);
 
-        // 3. Create default leave credit record for the new employee
+        // 4. Create default leave credit record for the new employee
         LeaveCredit::create([
             'employee_id' => $employee->employee_id,
             'sl_balance' => 0,
@@ -152,7 +161,14 @@ public function updateEmployee(Request $request, Employee $employee)
         ],
         'monthly_salary' => 'nullable|numeric|min:0',
         'daily_rate' => 'nullable|numeric|min:0',
+        'role' => 'required|in:employee,hr,admin,dept_head',
+        'is_primary' => 'nullable|boolean',
     ]);
+
+
+    if ($validated['role'] !== 'admin' && isset($validated['is_primary']) && $validated['is_primary']) {
+        return redirect()->back()->withErrors(['error' => 'Only admin users can be set as primary.']);
+    }
 
     // Prepare update data - only include fields that were actually provided
     $updateData = [];
@@ -543,117 +559,133 @@ public function showLeaveRequest($id)
     ]);
 }
 public function approveLeaveRequest(Request $request, $id)
-{
-    $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
+    {
+        $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
 
-    // Validate that the request is pending
-    if ($leaveRequest->status !== 'pending') {
-        return back()->withErrors(['message' => 'This request has already been processed.']);
-    }
+        // Validate that the request is pending
+        if ($leaveRequest->status !== 'pending') {
+            return back()->withErrors(['message' => 'This request has already been processed.']);
+        }
 
-    // Update the leave request status
-    $leaveRequest->update(['status' => 'approved']);
-
-    // Create approval record
-    \App\Models\LeaveApproval::create([
-        'leave_id' => $leaveRequest->id,
-        'approved_by' => $request->user()->id,
-        'role' => 'hr',
-        'status' => 'approved',
-        'remarks' => $request->remarks,
-        'approved_at' => now(),
-    ]);
-
-    // Send notification to employee
-    $notificationService = new NotificationService();
-    $notificationService->createLeaveRequestNotification(
-        $leaveRequest->employee_id,
-        'approved',
-        $id,
-        $leaveRequest->leaveType->name ?? 'Leave',
-        $leaveRequest->date_from,
-        $leaveRequest->date_to
-    );
-
-    return redirect()->route('hr.leave-requests')
-        ->with('success', 'Leave request approved successfully.');
-}
-
-public function rejectLeaveRequest(Request $request, $id)
-{
-    $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
-
-    // Validate that the request is pending
-    if ($leaveRequest->status !== 'pending') {
-        return back()->withErrors(['message' => 'This request has already been processed.']);
-    }
-
-    $request->validate([
-        'remarks' => 'required|string|max:500',
-    ]);
-
-    // Update the leave request status
-    $leaveRequest->update(['status' => 'rejected']);
-
-    // Create approval record
-    \App\Models\LeaveApproval::create([
-        'leave_id' => $leaveRequest->id,
-        'approved_by' => $request->user()->id,
-        'role' => 'hr',
-        'status' => 'rejected',
-        'remarks' => $request->remarks,
-        'approved_at' => now(),
-    ]);
-
-    // Send notification to employee
-    $notificationService = new NotificationService();
-    $notificationService->createLeaveRequestNotification(
-        $leaveRequest->employee_id,
-        'rejected',
-        $id,
-        $leaveRequest->leaveType->name ?? 'Leave',
-        $leaveRequest->date_from,
-        $leaveRequest->date_to
-    );
-
-    return redirect()->route('hr.leave-requests')
-        ->with('success', 'Leave request rejected successfully.');
-}
-
-public function bulkAction(Request $request)
-{
-    $request->validate([
-        'action' => 'required|in:approve,reject',
-        'request_ids' => 'required|array',
-        'request_ids.*' => 'exists:leave_requests,id',
-        'remarks' => 'required_if:action,reject|string|max:500',
-    ]);
-
-    $leaveRequests = LeaveRequest::whereIn('id', $request->request_ids)
-        ->where('status', 'pending')
-        ->get();
-
-    foreach ($leaveRequests as $leaveRequest) {
         // Update the leave request status
-        $leaveRequest->update([
-            'status' => $request->action === 'approve' ? 'approved' : 'rejected',
-        ]);
+        $leaveRequest->update(['status' => 'approved']);
 
         // Create approval record
         \App\Models\LeaveApproval::create([
             'leave_id' => $leaveRequest->id,
             'approved_by' => $request->user()->id,
             'role' => 'hr',
-            'status' => $request->action === 'approve' ? 'approved' : 'rejected',
+            'status' => 'approved',
             'remarks' => $request->remarks,
             'approved_at' => now(),
         ]);
+
+        // Send notification to employee - UPDATED STATUS
+        $notificationService = new NotificationService();
+        $notificationService->createLeaveRequestNotification(
+            $leaveRequest->employee_id,
+            'hr_approved', // Changed from 'approved' to 'hr_approved'
+            $id,
+            $leaveRequest->leaveType->name ?? 'Leave',
+            $leaveRequest->date_from,
+            $leaveRequest->date_to,
+            $request->remarks
+        );
+
+        return redirect()->route('hr.leave-requests')
+            ->with('success', 'Leave request approved successfully.');
     }
 
-    $action = $request->action === 'approve' ? 'approved' : 'rejected';
-    return redirect()->route('hr.leave-requests')
-        ->with('success', count($leaveRequests) . " leave requests {$action} successfully.");
-}
+    public function rejectLeaveRequest(Request $request, $id)
+    {
+        $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
+
+        // Validate that the request is pending
+        if ($leaveRequest->status !== 'pending') {
+            return back()->withErrors(['message' => 'This request has already been processed.']);
+        }
+
+        $request->validate([
+            'remarks' => 'required|string|max:500',
+        ]);
+
+        // Update the leave request status
+        $leaveRequest->update(['status' => 'rejected']);
+
+        // Create approval record
+        \App\Models\LeaveApproval::create([
+            'leave_id' => $leaveRequest->id,
+            'approved_by' => $request->user()->id,
+            'role' => 'hr',
+            'status' => 'rejected',
+            'remarks' => $request->remarks,
+            'approved_at' => now(),
+        ]);
+
+        // Send notification to employee - UPDATED STATUS
+        $notificationService = new NotificationService();
+        $notificationService->createLeaveRequestNotification(
+            $leaveRequest->employee_id,
+            'hr_rejected', // Changed from 'rejected' to 'hr_rejected'
+            $id,
+            $leaveRequest->leaveType->name ?? 'Leave',
+            $leaveRequest->date_from,
+            $leaveRequest->date_to,
+            $request->remarks
+        );
+
+        return redirect()->route('hr.leave-requests')
+            ->with('success', 'Leave request rejected successfully.');
+    }
+
+    public function bulkAction(Request $request)
+    {
+        $request->validate([
+            'action' => 'required|in:approve,reject',
+            'request_ids' => 'required|array',
+            'request_ids.*' => 'exists:leave_requests,id',
+            'remarks' => 'required_if:action,reject|string|max:500',
+        ]);
+
+        $leaveRequests = LeaveRequest::whereIn('id', $request->request_ids)
+            ->where('status', 'pending')
+            ->get();
+
+        $notificationService = new NotificationService();
+
+        foreach ($leaveRequests as $leaveRequest) {
+            // Update the leave request status
+            $leaveRequest->update([
+                'status' => $request->action === 'approve' ? 'approved' : 'rejected',
+            ]);
+
+            // Create approval record
+            \App\Models\LeaveApproval::create([
+                'leave_id' => $leaveRequest->id,
+                'approved_by' => $request->user()->id,
+                'role' => 'hr',
+                'status' => $request->action === 'approve' ? 'approved' : 'rejected',
+                'remarks' => $request->remarks,
+                'approved_at' => now(),
+            ]);
+
+            // Send notification to employee - UPDATED STATUS
+            $status = $request->action === 'approve' ? 'hr_approved' : 'hr_rejected';
+            $notificationService->createLeaveRequestNotification(
+                $leaveRequest->employee_id,
+                $status,
+                $leaveRequest->id,
+                $leaveRequest->leaveType->name ?? 'Leave',
+                $leaveRequest->date_from,
+                $leaveRequest->date_to,
+                $request->remarks
+            );
+        }
+
+        $action = $request->action === 'approve' ? 'approved' : 'rejected';
+        return redirect()->route('hr.leave-requests')
+            ->with('success', count($leaveRequests) . " leave requests {$action} successfully.");
+    }
 
 public function show($id)
 {
@@ -918,6 +950,121 @@ private function getLeaveTypeColor($leaveTypeCode)
         } catch (\Exception $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
+    }
+
+    // LEAVE RECALL REQUESTS MANAGEMENT
+    
+    /**
+     * Display a listing of recall requests that need HR approval
+     */
+    public function recallRequests(Request $request)
+    {
+        $recallRequests = LeaveRecall::with([
+            'leaveRequest.leaveType',
+            'employee.department',
+            'approvedByDeptHead'
+        ])
+        ->where('status', 'pending')
+        ->whereNotNull('approved_by_depthead')
+        ->orderBy('created_at', 'desc')
+        ->get();
+
+        return Inertia::render('HR/RecallRequests', [
+            'recallRequests' => $recallRequests
+        ]);
+    }
+
+    /**
+     * Approve a recall request
+     */
+    public function approveRecallRequest(Request $request, $id)
+    {
+        $request->validate([
+            'remarks' => 'nullable|string|max:500'
+        ]);
+
+        try {
+            $recallRequest = LeaveRecall::findOrFail($id);
+            
+            // Check if already processed
+            if ($recallRequest->status !== 'pending') {
+                return back()->with('error', 'This recall request has already been processed.');
+            }
+
+            // Check if dept head approval exists
+            if (!$recallRequest->approved_by_depthead) {
+                return back()->with('error', 'This recall request needs department head approval first.');
+            }
+
+            // Update recall request
+            $recallRequest->update([
+                'status' => 'approved',
+                'approved_by_hr' => $request->user()->id
+            ]);
+
+            // Update the original leave request dates
+            $leaveRequest = $recallRequest->leaveRequest;
+            $leaveRequest->update([
+                'date_from' => $recallRequest->new_leave_date_from,
+                'date_to' => $recallRequest->new_leave_date_to
+            ]);
+
+            // Send notification to employee
+            $notificationService = new NotificationService();
+            $notificationService->createLeaveRecallNotification(
+                $recallRequest->employee_id,
+                'approved',
+                $recallRequest->id,
+                $recallRequest->leaveRequest->leaveType->name ?? 'Leave',
+                $recallRequest->new_leave_date_from,
+                $recallRequest->new_leave_date_to
+            );
+
+            return redirect()->route('hr.recall-requests')->with('success', 'Recall request approved successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Reject a recall request
+     */
+    public function rejectRecallRequest(Request $request, $id)
+    {
+        $request->validate([
+            'remarks' => 'required|string|max:500'
+        ]);
+
+        try {
+            $recallRequest = LeaveRecall::findOrFail($id);
+            
+            // Check if already processed
+            if ($recallRequest->status !== 'pending') {
+                return back()->with('error', 'This recall request has already been processed.');
+            }
+
+            // Update recall request
+            $recallRequest->update([
+                'status' => 'rejected',
+                'approved_by_hr' => $request->user()->id
+            ]);
+
+            // Send notification to employee
+            $notificationService = new NotificationService();
+            $notificationService->createLeaveRecallNotification(
+                $recallRequest->employee_id,
+                'rejected',
+                $recallRequest->id,
+                $recallRequest->leaveRequest->leaveType->name ?? 'Leave',
+                $recallRequest->new_leave_date_from,
+                $recallRequest->new_leave_date_to,
+                $request->remarks
+            );
+
+            return redirect()->route('hr.recall-requests')->with('success', 'Recall request rejected successfully!');
+        } catch (\Exception $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
 
 }

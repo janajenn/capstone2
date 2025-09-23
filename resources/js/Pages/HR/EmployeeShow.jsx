@@ -1,6 +1,6 @@
 // resources/js/Pages/HR/EmployeeShow.jsx
 import HRLayout from '@/Layouts/HRLayout';
-import { usePage,Link  } from '@inertiajs/react';
+import { usePage, Link } from '@inertiajs/react';
 
 export default function EmployeeShow() {
     const { employee } = usePage().props;
@@ -45,9 +45,21 @@ export default function EmployeeShow() {
                                     <p className="text-blue-100">{employee.position}</p>
                                 </div>
                             </div>
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${employee.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}>
-                                {employee.status?.toUpperCase()}
-                            </span>
+                            <div className="flex flex-col items-end space-y-2">
+                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${employee.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`}>
+                                    {employee.status?.toUpperCase()}
+                                </span>
+                                {employee.user?.role === 'admin' && employee.user?.is_primary && (
+                                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500">
+                                        PRIMARY ADMIN
+                                    </span>
+                                )}
+                                {employee.user?.role === 'admin' && !employee.user?.is_primary && (
+                                    <span className="px-3 py-1 rounded-full text-sm font-medium bg-gray-500">
+                                        ADMIN
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -100,6 +112,43 @@ export default function EmployeeShow() {
                                 </div>
                             </div>
 
+                            {/* User Account Information */}
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">User Account</h2>
+                                <div className="space-y-3">
+                                    <div className="flex">
+                                        <div className="w-1/3 text-gray-500">Email</div>
+                                        <div className="w-2/3 font-medium">{employee.user?.email || 'N/A'}</div>
+                                    </div>
+                                    <div className="flex">
+                                        <div className="w-1/3 text-gray-500">Role</div>
+                                        <div className="w-2/3 font-medium capitalize">
+                                            {employee.user?.role || 'N/A'}
+                                            {employee.user?.is_primary && employee.user?.role === 'admin' && (
+                                                <span className="ml-2 text-purple-600 text-sm">(Primary)</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex">
+                                        <div className="w-1/3 text-gray-500">Account Status</div>
+                                        <div className="w-2/3 font-medium">
+                                            {employee.user ? 'Active' : 'No Account'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Contact Information */}
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Contact Information</h2>
+                                <div className="space-y-3">
+                                    <div className="flex">
+                                        <div className="w-1/3 text-gray-500">Address</div>
+                                        <div className="w-2/3 font-medium">{employee.address || 'N/A'}</div>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Compensation */}
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Compensation</h2>
@@ -115,21 +164,6 @@ export default function EmployeeShow() {
                                         <div className="w-2/3 font-medium">
                                             {formatCurrency(employee.daily_rate)}
                                         </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Contact Information */}
-                            <div>
-                                <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">Contact Information</h2>
-                                <div className="space-y-3">
-                                    <div className="flex">
-                                        <div className="w-1/3 text-gray-500">Email</div>
-                                        <div className="w-2/3 font-medium">{employee.user?.email || 'N/A'}</div>
-                                    </div>
-                                    <div className="flex">
-                                        <div className="w-1/3 text-gray-500">Address</div>
-                                        <div className="w-2/3 font-medium">{employee.address || 'N/A'}</div>
                                     </div>
                                 </div>
                             </div>
@@ -159,19 +193,18 @@ export default function EmployeeShow() {
                         {/* Action Buttons */}
                         <div className="mt-8 pt-5 border-t border-gray-200 flex justify-end space-x-3">
                             <Link
-                    href={route('hr.employees')}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                    Back to List
-                </Link>
+                                href={route('hr.employees')}
+                                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                                Back to List
+                            </Link>
 
-
-                <Link
-    href={route('hr.employees.edit', employee.employee_id)}
-    className="px-4 py-2 bg-blue-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
->
-    Edit Employee
-</Link>
+                            <Link
+                                href={route('hr.employees.edit', employee.employee_id)}
+                                className="px-4 py-2 bg-blue-600 border border-transparent rounded-md text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                                Edit Employee
+                            </Link>
                         </div>
                     </div>
                 </div>

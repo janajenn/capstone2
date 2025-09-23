@@ -80,4 +80,9 @@ public $incrementing = true;
     {
         return $this->notifications()->unread();
     }
+
+    public function leaveRecalls()
+    {
+        return $this->hasMany(LeaveRecall::class, 'employee_id', 'employee_id');
+    }
 }

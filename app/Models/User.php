@@ -17,7 +17,7 @@ class User extends Authenticatable
      *
      * @var array<int, string>
      */
-     protected $fillable = ['name', 'email', 'password', 'role', 'employee_id'];
+     protected $fillable = ['name', 'email', 'password', 'role', 'employee_id', 'is_primary'];
 
     public function employee()
 {
@@ -35,6 +35,105 @@ class User extends Authenticatable
     return $this->hasOne(\App\Models\LeaveCredit::class, 'employee_id', 'employee_id');
 }
 
+    public function deptHeadApprovals()
+    {
+        return $this->hasMany(LeaveRecall::class, 'approved_by_depthead');
+    }
+
+    public function hrApprovals()
+    {
+        return $this->hasMany(LeaveRecall::class, 'approved_by_hr');
+    }
+
+    // App\Models\User.php
+
+
+
+
+    public static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($user) {
+            if ($user->is_primary && $user->role === 'admin') {
+                // Remove primary status from other admins
+                self::where('is_primary', true)->where('role', 'admin')->update(['is_primary' => false]);
+            }
+        });
+
+        static::updating(function ($user) {
+            if ($user->is_primary && $user->role === 'admin' && $user->isDirty('is_primary')) {
+                // Remove primary status from other admins
+                self::where('is_primary', true)
+                    ->where('role', 'admin')
+                    ->where('id', '!=', $user->id)
+                    ->update(['is_primary' => false]);
+            }
+            
+            // If role is changed from admin to something else, remove primary status
+            if ($user->isDirty('role') && $user->role !== 'admin' && $user->is_primary) {
+                $user->is_primary = false;
+            }
+        });
+    }
+
+    // Make this method STATIC
+    public static function getCurrentApprover()
+    {
+        // Check for currently active delegation (started and not ended)
+        $activeDelegation = \App\Models\DelegatedApprover::active()->first();
+        
+        if ($activeDelegation) {
+            return $activeDelegation->toAdmin;
+        }
+    
+        // If no active delegation, check primary admin
+        $primaryAdmin = self::where('role', 'admin')->where('is_primary', true)->first();
+        return $primaryAdmin;
+    }
+
+    // Instance method to check if this user is the current active approver
+    public function isActiveApprover()
+    {
+        $currentApprover = self::getCurrentApprover();
+        return $currentApprover && $currentApprover->id === $this->id;
+    }
+
+    // Check if this user can delegate approval
+    public function canDelegateApproval()
+    {
+        return $this->isActiveApprover() && $this->role === 'admin';
+    }
+
+    // Get active delegation from this user (if any)
+    public function activeDelegationFrom()
+    {
+        return $this->hasOne(DelegatedApprover::class, 'from_admin_id')
+            ->active()
+            ->with('toAdmin');
+    }
+
+    // Get active delegation to this user (if any)
+    public function activeDelegationTo()
+    {
+        return $this->hasOne(DelegatedApprover::class, 'to_admin_id')
+            ->active()
+            ->with('fromAdmin');
+    }
+
+    // Get all admins except this user
+    public function getOtherAdmins()
+    {
+        return self::where('role', 'admin')
+            ->where('id', '!=', $this->id)
+            ->get();
+    }
+
+    // Get primary admin (static method)
+    public static function getPrimaryAdmin()
+    {
+        return self::where('role', 'admin')->where('is_primary', true)->first();
+    }
 
 
 
@@ -58,5 +157,6 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
+        'is_primary' => 'boolean',
     ];
 }

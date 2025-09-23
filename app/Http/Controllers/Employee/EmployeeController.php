@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Carbon\Carbon;
 use App\Models\User;
+use Illuminate\Pagination\Paginator;
 
 
 class EmployeeController extends Controller
@@ -239,6 +240,7 @@ public function submitLeaveRequest(Request $request)
 
 
    // In EmployeeController.php
+// In EmployeeController.php
 public function myLeaveRequests(Request $request)
 {
     $user = $request->user()->load('employee');
@@ -248,16 +250,23 @@ public function myLeaveRequests(Request $request)
         abort(400, 'Employee profile not found for user.');
     }
 
-    $leaveRequests = LeaveRequest::with(['leaveType', 'details', 'approvals'])
+    $leaveRequests = LeaveRequest::with(['leaveType', 'details', 'approvals', 'recalls'])
         ->where('employee_id', $employeeId)
         ->orderBy('created_at', 'desc')
-        ->get();
+        ->paginate(5);
+
+    // Debug: Check the structure
+    logger('Pagination structure:', [
+        'has_data' => $leaveRequests->count(),
+        'total' => $leaveRequests->total(),
+        'structure' => $leaveRequests->toArray()
+    ]);
 
     return Inertia::render('Employee/MyLeaveRequests', [
         'leaveRequests' => $leaveRequests,
+        'employee' => $user->employee,
     ]);
 }
-
 
 //employee calendar
 

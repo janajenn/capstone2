@@ -3,7 +3,11 @@ import { Head, useForm } from '@inertiajs/react';
 import { useState, useEffect, useRef } from 'react';
 import Swal from 'sweetalert2';
 
-export default function Dashboard({ initialLeaveRequests = [], departmentName }) {
+export default function Dashboard({ 
+    initialLeaveRequests = [], 
+    departmentName, 
+    stats 
+}) {
     const [leaveRequests, setLeaveRequests] = useState(() => initialLeaveRequests || []);
     const [rejectingId, setRejectingId] = useState(null);
     const [rejectRemarks, setRejectRemarks] = useState('');
@@ -11,7 +15,7 @@ export default function Dashboard({ initialLeaveRequests = [], departmentName })
     const { post } = useForm();
     const pollingIntervalRef = useRef(null);
     const isMountedRef = useRef(true);
-    const isInitialLoadRef = useRef(true); // Add this flag
+    const isInitialLoadRef = useRef(true);
     const knownRequestIds = useRef(new Set(initialLeaveRequests.map(r => r.id)));
 
     useEffect(() => {
@@ -134,6 +138,85 @@ export default function Dashboard({ initialLeaveRequests = [], departmentName })
 
             <div className="py-12">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+
+{/* Statistics Cards */}
+<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        {/* Total Employees Card */}
+                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                            <div className="p-5">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0">
+                                        <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <div className="ml-5 w-0 flex-1">
+                                        <dl>
+                                            <dt className="text-sm font-medium text-gray-500 truncate">
+                                                Total Employees
+                                            </dt>
+                                            <dd className="text-lg font-medium text-gray-900">
+                                                {stats.totalEmployees}
+                                            </dd>
+                                        </dl>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Approved Leave Requests Card */}
+                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                            <div className="p-5">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0">
+                                        <div className="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <div className="ml-5 w-0 flex-1">
+                                        <dl>
+                                            <dt className="text-sm font-medium text-gray-500 truncate">
+                                                Approved Leaves
+                                            </dt>
+                                            <dd className="text-lg font-medium text-gray-900">
+                                                {stats.approvedLeaveRequests}
+                                            </dd>
+                                        </dl>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Rejected Leave Requests Card */}
+                        <div className="bg-white overflow-hidden shadow rounded-lg">
+                            <div className="p-5">
+                                <div className="flex items-center">
+                                    <div className="flex-shrink-0">
+                                        <div className="w-8 h-8 bg-red-500 rounded-md flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <div className="ml-5 w-0 flex-1">
+                                        <dl>
+                                            <dt className="text-sm font-medium text-gray-500 truncate">
+                                                Rejected Leaves
+                                            </dt>
+                                            <dd className="text-lg font-medium text-gray-900">
+                                                {stats.rejectedLeaveRequests}
+                                            </dd>
+                                        </dl>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                         <div className="p-6 bg-white border-b border-gray-200">
                             <div className="flex justify-between items-center mb-6">

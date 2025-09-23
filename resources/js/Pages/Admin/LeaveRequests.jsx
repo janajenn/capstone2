@@ -1,17 +1,18 @@
-import DeptHeadLayout from '@/Layouts/DeptHeadLayout';
-import { Head, useForm, router } from '@inertiajs/react';
-import { useState } from 'react';
+import AdminLayout from "@/Layouts/AdminLayout";
+import { Head, useForm, router } from "@inertiajs/react";
+import { useState } from "react";
+import Swal from "sweetalert2";
 
 const statusColors = {
     pending: 'bg-yellow-100 text-yellow-800',
-    approved_by_dept_head: 'bg-blue-100 text-blue-800',
+    approved_by_admin: 'bg-blue-100 text-blue-800',
     fully_approved: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800'
 };
 
 const statusLabels = {
     pending: 'Pending',
-    approved_by_dept_head: 'Approved by Dept Head',
+    approved_by_admin: 'Approved by Admin',
     fully_approved: 'Fully Approved',
     rejected: 'Rejected'
 };
@@ -24,19 +25,21 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function LeaveRequests({ leaveRequests, departmentName, filters, flash }) {
+export default function LeaveRequests({ leaveRequests: initialLeaveRequests, filters, flash, currentApprover, isActiveApprover }) {
+    // Fix: Use different name for state - renamed to leaveRequestsData
+    const [leaveRequestsData, setLeaveRequestsData] = useState(initialLeaveRequests);
     const [selectedStatus, setSelectedStatus] = useState(filters.status || 'all');
     const [rejectingId, setRejectingId] = useState(null);
     const [rejectRemarks, setRejectRemarks] = useState('');
-    const { post } = useForm();
 
+    // Update filteredRequests to use leaveRequestsData instead of leaveRequests
     const filteredRequests = selectedStatus === 'all' 
-        ? leaveRequests 
-        : leaveRequests.filter(req => {
+        ? leaveRequestsData 
+        : leaveRequestsData.filter(req => {
             if (selectedStatus === 'pending') {
-                return req.status === 'pending' && !req.dept_head_approval;
-            } else if (selectedStatus === 'approved_by_dept_head') {
-                return req.dept_head_approval?.status === 'approved' && req.status === 'pending';
+                return req.status === 'pending' && !req.admin_approval;
+            } else if (selectedStatus === 'approved_by_admin') {
+                return req.admin_approval?.status === 'approved' && req.status === 'pending';
             } else if (selectedStatus === 'fully_approved') {
                 return req.status === 'approved' && req.admin_approval?.status === 'approved';
             } else if (selectedStatus === 'rejected') {
@@ -46,48 +49,161 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
         });
 
     const handleApprove = (id) => {
-        if (confirm('Are you sure you want to approve this leave request?')) {
-            post(route('dept_head.leave-requests.approve', id), {
-                onSuccess: () => {
-                    // Success handled by flash message
-                }
-            });
-        }
+        Swal.fire({
+            title: "Approve this leave request?",
+            text: "This will approve the leave request and deduct leave credits if applicable",
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: "Yes, approve",
+            cancelButtonText: "Cancel",
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.post(route('admin.leave-requests.approve', id), {}, {
+                    preserveScroll: true,
+                    preserveState: true,
+                    onSuccess: () => {
+                        // Remove the approved request from the list
+                        setLeaveRequestsData((prev) => prev.filter((r) => r.id !== id));
+                        Swal.fire(
+                            "Approved!",
+                            "The leave request has been approved.",
+                            "success"
+                        );
+                    },
+                    onError: (errors) => {
+                        console.error('Approval error:', errors);
+                        let errorMessage = "There was a problem approving the request";
+
+                        if (errors.error) {
+                            errorMessage = errors.error;
+                        } else if (errors.message) {
+                            errorMessage = errors.message;
+                        }
+
+                        Swal.fire(
+                            "Error",
+                            errorMessage,
+                            "error"
+                        );
+                    },
+                });
+            }
+        });
     };
 
     const handleReject = (id) => {
         if (!rejectRemarks.trim()) {
-            alert('Please provide rejection remarks.');
+            Swal.fire("Error", "Please enter rejection remarks", "error");
             return;
         }
 
-        post(route('dept_head.leave-requests.reject', id), {
-            remarks: rejectRemarks,
+        router.post(route('admin.leave-requests.reject', id), {
+            remarks: rejectRemarks
+        }, {
+            preserveScroll: true,
+            preserveState: true,
             onSuccess: () => {
+                // Remove the rejected request from the list
+                setLeaveRequestsData((prev) => prev.filter((r) => r.id !== id));
                 setRejectingId(null);
-                setRejectRemarks('');
-            }
+                setRejectRemarks("");
+                Swal.fire("Rejected!", "The leave request has been rejected.", "success");
+            },
+            onError: (errors) => {
+                console.error('Rejection error:', errors);
+                let errorMessage = "There was a problem rejecting the request";
+                
+                if (errors.remarks) {
+                    errorMessage = errors.remarks[0];
+                } else if (errors.error) {
+                    errorMessage = errors.error;
+                } else if (errors.message) {
+                    errorMessage = errors.message;
+                }
+                
+                Swal.fire("Error", errorMessage, "error");
+            },
         });
     };
 
     const getRequestStatus = (request) => {
         if (request.status === 'rejected') return 'rejected';
         if (request.status === 'approved' && request.admin_approval?.status === 'approved') return 'fully_approved';
-        if (request.dept_head_approval?.status === 'approved') return 'approved_by_dept_head';
+        if (request.admin_approval?.status === 'approved') return 'approved_by_admin';
         return 'pending';
     };
 
-    return (
-        <DeptHeadLayout>
-            <Head title="Leave Requests Management" />
+    // Show unauthorized message if user is not active approver
+    if (!isActiveApprover) {
+        return (
+            <AdminLayout>
+                <Head title="Leave Requests Management" />
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+                    <div className="max-w-md w-full bg-white rounded-lg shadow-md p-6 text-center">
+                        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-yellow-100">
+                            <svg className="h-8 w-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                        </div>
+                        
+                        <h2 className="mt-4 text-xl font-bold text-gray-900">Approval Rights Delegated</h2>
+                        
+                        <p className="mt-2 text-gray-600">
+                            You are not currently authorized to approve leave requests.
+                        </p>
+                        
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                            <p className="text-sm text-blue-700">
+                                <strong>Current Approver:</strong> {currentApprover.name}
+                            </p>
+                            {currentApprover.is_primary && (
+                                <span className="inline-block mt-1 px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full">
+                                    Primary Admin
+                                </span>
+                            )}
+                        </div>
+                        
+                        <div className="mt-6 space-y-3">
+                            <button
+                                onClick={() => router.visit(route('admin.delegation.index'))}
+                                className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                            >
+                                Manage Delegation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </AdminLayout>
+        );
+    }
 
+    return (
+        <AdminLayout>
+            <Head title="Leave Requests Management" />
             <div className="min-h-screen bg-gray-50 p-6">
-                {/* Header Section */}
+                {/* Header with current approver status */}
                 <div className="mb-6">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-800">Leave Requests Management</h1>
-                            <p className="text-gray-600 mt-1">Manage leave requests for {departmentName} department</p>
+                            <p className="text-gray-600 mt-1">Manage all leave requests in the system</p>
+                        </div>
+                        <div className="mt-4 md:mt-0">
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-sm font-medium text-green-800">
+                                            You are currently the active approver
+                                        </p>
+                                        <p className="text-xs text-green-600">
+                                            {currentApprover.is_primary ? 'Primary Admin' : 'Delegated Approver'}
+                                        </p>
+                                    </div>
+                                    <svg className="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -147,14 +263,14 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                             Pending
                         </button>
                         <button
-                            onClick={() => setSelectedStatus('approved_by_dept_head')}
+                            onClick={() => setSelectedStatus('approved_by_admin')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                selectedStatus === 'approved_by_dept_head'
+                                selectedStatus === 'approved_by_admin'
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                         >
-                            Approved by Dept Head
+                            Approved by Admin
                         </button>
                         <button
                             onClick={() => setSelectedStatus('fully_approved')}
@@ -192,10 +308,10 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                         Leave Type
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Dates
+                                        Certification
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Duration
+                                        Dept Head Approval
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status
@@ -219,22 +335,53 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                                             </svg>
                                                         </div>
                                                         <div className="ml-4">
-                                                            <div className="text-sm font-medium text-gray-900">{request.employee_name}</div>
-                                                            <div className="text-sm text-gray-500">{request.position}</div>
+                                                            <div className="text-sm font-medium text-gray-900">
+                                                                {request.employee.firstname} {request.employee.lastname}
+                                                            </div>
+                                                            <div className="text-sm text-gray-500">{request.employee.department}</div>
+                                                            <div className="text-sm text-gray-500">{request.employee.position}</div>
                                                         </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">{request.leave_type}</div>
-                                                    <div className="text-sm text-gray-500">({request.leave_type_code})</div>
+                                                    <div className="text-sm text-gray-900">{request.leaveType.name}</div>
+                                                    <div className="text-sm text-gray-500">({request.leaveType.code})</div>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">
-                                                        {formatDate(request.date_from)} to {formatDate(request.date_to)}
-                                                    </div>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {request.hr_approval ? (
+                                                        <div className="flex flex-col">
+                                                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 mb-1">
+                                                                Certified by HR
+                                                            </span>
+                                                            <span className="text-xs text-gray-500">
+                                                                {new Date(
+                                                                    request.hr_approval.approved_at
+                                                                ).toLocaleDateString()}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                                            Pending HR Certification
+                                                        </span>
+                                                    )}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">{request.total_days} days</div>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {request.dept_head_approval ? (
+                                                        <div className="flex flex-col">
+                                                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 mb-1">
+                                                                Approved by Dept Head
+                                                            </span>
+                                                            <span className="text-xs text-gray-500">
+                                                                {new Date(
+                                                                    request.dept_head_approval.approved_at
+                                                                ).toLocaleDateString()}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                                            Pending Dept Head
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[status]}`}>
@@ -260,7 +407,10 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                                                     Confirm Reject
                                                                 </button>
                                                                 <button
-                                                                    onClick={() => setRejectingId(null)}
+                                                                    onClick={() => {
+                                                                        setRejectingId(null);
+                                                                        setRejectRemarks(""); // Clear remarks when canceling
+                                                                    }}
                                                                     className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
                                                                 >
                                                                     Cancel
@@ -273,34 +423,18 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                                                 <>
                                                                     <button
                                                                         onClick={() => handleApprove(request.id)}
-                                                                        className="text-green-600 hover:text-green-900 transition-colors flex items-center"
+                                                                        className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
                                                                     >
-                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                                        </svg>
                                                                         Approve
                                                                     </button>
                                                                     <button
                                                                         onClick={() => setRejectingId(request.id)}
-                                                                        className="text-red-600 hover:text-red-900 transition-colors flex items-center"
+                                                                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                                                                     >
-                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                                        </svg>
                                                                         Reject
                                                                     </button>
                                                                 </>
                                                             )}
-                                                            <button
-                                                                onClick={() => router.visit(route('dept_head.leave-requests.show', request.id))}
-                                                                className="text-blue-600 hover:text-blue-900 transition-colors flex items-center"
-                                                            >
-                                                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2 15.5v-11a2 2 0 012-2h16a2 2 0 012 2v11a2 2 0 01-2 2H4a2 2 0 01-2-2z" />
-                                                                </svg>
-                                                                View
-                                                            </button>
                                                         </div>
                                                     )}
                                                 </td>
@@ -316,7 +450,7 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                             <h3 className="mt-2 text-sm font-medium text-gray-900">No leave requests found</h3>
                                             <p className="mt-1 text-sm text-gray-500">
                                                 {selectedStatus === 'all' 
-                                                    ? 'There are no leave requests in your department.' 
+                                                    ? 'There are no leave requests in the system.' 
                                                     : `There are no ${statusLabels[selectedStatus]?.toLowerCase()} leave requests.`}
                                             </p>
                                         </td>
@@ -327,6 +461,6 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                     </div>
                 </div>
             </div>
-        </DeptHeadLayout>
+        </AdminLayout>
     );
 }

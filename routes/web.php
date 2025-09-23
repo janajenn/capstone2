@@ -52,12 +52,22 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
     Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve'])->name('admin.leave-requests.approve');
     Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject'])->name('admin.leave-requests.reject');
     Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests'])->name('admin.updated-requests');
+    
+    Route::get('/delegation', [AdminController::class, 'delegationIndex'])->name('admin.delegation');
+    Route::post('/delegate-approval', [AdminController::class, 'delegateApproval'])->name('admin.delegate-approval');
+    Route::post('/end-delegation/{id}', [AdminController::class, 'endDelegation'])->name('admin.end-delegation');
+    Route::post('/cancel-delegation/{id}', [AdminController::class, 'cancelDelegation'])->name('admin.cancel-delegation');
+
+    Route::get('/leave-requests', [AdminController::class, 'leaveRequests'])
+    ->name('admin.leave-requests.index');
+
+    
 });
 
 
 
 
-    Route::middleware(['auth'])->group(function () {
+    Route::middleware(['auth','role:hr'])->group(function () {
     // HR Dashboard
     Route::get('/hr/dashboard', [HRController::class, 'dashboard'])->name('hr.dashboard');
 
@@ -107,6 +117,11 @@ Route::post('/hr/leave-requests/{id}/approve', [HRController::class, 'approveLea
 Route::post('/hr/leave-requests/{id}/reject', [HRController::class, 'rejectLeaveRequest'])->name('hr.leave-requests.reject');
 Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'])->name('hr.leave-requests.bulk-action');
 
+// Leave Recall Request Routes (HR)
+Route::get('/hr/recall-requests', [HRController::class, 'recallRequests'])->name('hr.recall-requests');
+Route::post('/hr/recall-requests/{id}/approve', [HRController::class, 'approveRecallRequest'])->name('hr.recall-requests.approve');
+Route::post('/hr/recall-requests/{id}/reject', [HRController::class, 'rejectRecallRequest'])->name('hr.recall-requests.reject');
+
 // Leave Form Demo Route (for testing)
 Route::get('/leave-form-demo', function() {
     return Inertia::render('LeaveFormDemo');
@@ -129,11 +144,24 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
     // // Department Head Routes
 
     Route::middleware(['auth', 'role:dept_head'])->group(function () {
-    Route::get('/dept-head/dashboard', [DeptHeadController::class, 'dashboard'])->name('dept_head.dashboard');
-    Route::post('/dept-head/leave-requests/{id}/approve', [DeptHeadController::class, 'approve'])->name('dept_head.approve');
-    Route::post('/dept-head/leave-requests/{id}/reject', [DeptHeadController::class, 'reject'])->name('dept_head.reject');
-    Route::get('/dept-head/updated-requests', [DeptHeadController::class, 'getUpdatedRequests']);
-});
+        Route::get('/dept-head/dashboard', [DeptHeadController::class, 'dashboard'])->name('dept_head.dashboard');
+        Route::post('/dept-head/leave-requests/{id}/approve', [DeptHeadController::class, 'approve'])->name('dept_head.approve');
+        Route::post('/dept-head/leave-requests/{id}/reject', [DeptHeadController::class, 'reject'])->name('dept_head.reject');
+        Route::get('/dept-head/updated-requests', [DeptHeadController::class, 'getUpdatedRequests']) ;
+        Route::get('/dept-head/employees', [DeptHeadController::class, 'employees'])->name('dept_head.employees');
+        Route::delete('/dept-head/employees/{employee}/remove', [DeptHeadController::class, 'removeFromDepartment'])->name('dept_head.employees.remove');
+        Route::get('/dept-head/leave-calendar', [DeptHeadController::class, 'leaveCalendar'])->name('dept_head.leave-calendar');
+        // Leave Recall Request Routes (Dept Head)
+        Route::get('/dept-head/recall-requests', [DeptHeadController::class, 'recallRequests'])->name('dept_head.recall-requests');
+        Route::post('/dept-head/recall-requests/{id}/approve', [DeptHeadController::class, 'approveRecallRequest'])->name('dept_head.recall-requests.approve');
+        Route::post('/dept-head/recall-requests/{id}/reject', [DeptHeadController::class, 'rejectRecallRequest'])->name('dept_head.recall-requests.reject');
+
+        Route::get('/dept-head/leave-requests', [DeptHeadController::class, 'leaveRequests'])->name('dept_head.leave-requests');
+        Route::get('/dept-head/leave-requests/{id}', [DeptHeadController::class, 'showLeaveRequest'])->name('dept_head.leave-requests.show');
+        Route::post('/dept-head/leave-requests/{id}/approve', [DeptHeadController::class, 'approveLeaveRequest'])->name('dept_head.leave-requests.approve');
+        Route::post('/dept-head/leave-requests/{id}/reject', [DeptHeadController::class, 'rejectLeaveRequest'])->name('dept_head.leave-requests.reject');
+        
+    });
     //Route::middleware(['auth', 'role:dept_head'])->group(function () {
     //    Route::get('/dept-head/dashboard', [App\Http\Controllers\DeptHead\DeptHeadController::class, 'dashboard']);
     //     Route::get('/dept-head/leave-requests', [App\Http\Controllers\DeptHead\DeptHeadController::class, 'leaveRequests'])->name('dept_head.leave-requests');
@@ -151,7 +179,7 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
 
 
 
-    Route::middleware(['auth', 'role:employee'])->group(function () {
+    Route::middleware(['auth', 'role:employee,hr,dept_head,admin'])->group(function () {
         Route::get('/employee/dashboard', [EmployeeController::class, 'dashboard'])->name('employee.dashboard');
 
         Route::get('/employee/leave', [EmployeeController::class, 'showLeaveRequest'])->name('employee.leave.request');
@@ -188,6 +216,11 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
                 'is_authenticated' => auth()->check()
             ]);
         })->name('employee.test-csrf');
+        
+        // Leave Recall Routes
+        Route::get('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'index'])->name('employee.leave-recalls');
+        Route::post('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'store'])->name('employee.leave-recalls.store');
+        Route::get('/employee/leave-recalls/{leaveRecall}', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'show'])->name('employee.leave-recalls.show');
     });
 
-require __DIR__.'/auth.php';
+require __DIR__.'/auth.php';    

@@ -174,7 +174,7 @@ export default function Dashboard() {
 
                                 if (newRequests.length > 0) {
                                     const latestRequest = newRequests[0];
-                                    const employeeName = `${latestRequest.employee?.first_name} ${latestRequest.employee?.last_name}`;
+                                    const employeeName = `${latestRequest.employee?.firstname} ${latestRequest.employee?.middlename} ${latestRequest.employee?.lastname}`;
                                     const leaveType = latestRequest.leave_type?.name;
 
                                     // Play notification sound
@@ -465,7 +465,7 @@ export default function Dashboard() {
                                                     </div>
                                                     <div className="ml-4">
                                                         <div className="text-sm font-medium text-gray-900">
-                                                            {request.employee?.first_name} {request.employee?.last_name}
+                                                            {request.employee?.firstname} {request.employee?.middlename} {request.employee?.lastname}
                                                         </div>
                                                         <div className="text-sm text-gray-500">
                                                             {request.employee?.department?.name}

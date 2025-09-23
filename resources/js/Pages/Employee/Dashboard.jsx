@@ -9,8 +9,7 @@ export default function Dashboard() {
 
     return (
         <EmployeeLayout>
-            <h1 className="text-2xl font-bold">Employee Dashboard</h1>
-            <p className="mt-2">Welcome, {userName}!</p>
+            
 
             <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 bg-white rounded shadow">

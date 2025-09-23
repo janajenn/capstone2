@@ -24,7 +24,8 @@ export default function Employees({ employees, departments, filters }) {
         daily_rate: '',
         email: '',
         password: '',
-        role: 'employee'
+        role: 'employee',
+        is_primary: false
     });
 
     // Handle department filter change
@@ -352,6 +353,29 @@ export default function Employees({ employees, departments, filters }) {
                                 </select>
                                 {errors.role && <div className="text-red-500 text-xs mt-1">{errors.role}</div>}
                             </div>
+                             {/* Primary Admin Toggle - Only show for admin role */}
+                             {data.role === 'admin' && (
+                                <div className="md:col-span-2 lg:col-span-3">
+                                    <div className="flex items-center space-x-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                        <input
+                                            type="checkbox"
+                                            id="is_primary"
+                                            checked={data.is_primary}
+                                            onChange={e => setData('is_primary', e.target.checked)}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="is_primary" className="flex flex-col">
+                                            <span className="text-sm font-medium text-gray-700">
+                                                Set as Primary Admin
+                                            </span>
+                                            <span className="text-xs text-gray-500">
+                                                This user will be the primary administrator. Only one admin can be primary at a time.
+                                            </span>
+                                        </label>
+                                    </div>
+                                    {errors.is_primary && <div className="text-red-500 text-xs mt-1">{errors.is_primary}</div>}
+                                </div>
+                            )}
 
                             <div className="md:col-span-2 lg:col-span-3 flex justify-end pt-2 space-x-3">
                                 <button

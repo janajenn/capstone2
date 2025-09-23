@@ -1,9 +1,10 @@
 import HRLayout from '@/Layouts/HRLayout';
 import { useForm, usePage } from '@inertiajs/react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function EditEmployee() {
     const { employee, departments, errors } = usePage().props;
+    const [showPrimaryAdminOption, setShowPrimaryAdminOption] = useState(false);
 
     const { data, setData, put, processing } = useForm({
         firstname: '',
@@ -22,6 +23,7 @@ export default function EditEmployee() {
         daily_rate: 0,
         email: '',
         role: 'employee',
+        is_primary: false,
         password: '',
     });
 
@@ -45,10 +47,24 @@ export default function EditEmployee() {
                 daily_rate: employee.daily_rate || 0,
                 email: employee.user?.email || '',
                 role: employee.user?.role || 'employee',
+                is_primary: employee.user?.is_primary || false,
                 password: '',
             });
+            
+            // Show primary admin option if role is admin
+            setShowPrimaryAdminOption(employee.user?.role === 'admin');
         }
     }, [employee]);
+
+    // Handle role change
+    useEffect(() => {
+        if (data.role === 'admin') {
+            setShowPrimaryAdminOption(true);
+        } else {
+            setShowPrimaryAdminOption(false);
+            setData('is_primary', false); // Reset primary status if role is not admin
+        }
+    }, [data.role]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -220,14 +236,13 @@ export default function EditEmployee() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Biometric ID *
+                                        Biometric ID
                                     </label>
                                     <input
                                         type="number"
                                         value={data.biometric_id}
                                         onChange={(e) => setData('biometric_id', e.target.value)}
                                         className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-
                                     />
                                     {errors.biometric_id && <p className="text-red-500 text-xs mt-1">{errors.biometric_id}</p>}
                                 </div>
@@ -266,6 +281,30 @@ export default function EditEmployee() {
                                     {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
                                 </div>
                             </div>
+
+                            {/* Primary Admin Toggle - Only show for admin role */}
+                            {showPrimaryAdminOption && (
+                                <div className="mt-4">
+                                    <div className="flex items-center space-x-3 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                                        <input
+                                            type="checkbox"
+                                            id="is_primary"
+                                            checked={data.is_primary}
+                                            onChange={(e) => setData('is_primary', e.target.checked)}
+                                            className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                                        />
+                                        <label htmlFor="is_primary" className="flex flex-col">
+                                            <span className="text-sm font-medium text-gray-700">
+                                                Set as Primary Admin
+                                            </span>
+                                            <span className="text-xs text-gray-500">
+                                                This user will be the primary administrator. Only one admin can be primary at a time.
+                                            </span>
+                                        </label>
+                                    </div>
+                                    {errors.is_primary && <p className="text-red-500 text-xs mt-1">{errors.is_primary}</p>}
+                                </div>
+                            )}
                         </div>
 
                         {/* Compensation */}
@@ -327,7 +366,7 @@ export default function EditEmployee() {
                                         value={data.email}
                                         onChange={(e) => setData('email', e.target.value)}
                                         className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-
+                                        required
                                     />
                                     {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
                                 </div>
