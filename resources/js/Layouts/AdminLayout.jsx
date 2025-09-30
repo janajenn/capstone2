@@ -86,6 +86,19 @@ export default function AdminLayout({ children }) {
                                     </div>
                                 )}
                             </Link>
+
+                            <Link 
+                                href="/admin/leave-calendar" 
+                                className="flex items-center p-3 rounded-lg hover:bg-gray-700 transition-all duration-200 group"
+                            >
+                                <CalendarIcon className="h-5 w-5 flex-shrink-0" />
+                                {!collapsed && <span className="ml-3">Leave Calendar</span>}
+                                {collapsed && (
+                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                        Leave Calendar
+                                    </div>
+                                )}
+                            </Link>
                         </>
                     ) : (
                         <>

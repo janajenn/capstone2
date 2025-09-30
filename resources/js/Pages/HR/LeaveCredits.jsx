@@ -1,18 +1,81 @@
 import HRLayout from '@/Layouts/HRLayout';
 import { usePage, useForm, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 
-export default function LeaveCredits() {
-    const { employees, alreadyCredited, flash, creditedMonth, creditedYear } = usePage().props;
-
+export default function LeaveCredits({ employees, alreadyCredited, flash, creditedMonth, creditedYear, departments, filters }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
+    const [selectedDepartment, setSelectedDepartment] = useState(filters?.department || '');
+    const [searchTerm, setSearchTerm] = useState(filters?.search || '');
+    const searchInputRef = useRef(null);
 
     const { data, setData, put, reset } = useForm({
         sl_balance: '',
         vl_balance: '',
     });
+
+    // Debounced search function
+    const debouncedSearch = useCallback(
+        debounce((term, department) => {
+            router.get(route('hr.leave-credits'), {
+                search: term || null,
+                department: department || null,
+                page: 1
+            }, {
+                preserveState: true,
+                replace: true,
+                preserveScroll: true
+            });
+        }, 300),
+        []
+    );
+
+    // Handle search input change
+    const handleSearchChange = (term) => {
+        setSearchTerm(term);
+        debouncedSearch(term, selectedDepartment);
+    };
+
+    // Handle department filter change
+    const handleFilterChange = (departmentId) => {
+        setSelectedDepartment(departmentId);
+        router.get(route('hr.leave-credits'), {
+            search: searchTerm || null,
+            department: departmentId || null,
+            page: 1
+        }, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
+
+    // Handle pagination
+    const handlePageChange = (page) => {
+        router.get(route('hr.leave-credits'), {
+            search: searchTerm || null,
+            department: selectedDepartment || null,
+            page: page
+        }, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
+
+    // Clear all filters
+    const clearAllFilters = () => {
+        setSearchTerm('');
+        setSelectedDepartment('');
+        searchInputRef.current.value = '';
+        router.get(route('hr.leave-credits'), {}, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
 
     const openModal = (employee) => {
         setSelectedEmployee(employee);
@@ -32,7 +95,7 @@ export default function LeaveCredits() {
     const handleSubmit = (e) => {
         e.preventDefault();
 
-        put(route('hr.leave-credits.update', selectedEmployee.id), {
+        put(route('hr.leave-credits.update', selectedEmployee.employee_id), {
             onSuccess: () => {
                 closeModal();
                 Swal.fire({
@@ -83,6 +146,49 @@ export default function LeaveCredits() {
         });
     };
 
+    // Generate pagination links
+    const renderPagination = () => {
+        if (!employees.links || employees.links.length <= 3) return null;
+
+        return (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+                <div className="text-sm text-gray-700">
+                    Showing {employees.from} to {employees.to} of {employees.total} results
+                </div>
+                <div className="flex space-x-1">
+                    {employees.links.map((link, index) => (
+                        <button
+                            key={index}
+                            onClick={() => link.url && handlePageChange(link.url.split('page=')[1])}
+                            disabled={!link.url}
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${link.active
+                                    ? 'bg-blue-600 text-white'
+                                    : link.url
+                                        ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                        : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                                }`}
+                            dangerouslySetInnerHTML={{ __html: link.label }}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    // Get initials safely
+    const getInitials = (employee) => {
+        if (!employee) return '??';
+        const firstInitial = employee.firstname ? employee.firstname[0] : '';
+        const lastInitial = employee.lastname ? employee.lastname[0] : '';
+        return (firstInitial + lastInitial).toUpperCase();
+    };
+
+    // Get full name safely
+    const getFullName = (employee) => {
+        if (!employee) return 'Unknown Employee';
+        return `${employee.firstname || ''} ${employee.lastname || ''}`.trim();
+    };
+
     return (
         <HRLayout>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -97,7 +203,6 @@ export default function LeaveCredits() {
                         <button
                             onClick={handleMonthlyCredit}
                             className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${alreadyCredited ? 'bg-gray-400 ' : 'bg-blue-600 hover:bg-blue-700'}`}
-                            
                         >
                             {alreadyCredited ? (
                                 <>
@@ -118,13 +223,93 @@ export default function LeaveCredits() {
                     </div>
                 </div>
 
+                {/* Success Message */}
+                {flash?.success && (
+                    <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 flex items-center">
+                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        {flash.success}
+                    </div>
+                )}
+
+
+                
+
+                {/* Filters Section */}
+                <div className="mb-6 bg-white rounded-xl shadow-sm p-4">
+                    <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
+                        {/* Search Bar */}
+                        <div className="flex-1">
+                            <label htmlFor="search" className="sr-only">Search employees</label>
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
+                                <input
+                                    ref={searchInputRef}
+                                    id="search"
+                                    type="text"
+                                    placeholder="Search employees by name, position, or department..."
+                                    defaultValue={searchTerm}
+                                    onChange={(e) => handleSearchChange(e.target.value)}
+                                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Department Filter */}
+                        <div className="flex items-center space-x-4">
+                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                Department:
+                            </label>
+                            <select
+                                value={selectedDepartment}
+                                onChange={(e) => handleFilterChange(e.target.value)}
+                                className="w-full md:w-48 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                            >
+                                <option value="">All Departments</option>
+                                {departments.map(dept => (
+                                    <option key={dept.id} value={dept.id}>
+                                        {dept.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Clear Filters Button */}
+                        {(searchTerm || selectedDepartment) && (
+                            <button
+                                onClick={clearAllFilters}
+                                className="px-4 py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition whitespace-nowrap"
+                            >
+                                Clear Filters
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                    <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                        <h2 className="text-lg font-semibold text-gray-800">Employee Leave Credits</h2>
+                        <span className="text-sm text-gray-500">
+                            {employees.total} employee{employees.total !== 1 ? 's' : ''} found
+                            {selectedDepartment && ` in ${departments.find(d => d.id == selectedDepartment)?.name}`}
+                            {searchTerm && ` matching "${searchTerm}"`}
+                        </span>
+                    </div>
+
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Employee Name
+                                    </th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Department
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         SL Balance
@@ -138,53 +323,86 @@ export default function LeaveCredits() {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {employees.map((employee) => (
-                                    <tr key={employee.id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                                    <span className="font-medium text-blue-800">
-                                                        {employee.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-                                                    </span>
-                                                </div>
-                                                <div className="ml-4">
-                                                    <div className="text-sm font-medium text-gray-900">{employee.name}</div>
-                                                    
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900 font-medium">
-                                                {employee.leave_credit?.sl_balance ?? (
-                                                    <span className="text-gray-400 italic">To be updated by HR</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900 font-medium">
-                                                {employee.leave_credit?.vl_balance ?? (
-                                                    <span className="text-gray-400 italic">To be updated by HR</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <button
-                                                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                                                onClick={() => openModal(employee)}
-                                            >
-                                                Override
-                                            </button>
+                            
+
+{employees.data && employees.data.map((employee) => (
+    <tr 
+        key={employee.employee_id} 
+        className="hover:bg-gray-50 cursor-pointer"
+        onClick={() => router.visit(route('hr.leave-credits.show', employee.employee_id))}
+    >
+        <td className="px-6 py-4 whitespace-nowrap">
+            <div className="flex items-center">
+                <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="font-medium text-blue-800">
+                        {getInitials(employee)}
+                    </span>
+                </div>
+                <div className="ml-4">
+                    <div className="text-sm font-medium text-gray-900">
+                        {getFullName(employee)}
+                    </div>
+                    <div className="text-sm text-gray-500">{employee.position}</div>
+                </div>
+            </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+            <div className="text-sm text-gray-900">
+                {employee.department?.name || 'No Department'}
+            </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+            <div className="text-sm text-gray-900 font-medium">
+                {employee.leave_credit ? (
+                    employee.leave_credit.sl_balance
+                ) : (
+                    <span className="text-gray-400 italic">To be updated by HR</span>
+                )}
+            </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap">
+            <div className="text-sm text-gray-900 font-medium">
+                {employee.leave_credit ? (
+                    employee.leave_credit.vl_balance
+                ) : (
+                    <span className="text-gray-400 italic">To be updated by HR</span>
+                )}
+            </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+            <button
+                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
+                onClick={(e) => {
+                    e.stopPropagation(); // Prevent row click when clicking button
+                    openModal(employee);
+                }}
+            >
+                Override
+            </button>
+        </td>
+    </tr>
+))}
+                                
+                                {(!employees.data || employees.data.length === 0) && (
+                                    <tr>
+                                        <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                            No employees found
+                                            {searchTerm && ` matching "${searchTerm}"`}
+                                            {selectedDepartment && !searchTerm && ` in this department`}.
                                         </td>
                                     </tr>
-                                ))}
+                                )}
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {renderPagination()}
                 </div>
             </div>
 
             {/* Modal */}
-            {isModalOpen && (
+            {isModalOpen && selectedEmployee && (
                 <div className="fixed inset-0 overflow-y-auto z-50">
                     <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
                         <div className="fixed inset-0 transition-opacity" aria-hidden="true">
@@ -207,7 +425,7 @@ export default function LeaveCredits() {
                                         </h3>
                                         <div className="mt-2">
                                             <p className="text-sm text-gray-500">
-                                                Update leave credits for {selectedEmployee.name}
+                                                Update leave credits for {getFullName(selectedEmployee)}
                                             </p>
                                         </div>
                                         <form onSubmit={handleSubmit} className="mt-4 space-y-4">

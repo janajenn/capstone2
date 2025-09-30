@@ -19,6 +19,20 @@ class User extends Authenticatable
      */
      protected $fillable = ['name', 'email', 'password', 'role', 'employee_id', 'is_primary'];
 
+
+     public function canLogIn()
+     {
+         // If user doesn't have an employee record, allow login (for non-employee users)
+         if (!$this->employee) {
+             return true;
+         }
+ 
+         // Check if the linked employee is active
+         return $this->employee->status === 'active';
+     }
+ 
+
+
     public function employee()
 {
     return $this->belongsTo(Employee::class, 'employee_id', 'employee_id');
@@ -30,10 +44,13 @@ class User extends Authenticatable
         return $this->hasMany(LeaveApproval::class, 'approved_by', 'id');
     }
 
-   public function leaveCredit()
-{
-    return $this->hasOne(\App\Models\LeaveCredit::class, 'employee_id', 'employee_id');
-}
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+   
 
     public function deptHeadApprovals()
     {
@@ -43,6 +60,11 @@ class User extends Authenticatable
     public function hrApprovals()
     {
         return $this->hasMany(LeaveRecall::class, 'approved_by_hr');
+    }
+
+    public function leaveCredit()
+    {
+        return $this->hasOneThrough(LeaveCredit::class, Employee::class, 'employee_id', 'employee_id', 'employee_id', 'employee_id');
     }
 
     // App\Models\User.php

@@ -1,6 +1,6 @@
 import { Head, useForm, usePage, Link, router } from '@inertiajs/react';
 import AdminLayout from '@/Layouts/AdminLayout';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function DelegationIndex() {
     const { 
@@ -15,6 +15,7 @@ export default function DelegationIndex() {
     
     const [showForm, setShowForm] = useState(false);
     const [actionLoading, setActionLoading] = useState(null);
+    const [currentTime, setCurrentTime] = useState(new Date());
     
     const { data, setData, post, processing, errors, reset } = useForm({
         to_admin_id: '',
@@ -22,6 +23,15 @@ export default function DelegationIndex() {
         end_date: '',
         reason: ''
     });
+
+    // Update current time every minute to refresh status
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(new Date());
+        }, 60000);
+        
+        return () => clearInterval(timer);
+    }, []);
     
     const submit = (e) => {
         e.preventDefault();
@@ -34,7 +44,7 @@ export default function DelegationIndex() {
     };
     
     const cancelDelegation = async (delegationId) => {
-        if (!confirm('Are you sure you want to cancel this delegation? Control will revert to the primary admin.')) {
+        if (!confirm('Are you sure you want to cancel this delegation?')) {
             return;
         }
 
@@ -49,6 +59,20 @@ export default function DelegationIndex() {
         }
     };
 
+    // Check if current user can cancel a specific delegation
+    const canCancelDelegation = (delegation) => {
+        // The delegator (creator) can always cancel their own delegation
+        if (delegation.from_admin_id === currentUser.id) return true;
+        
+        // The delegatee (person delegated to) can cancel if they don't want the responsibility
+        if (delegation.to_admin_id === currentUser.id) return true;
+        
+        // Primary admin can cancel any delegation
+        if (isPrimaryAdmin) return true;
+        
+        return false;
+    };
+
     const handleStartDateChange = (e) => {
         setData('start_date', e.target.value);
         if (data.end_date && e.target.value > data.end_date) {
@@ -60,32 +84,28 @@ export default function DelegationIndex() {
     const getAdminDisplayName = (admin) => {
         if (!admin) return 'Unknown Admin';
         
-        // Try to get name from employee record first
         if (admin.employee) {
             const { firstname, middlename, lastname } = admin.employee;
             const fullName = `${firstname || ''} ${middlename || ''} ${lastname || ''}`.trim();
             if (fullName) return fullName;
         }
         
-        // Fallback to user name field
         return admin.name || 'Unknown Admin';
     };
 
     const getAdminShortName = (admin) => {
         if (!admin) return 'Unknown';
         
-        // Try to get short name from employee record
         if (admin.employee) {
             const { firstname, lastname } = admin.employee;
             if (firstname && lastname) return `${firstname} ${lastname}`;
             if (firstname) return firstname;
         }
         
-        // Fallback to user name field
         return admin.name || 'Unknown';
     };
 
-    // Separate delegations by status with safe filtering
+    // Use backend-computed values directly
     const activeDelegations = delegations.filter(d => d.is_active && d.from_admin && d.to_admin);
     const futureDelegations = delegations.filter(d => d.is_future && d.from_admin && d.to_admin);
     const pastDelegations = delegations.filter(d => d.is_ended && d.from_admin && d.to_admin);
@@ -105,6 +125,21 @@ export default function DelegationIndex() {
             
             <div className="py-6">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+                    {/* Simple Debug Information - Safe version */}
+                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="text-sm">
+                            <p><strong>Current Status:</strong></p>
+                            <p>Time: {currentTime.toLocaleString()}</p>
+                            <p>Active: {activeDelegations.length} | Scheduled: {futureDelegations.length} | Ended: {pastDelegations.length}</p>
+                            {delegations.map(d => (
+                                <div key={d.id} className="mt-1 text-xs">
+                                    Delegation {d.id}: {formatDate(d.start_date)} to {formatDate(d.end_date)} - 
+                                    Status: {d.status} | Active: {d.is_active ? 'Yes' : 'No'} | Future: {d.is_future ? 'Yes' : 'No'}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                     {/* Flash Messages */}
                     {flash.success && (
                         <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -246,7 +281,7 @@ export default function DelegationIndex() {
                                                         )}
                                                     </div>
                                                 </div>
-                                                {delegation.can_be_cancelled && canDelegate && (
+                                                {canCancelDelegation(delegation) && (
                                                     <button
                                                         onClick={() => cancelDelegation(delegation.id)}
                                                         disabled={actionLoading === delegation.id}
@@ -265,23 +300,39 @@ export default function DelegationIndex() {
                                     {/* Future Delegations */}
                                     {futureDelegations.map(delegation => (
                                         <div key={delegation.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                                            <div className="flex items-center space-x-3 mb-2">
-                                                <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-sm font-medium rounded-full flex items-center">
-                                                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4.586l-1.293-1.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V6z" clipRule="evenodd" />
-                                                    </svg>
-                                                    SCHEDULED
-                                                </span>
-                                                <span className="text-sm text-yellow-600">
-                                                    Starts {formatDate(delegation.start_date)}
-                                                </span>
-                                            </div>
-                                            <div className="text-yellow-800">
-                                                <p className="font-medium">
-                                                    {getAdminDisplayName(delegation.from_admin)} → {getAdminDisplayName(delegation.to_admin)}
-                                                </p>
-                                                {delegation.reason && (
-                                                    <p className="text-sm mt-1">Reason: {delegation.reason}</p>
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center space-x-3 mb-2">
+                                                        <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-sm font-medium rounded-full flex items-center">
+                                                            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4.586l-1.293-1.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V6z" clipRule="evenodd" />
+                                                            </svg>
+                                                            SCHEDULED
+                                                        </span>
+                                                        <span className="text-sm text-yellow-600">
+                                                            Starts {formatDate(delegation.start_date)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-yellow-800">
+                                                        <p className="font-medium">
+                                                            {getAdminDisplayName(delegation.from_admin)} → {getAdminDisplayName(delegation.to_admin)}
+                                                        </p>
+                                                        {delegation.reason && (
+                                                            <p className="text-sm mt-1">Reason: {delegation.reason}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {canCancelDelegation(delegation) && (
+                                                    <button
+                                                        onClick={() => cancelDelegation(delegation.id)}
+                                                        disabled={actionLoading === delegation.id}
+                                                        className="ml-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 text-sm flex items-center"
+                                                    >
+                                                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                        </svg>
+                                                        {actionLoading === delegation.id ? 'Cancelling...' : 'Cancel'}
+                                                    </button>
                                                 )}
                                             </div>
                                         </div>
@@ -290,7 +341,7 @@ export default function DelegationIndex() {
                             )}
 
                             {/* Delegation Form for Active Approvers */}
-                            {canDelegate && !activeDelegation && (
+                            {canDelegate && (
                                 <div className="mb-8">
                                     {!showForm ? (
                                         <button
@@ -487,18 +538,7 @@ export default function DelegationIndex() {
                                                             </span>
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                            {delegation.can_be_cancelled && canDelegate && delegation.is_active && (
-                                                                <button
-                                                                    onClick={() => cancelDelegation(delegation.id)}
-                                                                    disabled={actionLoading === delegation.id}
-                                                                    className="text-red-600 hover:text-red-900 disabled:opacity-50 flex items-center justify-end w-full"
-                                                                >
-                                                                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                                                    </svg>
-                                                                    {actionLoading === delegation.id ? 'Cancelling...' : 'Cancel'}
-                                                                </button>
-                                                            )}
+                                                            <span className="text-gray-400 text-sm">No actions available</span>
                                                         </td>
                                                     </tr>
                                                 ))}

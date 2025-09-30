@@ -1,4 +1,4 @@
-import HRLayout from '@/Layouts/HRLayout';
+import AdminLayout from '@/Layouts/AdminLayout';
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import FullCalendar from '@fullcalendar/react';
@@ -169,7 +169,7 @@ export default function LeaveCalendar({ events, leavesByMonth, departments, leav
     };
 
     return (
-        <HRLayout>
+        <AdminLayout>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-3xl font-bold text-gray-900">Leave Calendar</h1>
@@ -450,6 +450,6 @@ export default function LeaveCalendar({ events, leavesByMonth, departments, leav
                     </div>
                 )}
             </div>
-        </HRLayout>
+        </AdminLayout>
     );
 }

@@ -45,7 +45,7 @@ class EmployeeController extends Controller
     ]);
 }
 
-        public function showLeaveRequest(Request $request)
+public function showLeaveRequest(Request $request)
 {
     $user = $request->user()->load('employee');
     $employeeId = $user->employee?->employee_id;
@@ -54,8 +54,20 @@ class EmployeeController extends Controller
         ? LeaveCredit::where('employee_id', $employeeId)->first()
         : null;
 
-    $leaveTypes = LeaveType::select('id', 'name', 'code', 'document_required')
+    $leaveTypes = LeaveType::select('id', 'name', 'code', 'document_required', 'earnable', 'default_days')
         ->orderBy('name')->get();
+
+    // Get leave balances for fixed leave types
+    $leaveBalances = [];
+    if ($employeeId) {
+        $leaveBalances = \App\Models\LeaveBalance::with('leaveType')
+            ->where('employee_id', $employeeId)
+            ->whereHas('leaveType', function($query) {
+                $query->where('earnable', false); // Only fixed leave types
+            })
+            ->get()
+            ->keyBy('leave_type_id');
+    }
 
     $existingRequests = [];
     if ($employeeId) {
@@ -79,6 +91,7 @@ class EmployeeController extends Controller
             'sl' => $leaveCredit->sl_balance ?? 0,
             'vl' => $leaveCredit->vl_balance ?? 0,
         ],
+        'leaveBalances' => $leaveBalances,
     ]);
 }
 
@@ -102,10 +115,13 @@ public function submitLeaveRequest(Request $request)
         'working_days' => ['sometimes', 'integer'],
     ]);
 
-    // Get working days from request or calculate
+    // Get leave type
+    $leaveType = LeaveType::findOrFail($validated['leave_type_id']);
+    $code = strtoupper($leaveType->code);
+
+    // Get working days
     $workingDays = $request->input('working_days') ?? 0;
     if ($workingDays === 0) {
-        // Calculate working days if not provided
         $startDate = new \DateTime($validated['date_from']);
         $endDate = new \DateTime($validated['date_to']);
         $workingDays = 0;
@@ -118,9 +134,20 @@ public function submitLeaveRequest(Request $request)
         }
     }
 
-    // Get leave type
-    $leaveType = LeaveType::findOrFail($validated['leave_type_id']);
-    $code = strtoupper($leaveType->code);
+    // Validate fixed leave balance
+    if (!$leaveType->earnable) {
+        $leaveBalance = \App\Models\LeaveBalance::where('employee_id', $employeeId)
+            ->where('leave_type_id', $leaveType->id)
+            ->first();
+
+        $availableBalance = $leaveBalance ? $leaveBalance->balance : $leaveType->default_days;
+
+        if ($workingDays > $availableBalance) {
+            return back()->withErrors([
+                'balance' => "You only have {$availableBalance} days available for {$leaveType->name}. Please adjust your dates.",
+            ])->withInput();
+        }
+    }
 
     // Validate sick leave document requirement
     if ($code === 'SL' && $workingDays > 5 && !$request->hasFile('attachment')) {
@@ -264,6 +291,68 @@ public function myLeaveRequests(Request $request)
 
     return Inertia::render('Employee/MyLeaveRequests', [
         'leaveRequests' => $leaveRequests,
+        'employee' => $user->employee,
+    ]);
+}
+
+
+
+//leave balance
+
+/**
+ * Display employee leave credits and balances
+ */
+public function leaveBalances(Request $request)
+{
+    $user = $request->user()->load('employee');
+    $employeeId = $user->employee?->employee_id;
+
+    if (!$employeeId) {
+        abort(400, 'Employee profile not found for user.');
+    }
+
+    // Get SL and VL balances from leave_credits table
+    $leaveCredits = LeaveCredit::where('employee_id', $employeeId)->first();
+    
+    $earnableLeaveCredits = [
+        [
+            'type' => 'Sick Leave (SL)',
+            'code' => 'SL',
+            'balance' => $leaveCredits->sl_balance ?? 0,
+            'earnable' => true,
+            'description' => 'Accumulates 1.25 days monthly'
+        ],
+        [
+            'type' => 'Vacation Leave (VL)',
+            'code' => 'VL',
+            'balance' => $leaveCredits->vl_balance ?? 0,
+            'earnable' => true,
+            'description' => 'Accumulates 1.25 days monthly'
+        ]
+    ];
+
+    // Get non-earnable leave balances from leave_balances table
+    $nonEarnableLeaveBalances = \App\Models\LeaveBalance::with('leaveType')
+        ->where('employee_id', $employeeId)
+        ->whereHas('leaveType', function($query) {
+            $query->where('earnable', false);
+        })
+        ->get()
+        ->map(function($balance) {
+            return [
+                'type' => $balance->leaveType->name,
+                'code' => $balance->leaveType->code,
+                'default_days' => $balance->leaveType->default_days,
+                'total_used' => $balance->total_used ?? 0,
+                'balance' => $balance->balance ?? 0,
+                'earnable' => false,
+                'description' => 'Fixed allocation'
+            ];
+        });
+
+    return Inertia::render('Employee/LeaveBalances', [
+        'earnableLeaveCredits' => $earnableLeaveCredits,
+        'nonEarnableLeaveBalances' => $nonEarnableLeaveBalances,
         'employee' => $user->employee,
     ]);
 }

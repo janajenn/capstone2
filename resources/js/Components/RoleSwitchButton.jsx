@@ -43,16 +43,16 @@ export default function RoleSwitchButton({ collapsed, currentMode }) {
             onClick={handleSwitch}
             className="w-full flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-indigo-700/50 text-indigo-100 hover:text-white group"
         >
-            <ArrowsRightLeftIcon className="h-5 w-5 flex-shrink-0" />
+            <ArrowsRightLeftIcon className="h-5 w-5 flex-shrink-0 text-blue-500" />
             {!collapsed && (
-                <span className="ml-3">
+                <span className="ml-3 text-blue-500">
                     {currentMode === "employee" 
                         ? `Back to ${getOriginalRoleLabel()}` 
                         : "Switch to Employee"}
                 </span>
             )}
             {collapsed && (
-                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                <div className=" absolute left-full ml-2 px-2 py-1 bg-black-900 rounded-md  text-xs text-blue-500 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
                     {currentMode === "employee" 
                         ? `Back to ${getOriginalRoleLabel()}` 
                         : "Switch to Employee"}

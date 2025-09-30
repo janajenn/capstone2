@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Models;
-use App\Models\LeaveCredit;
+use App\Models\LeaveCredits;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -25,7 +25,15 @@ public $incrementing = true;
         return $this->belongsTo(Department::class, 'department_id');
     }
 
-    public function leaveCredits()
+
+
+    public function leaveCredit() // ← SINGULAR
+{
+    return $this->hasOne(LeaveCredit::class, 'employee_id', 'employee_id');
+}
+
+// Keep this as plural if you want to track historical leave credits
+public function leaveCredits()
 {
     return $this->hasMany(LeaveCredit::class, 'employee_id', 'employee_id');
 }

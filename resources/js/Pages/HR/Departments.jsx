@@ -14,10 +14,21 @@ export default function Departments() {
     });
 
     // Filter departments based on search term
-    const filteredDepartments = departments.filter(dept => 
+    const filteredDepartments = departments.data ? departments.data.filter(dept => 
         dept.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (dept.head && dept.head.name.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    ) : [];
+
+    // Pagination functions
+    const handlePageChange = (page) => {
+        router.get(route('hr.departments'), {
+            page: page
+        }, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
 
     const openAddModal = () => {
         setIsEditing(false);
@@ -57,6 +68,36 @@ export default function Departments() {
         if (confirm('Are you sure you want to delete this department? This action cannot be undone.')) {
             destroy(route('hr.departments.delete', id));
         }
+    };
+
+    // Generate pagination links
+    const renderPagination = () => {
+        if (!departments.links || departments.links.length <= 3) return null;
+
+        return (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+                <div className="text-sm text-gray-700">
+                    Showing {departments.from} to {departments.to} of {departments.total} results
+                </div>
+                <div className="flex space-x-1">
+                    {departments.links.map((link, index) => (
+                        <button
+                            key={index}
+                            onClick={() => link.url && handlePageChange(link.url.split('page=')[1])}
+                            disabled={!link.url}
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${
+                                link.active
+                                    ? 'bg-blue-600 text-white'
+                                    : link.url
+                                    ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                            }`}
+                            dangerouslySetInnerHTML={{ __html: link.label }}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -107,7 +148,7 @@ export default function Departments() {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{departments.length}</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">{departments.total}</h2>
                                 <p className="text-sm text-gray-600">Total Departments</p>
                             </div>
                         </div>
@@ -122,7 +163,7 @@ export default function Departments() {
                             </div>
                             <div className="ml-4">
                                 <h2 className="text-2xl font-bold text-gray-800">
-                                    {departments.filter(dept => dept.head !== null).length}
+                                    {departments.data ? departments.data.filter(dept => dept.head !== null).length : 0}
                                 </h2>
                                 <p className="text-sm text-gray-600">Departments with Heads</p>
                             </div>
@@ -138,7 +179,7 @@ export default function Departments() {
                             </div>
                             <div className="ml-4">
                                 <h2 className="text-2xl font-bold text-gray-800">
-                                    {departments.filter(dept => dept.head === null).length}
+                                    {departments.data ? departments.data.filter(dept => dept.head === null).length : 0}
                                 </h2>
                                 <p className="text-sm text-gray-600">Departments Needing Heads</p>
                             </div>
@@ -167,7 +208,7 @@ export default function Departments() {
                         </div>
                         <div className="flex items-center space-x-2">
                             <span className="text-sm text-gray-600">
-                                {filteredDepartments.length} of {departments.length} departments
+                                {filteredDepartments.length} of {departments.total} departments
                             </span>
                         </div>
                     </div>
@@ -290,6 +331,9 @@ export default function Departments() {
                             </tbody>
                         </table>
                     </div>
+                    
+                    {/* Pagination */}
+                    {renderPagination()}
                 </div>
 
                 {/* Add/Edit Modal */}

@@ -44,10 +44,11 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-
+// Apply employee.status middleware to ALL auth routes
+Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
 
 // Group all role-based dashboards under auth middleware
-Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
+Route::prefix('admin')->middleware(['role:admin'])->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
     Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve'])->name('admin.leave-requests.approve');
     Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject'])->name('admin.leave-requests.reject');
@@ -57,6 +58,7 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
     Route::post('/delegate-approval', [AdminController::class, 'delegateApproval'])->name('admin.delegate-approval');
     Route::post('/end-delegation/{id}', [AdminController::class, 'endDelegation'])->name('admin.end-delegation');
     Route::post('/cancel-delegation/{id}', [AdminController::class, 'cancelDelegation'])->name('admin.cancel-delegation');
+    Route::get('/leave-calendar', [AdminController::class, 'leaveCalendar'])->name('admin.leave-calendar');
 
     Route::get('/leave-requests', [AdminController::class, 'leaveRequests'])
     ->name('admin.leave-requests.index');
@@ -67,7 +69,7 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
 
 
 
-    Route::middleware(['auth','role:hr'])->group(function () {
+    Route::middleware(['role:hr'])->group(function () {
     // HR Dashboard
     Route::get('/hr/dashboard', [HRController::class, 'dashboard'])->name('hr.dashboard');
 
@@ -83,6 +85,8 @@ Route::put('/hr/employees/{employee}', [\App\Http\Controllers\HR\HRController::c
 
     // leave credits side
      Route::get('/hr/leave-credits', [HRController::class, 'leaveCredits'])->name('hr.leave-credits');
+     // Add this route to your HR routes section
+Route::get('/hr/leave-credits/{employee}', [HRController::class, 'showLeaveCredit'])->name('hr.leave-credits.show');
 
      Route::put('/leave-credits/{employee}', [HRController::class, 'update'])->name('hr.leave-credits.update');
 
@@ -143,7 +147,7 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
 
     // // Department Head Routes
 
-    Route::middleware(['auth', 'role:dept_head'])->group(function () {
+    Route::middleware(['role:dept_head'])->group(function () {
         Route::get('/dept-head/dashboard', [DeptHeadController::class, 'dashboard'])->name('dept_head.dashboard');
         Route::post('/dept-head/leave-requests/{id}/approve', [DeptHeadController::class, 'approve'])->name('dept_head.approve');
         Route::post('/dept-head/leave-requests/{id}/reject', [DeptHeadController::class, 'reject'])->name('dept_head.reject');
@@ -160,6 +164,9 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
         Route::get('/dept-head/leave-requests/{id}', [DeptHeadController::class, 'showLeaveRequest'])->name('dept_head.leave-requests.show');
         Route::post('/dept-head/leave-requests/{id}/approve', [DeptHeadController::class, 'approveLeaveRequest'])->name('dept_head.leave-requests.approve');
         Route::post('/dept-head/leave-requests/{id}/reject', [DeptHeadController::class, 'rejectLeaveRequest'])->name('dept_head.leave-requests.reject');
+        
+        // routes/web.php
+    Route::get('/dept-head/chart-data', [DeptHeadController::class, 'getChartDataByYear'])->name('dept_head.chart-data');
         
     });
     //Route::middleware(['auth', 'role:dept_head'])->group(function () {
@@ -179,7 +186,7 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
 
 
 
-    Route::middleware(['auth', 'role:employee,hr,dept_head,admin'])->group(function () {
+    Route::middleware(['role:employee,hr,dept_head,admin'])->group(function () {
         Route::get('/employee/dashboard', [EmployeeController::class, 'dashboard'])->name('employee.dashboard');
 
         Route::get('/employee/leave', [EmployeeController::class, 'showLeaveRequest'])->name('employee.leave.request');
@@ -221,6 +228,11 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
         Route::get('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'index'])->name('employee.leave-recalls');
         Route::post('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'store'])->name('employee.leave-recalls.store');
         Route::get('/employee/leave-recalls/{leaveRecall}', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'show'])->name('employee.leave-recalls.show');
+
+
+        // Leave Balances Routes
+        Route::get('/employee/leave-balances', [EmployeeController::class, 'leaveBalances'])->name('employee.leave-balances');
     });
+});
 
 require __DIR__.'/auth.php';    

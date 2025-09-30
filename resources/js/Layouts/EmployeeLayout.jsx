@@ -13,9 +13,10 @@ import {
     ChartBarIcon,
     ChevronLeftIcon,
     ChevronRightIcon,
-    XMarkIcon
-} from '@heroicons/react/24/outline';
+    XMarkIcon,
+    ClockIcon
 
+} from '@heroicons/react/24/outline';
 export default function EmployeeLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
     const { auth } = usePage().props;
@@ -76,12 +77,21 @@ export default function EmployeeLayout({ children }) {
                         {!collapsed && <span>Credit Conversion</span>}
                     </Link>
                     <Link 
-                        href="/employee/credit-conversions" 
-                        className="flex items-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
-                    >
-                        <ChartBarIcon className="h-5 w-5" />
-                        {!collapsed && <span>Conversion History</span>}
-                    </Link>
+    href="/employee/credit-conversions" 
+    className="flex items-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
+>
+    <ClockIcon className="h-5 w-5" />
+    {!collapsed && <span>Conversion History</span>}
+</Link>
+
+                    <Link 
+    href={route('employee.leave-balances')} 
+    className="flex items-center text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-50"
+>
+    <ChartBarIcon className="h-5 w-5 mr-2" />
+    {!collapsed && <span>Leave Balances</span>}
+</Link>
+
 
                     {/* Role Switch Button - Only show for non-employee users */}
                     <RoleSwitchButton collapsed={collapsed} currentMode="employee" />

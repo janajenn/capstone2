@@ -1,17 +1,29 @@
 import DeptHeadLayout from '@/Layouts/DeptHeadLayout';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, useForm, router } from '@inertiajs/react';
 import { useState, useEffect, useRef } from 'react';
 import Swal from 'sweetalert2';
+import {
+    PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
+    BarChart, Bar, XAxis, YAxis, CartesianGrid
+} from 'recharts';
+
+// Color palette for charts
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
 export default function Dashboard({ 
     initialLeaveRequests = [], 
     departmentName, 
-    stats 
+    stats,
+    chartData,
+    selectedYear,
+    availableYears
 }) {
     const [leaveRequests, setLeaveRequests] = useState(() => initialLeaveRequests || []);
     const [rejectingId, setRejectingId] = useState(null);
     const [rejectRemarks, setRejectRemarks] = useState('');
     const [isPolling, setIsPolling] = useState(false);
+    const [currentChartData, setCurrentChartData] = useState(chartData);
+    const [currentYear, setCurrentYear] = useState(selectedYear);
     const { post } = useForm();
     const pollingIntervalRef = useRef(null);
     const isMountedRef = useRef(true);
@@ -44,15 +56,12 @@ export default function Dashboard({
                         const existingIds = new Set(prev.map(r => r.id));
                         const filteredNewRequests = newRequests.filter(r => !existingIds.has(r.id));
 
-                        // Find truly new requests that we haven't seen before
                         const trulyNewRequests = filteredNewRequests.filter(
                             r => !knownRequestIds.current.has(r.id)
                         );
 
-                        // Add new IDs to our known set
                         trulyNewRequests.forEach(r => knownRequestIds.current.add(r.id));
 
-                        // Only show notification during polling (not initial load) for new requests
                         if (!isInitialLoadRef.current && pollingIntervalRef.current && trulyNewRequests.length > 0) {
                             const latestRequest = trulyNewRequests[0];
                             Swal.fire({
@@ -73,21 +82,42 @@ export default function Dashboard({
             } finally {
                 if (isMountedRef.current) {
                     setIsPolling(false);
-                    isInitialLoadRef.current = false; // Mark initial load as complete
+                    isInitialLoadRef.current = false;
                 }
             }
         };
 
-        // Initial fetch - won't show notifications
         fetchUpdatedRequests();
-
-        // Set up polling interval
         pollingIntervalRef.current = setInterval(fetchUpdatedRequests, 5000);
 
         return () => {
             clearInterval(pollingIntervalRef.current);
         };
     }, []);
+
+    // Fetch chart data when year changes
+    useEffect(() => {
+        const fetchChartData = async () => {
+            try {
+                const response = await fetch(`/dept-head/chart-data?year=${currentYear}`);
+                const data = await response.json();
+                setCurrentChartData(data);
+            } catch (error) {
+                console.error('Error fetching chart data:', error);
+            }
+        };
+
+        fetchChartData();
+    }, [currentYear]);
+
+    const handleYearChange = (year) => {
+        setCurrentYear(year);
+        // Update URL without page reload
+        router.get(`/dept-head/dashboard?year=${year}`, {}, {
+            preserveState: true,
+            replace: true
+        });
+    };
 
     const handleApprove = (id) => {
         Swal.fire({
@@ -132,15 +162,67 @@ export default function Dashboard({
         });
     };
 
+    // Custom tooltip for pie chart
+    const CustomPieTooltip = ({ active, payload }) => {
+        if (active && payload && payload.length) {
+            const data = payload[0];
+            return (
+                <div className="bg-white p-3 border border-gray-200 rounded shadow-lg">
+                    <p className="font-medium">{`${data.name}`}</p>
+                    <p className="text-sm text-gray-600">{`Leaves: ${data.value}`}</p>
+                    <p className="text-sm text-gray-600">{`Percentage: ${((data.payload.percent || 0) * 100).toFixed(1)}%`}</p>
+                </div>
+            );
+        }
+        return null;
+    };
+
+    // Custom tooltip for bar chart
+    const CustomBarTooltip = ({ active, payload, label }) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="bg-white p-3 border border-gray-200 rounded shadow-lg">
+                    <p className="font-medium">{`${label}`}</p>
+                    <p className="text-sm text-blue-600">{`Leaves: ${payload[0].value}`}</p>
+                </div>
+            );
+        }
+        return null;
+    };
+
     return (
         <DeptHeadLayout>
             <Head title="Department Head Dashboard" />
 
             <div className="py-12">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
+                    {/* Year Filter */}
+                    <div className="mb-6 flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900">Department Head Dashboard</h1>
+                            <p className="text-sm text-gray-600 mt-1">{departmentName}</p>
+                        </div>
+                        <div className="flex items-center space-x-4">
+                            <label htmlFor="year-select" className="text-sm font-medium text-gray-700">
+                                Filter by Year:
+                            </label>
+                            <select
+                                id="year-select"
+                                value={currentYear}
+                                onChange={(e) => handleYearChange(e.target.value)}
+                                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                {availableYears.map(year => (
+                                    <option key={year} value={year}>
+                                        {year}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
 
-{/* Statistics Cards */}
-<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    {/* Statistics Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                         {/* Total Employees Card */}
                         <div className="bg-white overflow-hidden shadow rounded-lg">
                             <div className="p-5">
@@ -217,19 +299,73 @@ export default function Dashboard({
                         </div>
                     </div>
 
+                    {/* Charts Section */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        {/* Leave Usage by Type - Pie Chart */}
+                        <div className="bg-white overflow-hidden shadow rounded-lg p-6">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                Leave Usage by Type ({currentYear})
+                            </h3>
+                            <div className="h-80">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={currentChartData.leaveTypeData}
+                                            cx="50%"
+                                            cy="50%"
+                                            labelLine={false}
+                                            label={({ name, percent }) => 
+                                                `${name} (${(percent * 100).toFixed(0)}%)`
+                                            }
+                                            outerRadius={80}
+                                            fill="#8884d8"
+                                            dataKey="value"
+                                        >
+                                            {currentChartData.leaveTypeData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip content={<CustomPieTooltip />} />
+                                        <Legend />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Leaves by Month - Bar Chart */}
+                        <div className="bg-white overflow-hidden shadow rounded-lg p-6">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                Leaves by Month ({currentYear})
+                            </h3>
+                            <div className="h-80">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={currentChartData.monthlyData}>
+                                        <CartesianGrid strokeDasharray="3 3" />
+                                        <XAxis dataKey="month" />
+                                        <YAxis />
+                                        <Tooltip content={<CustomBarTooltip />} />
+                                        <Legend />
+                                        <Bar dataKey="leaves" name="Number of Leaves" fill="#0088FE" />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Pending Leave Requests Table */}
                     <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                         <div className="p-6 bg-white border-b border-gray-200">
                             <div className="flex justify-between items-center mb-6">
-                                <h1 className="text-2xl font-bold">
-                                    {departmentName} - Pending Leave Approvals
-                                </h1>
+                                <h2 className="text-xl font-bold">
+                                    Pending Leave Approvals
+                                </h2>
                                 {isPolling && (
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                         <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-
+                                        Live Updates
                                     </span>
                                 )}
                             </div>

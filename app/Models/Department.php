@@ -16,6 +16,11 @@ class Department extends Model
         return $this->hasMany(Employee::class, 'department_id', 'id');
     }
 
+    public function users()
+    {
+        return $this->hasMany(User::class, 'department_id', 'id');
+    }
+
     /**
      * Get the department head user (user with role 'dept_head' in this department)
      */

@@ -6,10 +6,101 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 
-export default function LeaveCalendar({ events, departmentName }) {
+// MonthAccordion Component
+const MonthAccordion = ({ month, leaves }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    return (
+        <div className="border border-gray-200 rounded-lg">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center hover:bg-gray-100 transition-colors"
+            >
+                <div className="text-left">
+                    <h3 className="text-xl font-semibold text-gray-800">{month}</h3>
+                    <p className="text-gray-600 text-sm">
+                        {leaves.length} leave{leaves.length !== 1 ? 's' : ''}
+                    </p>
+                </div>
+                <svg 
+                    className={`w-5 h-5 text-gray-500 transform transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            
+            {isOpen && (
+                <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
+                    {leaves.map((leave) => (
+                        <div key={leave.id} className="px-6 py-4 hover:bg-gray-50">
+                            <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                    <div className="flex items-center space-x-3 mb-2 flex-wrap gap-2">
+                                        <span className="font-medium text-gray-900">
+                                            {leave.employee_name}
+                                        </span>
+                                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                            {leave.department}
+                                        </span>
+                                        <span className={`text-xs px-2 py-1 rounded-full ${
+                                            leave.leave_type_code === 'VL' 
+                                                ? 'bg-green-100 text-green-800'
+                                                : leave.leave_type_code === 'SL'
+                                                ? 'bg-red-100 text-red-800'
+                                                : 'bg-purple-100 text-purple-800'
+                                        }`}>
+                                            {leave.leave_type_code} - {leave.leave_type}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-gray-600">
+                                        <span className="font-medium">Dates: </span>
+                                        {new Date(leave.start_date).toLocaleDateString()} 
+                                        {' to '}
+                                        {new Date(leave.end_date).toLocaleDateString()}
+                                        {' • '}
+                                        <span className="font-medium">{leave.total_days} day{leave.total_days !== 1 ? 's' : ''}</span>
+                                    </div>
+                                    {leave.reason && (
+                                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                            <span className="font-medium">Reason: </span>
+                                            {leave.reason}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default function LeaveCalendar({ events, leavesByMonth, departmentName, leaveTypes, filters, currentYear }) {
     const { flash } = usePage().props;
     const [selectedEvent, setSelectedEvent] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [activeView, setActiveView] = useState('calendar'); // 'calendar' or 'list'
+    const [localFilters, setLocalFilters] = useState({
+        year: filters.year || currentYear,
+        leave_type: filters.leave_type || ''
+    });
+    const [currentPage, setCurrentPage] = useState(1);
+    const monthsPerPage = 6; // Show 6 months at a time
+
+    // Calculate pagination
+    const monthEntries = Object.entries(leavesByMonth);
+    const totalPages = Math.ceil(monthEntries.length / monthsPerPage);
+    const startIndex = (currentPage - 1) * monthsPerPage;
+    const currentMonths = monthEntries.slice(startIndex, startIndex + monthsPerPage);
+
+    // Calculate summary statistics
+    const totalMonths = Object.keys(leavesByMonth).length;
+    const totalLeaves = Object.values(leavesByMonth).reduce((total, leaves) => total + leaves.length, 0);
+    const mostInMonth = Math.max(...Object.values(leavesByMonth).map(leaves => leaves.length), 0);
 
     const handleEventClick = (clickInfo) => {
         setSelectedEvent(clickInfo.event);
@@ -19,6 +110,25 @@ export default function LeaveCalendar({ events, departmentName }) {
     const closeModal = () => {
         setIsModalOpen(false);
         setSelectedEvent(null);
+    };
+
+    const handleFilterChange = (key, value) => {
+        setLocalFilters(prev => ({
+            ...prev,
+            [key]: value
+        }));
+    };
+
+    const applyFilters = () => {
+        window.location.href = route('dept_head.leave-calendar', localFilters);
+    };
+
+    const clearFilters = () => {
+        setLocalFilters({
+            year: currentYear,
+            leave_type: ''
+        });
+        window.location.href = route('dept_head.leave-calendar');
     };
 
     // Custom event content renderer
@@ -49,6 +159,11 @@ export default function LeaveCalendar({ events, departmentName }) {
         eventDisplay: 'block',
         eventOverlap: false,
         eventOrder: "start,-duration,allDay",
+        eventTimeFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            meridiem: false
+        },
         // Remove end date from events to only show start date
         eventDidMount: function(info) {
             // Remove any end date processing to ensure only start date is displayed
@@ -72,6 +187,28 @@ export default function LeaveCalendar({ events, departmentName }) {
                                 Only start dates are marked on the calendar
                             </p>
                         </div>
+                        <div className="flex space-x-2 mt-4 md:mt-0">
+                            <button
+                                onClick={() => setActiveView('list')}
+                                className={`px-4 py-2 rounded-lg font-medium ${
+                                    activeView === 'list' 
+                                        ? 'bg-blue-600 text-white' 
+                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                            >
+                                List View
+                            </button>
+                            <button
+                                onClick={() => setActiveView('calendar')}
+                                className={`px-4 py-2 rounded-lg font-medium ${
+                                    activeView === 'calendar' 
+                                        ? 'bg-blue-600 text-white' 
+                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                            >
+                                Calendar View
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -91,12 +228,157 @@ export default function LeaveCalendar({ events, departmentName }) {
                     </div>
                 )}
 
-                {/* Calendar Container */}
-                <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                    <div className="p-6">
-                        <FullCalendar {...calendarOptions} />
+                {/* Filters */}
+                <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                            <select
+                                value={localFilters.year}
+                                onChange={(e) => handleFilterChange('year', e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                {Array.from({length: 5}, (_, i) => {
+                                    const year = currentYear - 2 + i;
+                                    return (
+                                        <option key={year} value={year}>{year}</option>
+                                    );
+                                })}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Leave Type</label>
+                            <select
+                                value={localFilters.leave_type}
+                                onChange={(e) => handleFilterChange('leave_type', e.target.value)}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="">All Leave Types</option>
+                                {leaveTypes.map(type => (
+                                    <option key={type.id} value={type.code}>{type.name} ({type.code})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-end space-x-2">
+                            <button
+                                onClick={applyFilters}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                Apply Filters
+                            </button>
+                            <button
+                                onClick={clearFilters}
+                                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                            >
+                                Clear
+                            </button>
+                        </div>
                     </div>
                 </div>
+
+                {/* Summary Cards - Only show in list view */}
+                {activeView === 'list' && (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+                            <div className="text-2xl font-bold text-blue-600">{totalMonths}</div>
+                            <div className="text-sm text-gray-600">Months with Leaves</div>
+                        </div>
+                        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+                            <div className="text-2xl font-bold text-green-600">{totalLeaves}</div>
+                            <div className="text-sm text-gray-600">Total Leaves</div>
+                        </div>
+                        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+                            <div className="text-2xl font-bold text-purple-600">{mostInMonth}</div>
+                            <div className="text-sm text-gray-600">Most in a Month</div>
+                        </div>
+                        <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+                            <div className="text-2xl font-bold text-orange-600">{currentYear}</div>
+                            <div className="text-sm text-gray-600">Current Year</div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Calendar View */}
+                {activeView === 'calendar' && (
+                    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-6">
+                            <FullCalendar {...calendarOptions} />
+                        </div>
+                    </div>
+                )}
+
+                {/* List View */}
+                {activeView === 'list' && (
+                    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                        <div className="p-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">
+                                    Leaves for {currentYear} - {departmentName} Department
+                                </h2>
+                                {totalPages > 1 && (
+                                    <div className="text-sm text-gray-600">
+                                        Showing {startIndex + 1}-{Math.min(startIndex + monthsPerPage, monthEntries.length)} of {monthEntries.length} months
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {monthEntries.length === 0 ? (
+                                <div className="text-center py-8">
+                                    <p className="text-gray-500 text-lg">No leaves found for the selected filters.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="space-y-4">
+                                        {currentMonths.map(([month, leaves]) => (
+                                            <MonthAccordion 
+                                                key={month} 
+                                                month={month} 
+                                                leaves={leaves} 
+                                            />
+                                        ))}
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    {totalPages > 1 && (
+                                        <div className="flex justify-center items-center space-x-2 mt-6">
+                                            <button
+                                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                                disabled={currentPage === 1}
+                                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                            >
+                                                Previous
+                                            </button>
+                                            
+                                            <div className="flex space-x-1">
+                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                                                    <button
+                                                        key={page}
+                                                        onClick={() => setCurrentPage(page)}
+                                                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                            currentPage === page
+                                                                ? 'bg-blue-600 text-white'
+                                                                : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            
+                                            <button
+                                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                                disabled={currentPage === totalPages}
+                                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                            >
+                                                Next
+                                            </button>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Event Details Modal */}
                 {isModalOpen && selectedEvent && (

@@ -28,6 +28,9 @@ public function employee()
     return $this->belongsTo(Employee::class, 'employee_id', 'employee_id');
 }
 
+
+
+
 /**
  * Get the current balance for a specific leave type
  * 

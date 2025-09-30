@@ -34,12 +34,23 @@ class DeptHeadController extends Controller
                     'totalEmployees' => 0,
                     'approvedLeaveRequests' => 0,
                     'rejectedLeaveRequests' => 0
-                ]
+                ],
+                'chartData' => [
+                    'leaveTypeData' => [],
+                    'monthlyData' => []
+                ],
+                'selectedYear' => date('Y'),
+                'availableYears' => []
             ]);
         }
 
         // Calculate statistics
         $stats = $this->getDepartmentStats($departmentId);
+
+        // Get chart data
+        $selectedYear = $request->get('year', date('Y'));
+        $chartData = $this->getChartData($departmentId, $selectedYear);
+        $availableYears = $this->getAvailableYears($departmentId);
 
         // Minimal data for dashboard since content moved to leave request page
         $recentRequests = LeaveRequest::with([
@@ -71,61 +82,157 @@ class DeptHeadController extends Controller
         return Inertia::render('DeptHead/Dashboard', [
             'recentRequests' => $recentRequests,
             'departmentName' => $user->employee->department->name ?? 'Department',
-            'stats' => $stats
+            'stats' => $stats,
+            'chartData' => $chartData,
+            'selectedYear' => (int)$selectedYear,
+            'availableYears' => $availableYears
         ]);
     }
 
     public function getUpdatedRequests(Request $request)
-{
-    $user = $request->user();
-    $departmentId = $user->employee->department_id ?? null;
+    {
+        $user = $request->user();
+        $departmentId = $user->employee->department_id ?? null;
 
-    if (!$departmentId) {
+        if (!$departmentId) {
+            return response()->json([
+                'recentRequests' => [],
+                'stats' => [
+                    'totalEmployees' => 0,
+                    'approvedLeaveRequests' => 0,
+                    'rejectedLeaveRequests' => 0,
+                ]
+            ]);
+        }
+
+        // Get stats
+        $stats = $this->getDepartmentStats($departmentId);
+
+        // Get recent requests
+        $recentRequests = LeaveRequest::with([
+                'employee.user',
+                'leaveType:id,name',
+            ])
+            ->whereHas('employee', function ($query) use ($departmentId) {
+                $query->where('department_id', $departmentId);
+            })
+            ->orderBy('created_at', 'desc')
+            ->limit(5)
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'date_from' => $request->date_from,
+                    'date_to' => $request->date_to,
+                    'status' => $request->status,
+                    'employee' => $request->employee ? [
+                        'firstname' => $request->employee->firstname,
+                        'lastname' => $request->employee->lastname,
+                    ] : null,
+                    'leaveType' => $request->leaveType ? [
+                        'name' => $request->leaveType->name,
+                    ] : null,
+                ];
+            });
+
         return response()->json([
-            'recentRequests' => [],
-            'stats' => [
-                'totalEmployees' => 0,
-                'approvedLeaveRequests' => 0,
-                'rejectedLeaveRequests' => 0,
-            ]
+            'recentRequests' => $recentRequests,
+            'stats' => $stats,
         ]);
     }
 
-    // Get stats
-    $stats = $this->getDepartmentStats($departmentId);
+    /**
+     * Get chart data for dashboard
+     */
+    private function getChartData($departmentId, $year)
+    {
+        // Leave Usage by Type - Count approved leave requests by type
+        $leaveTypeData = LeaveRequest::whereHas('employee', function($query) use ($departmentId) {
+                $query->where('department_id', $departmentId);
+            })
+            ->where('status', 'approved')
+            ->whereYear('date_from', $year)
+            ->with('leaveType')
+            ->get()
+            ->groupBy('leaveType.name')
+            ->map(function ($requests, $type) {
+                return [
+                    'name' => $type,
+                    'value' => $requests->count(),
+                    'count' => $requests->count()
+                ];
+            })
+            ->values()
+            ->toArray();
 
-    // Get recent requests
-    $recentRequests = LeaveRequest::with([
-            'employee.user',
-            'leaveType:id,name',
-        ])
-        ->whereHas('employee', function ($query) use ($departmentId) {
-            $query->where('department_id', $departmentId);
-        })
-        ->orderBy('created_at', 'desc')
-        ->limit(5)
-        ->get()
-        ->map(function ($request) {
-            return [
-                'id' => $request->id,
-                'date_from' => $request->date_from,
-                'date_to' => $request->date_to,
-                'status' => $request->status,
-                'employee' => $request->employee ? [
-                    'firstname' => $request->employee->firstname,
-                    'lastname' => $request->employee->lastname,
-                ] : null,
-                'leaveType' => $request->leaveType ? [
-                    'name' => $request->leaveType->name,
-                ] : null,
+        // Leaves by Month - Count approved leave requests by month
+        $monthlyData = [];
+        for ($month = 1; $month <= 12; $month++) {
+            $monthCount = LeaveRequest::whereHas('employee', function($query) use ($departmentId) {
+                    $query->where('department_id', $departmentId);
+                })
+                ->where('status', 'approved')
+                ->whereYear('date_from', $year)
+                ->whereMonth('date_from', $month)
+                ->count();
+                
+            $monthlyData[] = [
+                'month' => Carbon::create()->month($month)->format('M'),
+                'leaves' => $monthCount,
+                'fullMonth' => Carbon::create()->month($month)->format('F')
             ];
-        });
+        }
 
-    return response()->json([
-        'recentRequests' => $recentRequests,
-        'stats' => $stats,
-    ]);
-}
+        return [
+            'leaveTypeData' => $leaveTypeData,
+            'monthlyData' => $monthlyData,
+        ];
+    }
+
+    /**
+     * Get available years for filtering
+     */
+    private function getAvailableYears($departmentId)
+    {
+        $years = LeaveRequest::whereHas('employee', function($query) use ($departmentId) {
+                $query->where('department_id', $departmentId);
+            })
+            ->where('status', 'approved')
+            ->selectRaw('YEAR(date_from) as year')
+            ->distinct()
+            ->orderBy('year', 'desc')
+            ->pluck('year')
+            ->filter()
+            ->toArray();
+
+        // If no years found, return current year
+        if (empty($years)) {
+            return [date('Y')];
+        }
+
+        return $years;
+    }
+
+    /**
+     * API endpoint for chart data by year
+     */
+    public function getChartDataByYear(Request $request)
+    {
+        $user = $request->user();
+        $departmentId = $user->employee->department_id ?? null;
+
+        if (!$departmentId) {
+            return response()->json([
+                'leaveTypeData' => [],
+                'monthlyData' => []
+            ]);
+        }
+
+        $year = $request->get('year', date('Y'));
+        $chartData = $this->getChartData($departmentId, $year);
+
+        return response()->json($chartData);
+    }
 
     /**
      * Calculate department statistics
@@ -157,7 +264,7 @@ class DeptHeadController extends Controller
             'rejectedLeaveRequests' => $rejectedLeaveRequests
         ];
     }
-
+    
     public function leaveRequests(Request $request)
     {
         $user = $request->user();
@@ -592,61 +699,122 @@ class DeptHeadController extends Controller
         
         // Get department ID with null check
         $departmentId = $user->employee->department_id ?? null;
-
+    
         if (!$departmentId) {
             return Inertia::render('DeptHead/LeaveCalendar', [
                 'events' => [],
-                'departmentName' => 'No Department Assigned'
+                'leavesByMonth' => [],
+                'departmentName' => 'No Department Assigned',
+                'departments' => [],
+                'leaveTypes' => [],
+                'filters' => $request->only(['year', 'leave_type']),
+                'currentYear' => now()->year,
             ]);
         }
-
+    
+        // Get the current year or use the year from request
+        $currentYear = $request->year ?? now()->year;
+        
         // Get fully approved leave requests for employees in the department
-        $approvedLeaveRequests = LeaveRequest::where('status', 'approved')
+        $query = LeaveRequest::where('status', 'approved')
             ->whereHas('approvals', function ($query) {
                 $query->where('role', 'admin')->where('status', 'approved');
             })
             ->whereHas('employee', function($query) use ($departmentId) {
                 $query->where('department_id', $departmentId);
             })
+            ->whereYear('date_from', $currentYear) // Filter by year
             ->with(['employee', 'leaveType', 'approvals' => function ($query) {
                 $query->with('approver');
-            }])
-            ->get()
-            ->map(function ($leaveRequest) {
-                return [
-                    'id' => $leaveRequest->id,
-                    'title' => $leaveRequest->leaveType->code . ' - ' . $leaveRequest->employee->firstname,
-                    'start' => $leaveRequest->date_from, // Only the start date
-                    'allDay' => true,
-                    'backgroundColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
-                    'borderColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
-                    'extendedProps' => [
-                        'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
-                        'leave_type' => $leaveRequest->leaveType->name,
-                        'leave_type_code' => $leaveRequest->leaveType->code,
-                        'start_date' => $leaveRequest->date_from,
-                        'end_date' => $leaveRequest->date_to,
-                        'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1,
-                        'reason' => $leaveRequest->reason,
-                        'approvals' => $leaveRequest->approvals->map(function ($approval) {
-                            return [
-                                'role' => $approval->role,
-                                'status' => $approval->status,
-                                'approver_name' => $approval->approver->name ?? 'Unknown',
-                                'approved_at' => $approval->approved_at,
-                                'remarks' => $approval->remarks
-                            ];
-                        })
-                    ]
-                ];
+            }]);
+    
+        // Apply additional filters if provided
+        if ($request->has('leave_type') && $request->leave_type) {
+            $query->whereHas('leaveType', function ($q) use ($request) {
+                $q->where('code', $request->leave_type);
             });
-
+        }
+    
+        $approvedLeaveRequests = $query->get();
+    
+        // Group leaves by month for list view
+        $leavesByMonth = [];
+        foreach ($approvedLeaveRequests as $leaveRequest) {
+            $month = Carbon::parse($leaveRequest->date_from)->format('F Y');
+            
+            if (!isset($leavesByMonth[$month])) {
+                $leavesByMonth[$month] = [];
+            }
+    
+            $leavesByMonth[$month][] = [
+                'id' => $leaveRequest->id,
+                'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
+                'leave_type' => $leaveRequest->leaveType->name,
+                'leave_type_code' => $leaveRequest->leaveType->code,
+                'start_date' => $leaveRequest->date_from,
+                'end_date' => $leaveRequest->date_to,
+                'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1,
+                'reason' => $leaveRequest->reason,
+                'department' => $leaveRequest->employee->department->name ?? 'No Department',
+                'approvals' => $leaveRequest->approvals->map(function ($approval) {
+                    return [
+                        'role' => $approval->role,
+                        'status' => $approval->status,
+                        'approver_name' => $approval->approver->name ?? 'Unknown',
+                        'approved_at' => $approval->approved_at,
+                        'remarks' => $approval->remarks
+                    ];
+                })
+            ];
+        }
+    
+        // Sort months chronologically
+        uksort($leavesByMonth, function ($a, $b) {
+            return strtotime($a) - strtotime($b);
+        });
+    
+        // Format for calendar view (existing functionality)
+        $calendarEvents = $approvedLeaveRequests->map(function ($leaveRequest) {
+            return [
+                'id' => $leaveRequest->id,
+                'title' => $leaveRequest->leaveType->code . ' - ' . $leaveRequest->employee->firstname,
+                'start' => $leaveRequest->date_from, // Only the start date
+                'allDay' => true,
+                'backgroundColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
+                'borderColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
+                'extendedProps' => [
+                    'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
+                    'leave_type' => $leaveRequest->leaveType->name,
+                    'leave_type_code' => $leaveRequest->leaveType->code,
+                    'start_date' => $leaveRequest->date_from,
+                    'end_date' => $leaveRequest->date_to,
+                    'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1,
+                    'reason' => $leaveRequest->reason,
+                    'department' => $leaveRequest->employee->department->name ?? 'No Department',
+                    'approvals' => $leaveRequest->approvals->map(function ($approval) {
+                        return [
+                            'role' => $approval->role,
+                            'status' => $approval->status,
+                            'approver_name' => $approval->approver->name ?? 'Unknown',
+                            'approved_at' => $approval->approved_at,
+                            'remarks' => $approval->remarks
+                        ];
+                    })
+                ]
+            ];
+        });
+    
         return Inertia::render('DeptHead/LeaveCalendar', [
-            'events' => $approvedLeaveRequests,
-            'departmentName' => $user->employee->department->name ?? 'Department'
+            'events' => $calendarEvents,
+            'leavesByMonth' => $leavesByMonth,
+            'departmentName' => $user->employee->department->name ?? 'Department',
+            'leaveTypes' => LeaveType::all(),
+            'filters' => $request->only(['year', 'leave_type']),
+            'currentYear' => $currentYear,
         ]);
     }
 
+    
     /**
      * Helper method to assign colors based on leave type
      */
@@ -672,10 +840,3 @@ class DeptHeadController extends Controller
         return $colors[$leaveTypeCode] ?? '#9CA3AF';
     }
 }
-
-
-
-
-
-
-

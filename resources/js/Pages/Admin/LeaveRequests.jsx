@@ -1,19 +1,17 @@
 import AdminLayout from "@/Layouts/AdminLayout";
-import { Head, useForm, router } from "@inertiajs/react";
-import { useState } from "react";
+import { Head, useForm, router, Link } from "@inertiajs/react";
+import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 
 const statusColors = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    approved_by_admin: 'bg-blue-100 text-blue-800',
-    fully_approved: 'bg-green-100 text-green-800',
+    pending_to_admin: 'bg-yellow-100 text-yellow-800',
+    approved: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800'
 };
 
 const statusLabels = {
-    pending: 'Pending',
-    approved_by_admin: 'Approved by Admin',
-    fully_approved: 'Fully Approved',
+    pending_to_admin: 'Pending Admin Approval',
+    approved: 'Fully Approved',
     rejected: 'Rejected'
 };
 
@@ -25,28 +23,19 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function LeaveRequests({ leaveRequests: initialLeaveRequests, filters, flash, currentApprover, isActiveApprover }) {
-    // Fix: Use different name for state - renamed to leaveRequestsData
-    const [leaveRequestsData, setLeaveRequestsData] = useState(initialLeaveRequests);
-    const [selectedStatus, setSelectedStatus] = useState(filters.status || 'all');
+export default function LeaveRequests({ leaveRequests, filters, flash, currentApprover, isActiveApprover }) {
     const [rejectingId, setRejectingId] = useState(null);
     const [rejectRemarks, setRejectRemarks] = useState('');
+    const [selectedStatus, setSelectedStatus] = useState(filters.status || 'pending_to_admin');
 
-    // Update filteredRequests to use leaveRequestsData instead of leaveRequests
-    const filteredRequests = selectedStatus === 'all' 
-        ? leaveRequestsData 
-        : leaveRequestsData.filter(req => {
-            if (selectedStatus === 'pending') {
-                return req.status === 'pending' && !req.admin_approval;
-            } else if (selectedStatus === 'approved_by_admin') {
-                return req.admin_approval?.status === 'approved' && req.status === 'pending';
-            } else if (selectedStatus === 'fully_approved') {
-                return req.status === 'approved' && req.admin_approval?.status === 'approved';
-            } else if (selectedStatus === 'rejected') {
-                return req.status === 'rejected';
-            }
-            return false;
+    // Handle tab change
+    const handleTabChange = (status) => {
+        setSelectedStatus(status);
+        router.get(route('admin.leave-requests.index'), { status }, {
+            preserveState: true,
+            replace: true
         });
+    };
 
     const handleApprove = (id) => {
         Swal.fire({
@@ -60,15 +49,14 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
             if (result.isConfirmed) {
                 router.post(route('admin.leave-requests.approve', id), {}, {
                     preserveScroll: true,
-                    preserveState: true,
                     onSuccess: () => {
-                        // Remove the approved request from the list
-                        setLeaveRequestsData((prev) => prev.filter((r) => r.id !== id));
                         Swal.fire(
                             "Approved!",
                             "The leave request has been approved.",
                             "success"
                         );
+                        // Refresh the page to update the list
+                        router.reload({ only: ['leaveRequests'] });
                     },
                     onError: (errors) => {
                         console.error('Approval error:', errors);
@@ -80,11 +68,7 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                             errorMessage = errors.message;
                         }
 
-                        Swal.fire(
-                            "Error",
-                            errorMessage,
-                            "error"
-                        );
+                        Swal.fire("Error", errorMessage, "error");
                     },
                 });
             }
@@ -101,13 +85,12 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
             remarks: rejectRemarks
         }, {
             preserveScroll: true,
-            preserveState: true,
             onSuccess: () => {
-                // Remove the rejected request from the list
-                setLeaveRequestsData((prev) => prev.filter((r) => r.id !== id));
                 setRejectingId(null);
                 setRejectRemarks("");
                 Swal.fire("Rejected!", "The leave request has been rejected.", "success");
+                // Refresh the page to update the list
+                router.reload({ only: ['leaveRequests'] });
             },
             onError: (errors) => {
                 console.error('Rejection error:', errors);
@@ -127,10 +110,14 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
     };
 
     const getRequestStatus = (request) => {
-        if (request.status === 'rejected') return 'rejected';
-        if (request.status === 'approved' && request.admin_approval?.status === 'approved') return 'fully_approved';
-        if (request.admin_approval?.status === 'approved') return 'approved_by_admin';
-        return 'pending';
+        // If we're in the pending_to_admin tab and there's no admin approval yet,
+        // show it as pending_to_admin regardless of the database status
+        if (selectedStatus === 'pending_to_admin' && !request.admin_approval) {
+            return 'pending_to_admin';
+        }
+        
+        // Otherwise, use the actual status from the database
+        return request.status;
     };
 
     // Show unauthorized message if user is not active approver
@@ -243,37 +230,22 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
                     <div className="flex flex-wrap gap-2">
                         <button
-                            onClick={() => setSelectedStatus('all')}
+                            onClick={() => handleTabChange('pending_to_admin')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                selectedStatus === 'all'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                        >
-                            All Requests
-                        </button>
-                        <button
-                            onClick={() => setSelectedStatus('pending')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                selectedStatus === 'pending'
+                                selectedStatus === 'pending_to_admin'
                                     ? 'bg-yellow-600 text-white'
                                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             }`}
                         >
-                            Pending
+                            Pending to Admin
+                            {selectedStatus === 'pending_to_admin' && leaveRequests.data && leaveRequests.data.length > 0 && (
+                                <span className="ml-2 bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                                    {leaveRequests.total}
+                                </span>
+                            )}
                         </button>
                         <button
-                            onClick={() => setSelectedStatus('approved_by_admin')}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                selectedStatus === 'approved_by_admin'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                        >
-                            Approved by Admin
-                        </button>
-                        <button
-                            onClick={() => setSelectedStatus('fully_approved')}
+                            onClick={() => handleTabChange('fully_approved')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'fully_approved'
                                     ? 'bg-green-600 text-white'
@@ -281,9 +253,14 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                             }`}
                         >
                             Fully Approved
+                            {selectedStatus === 'fully_approved' && leaveRequests.data && leaveRequests.data.length > 0 && (
+                                <span className="ml-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                    {leaveRequests.total}
+                                </span>
+                            )}
                         </button>
                         <button
-                            onClick={() => setSelectedStatus('rejected')}
+                            onClick={() => handleTabChange('rejected')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'rejected'
                                     ? 'bg-red-600 text-white'
@@ -291,6 +268,11 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                             }`}
                         >
                             Rejected
+                            {selectedStatus === 'rejected' && leaveRequests.data && leaveRequests.data.length > 0 && (
+                                <span className="ml-2 bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                                    {leaveRequests.total}
+                                </span>
+                            )}
                         </button>
                     </div>
                 </div>
@@ -308,7 +290,10 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                                         Leave Type
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Certification
+                                        Dates
+                                    </th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        HR Certification
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Dept Head Approval
@@ -322,8 +307,8 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredRequests.length > 0 ? (
-                                    filteredRequests.map((request) => {
+                                {leaveRequests.data && leaveRequests.data.length > 0 ? (
+                                    leaveRequests.data.map((request) => {
                                         const status = getRequestStatus(request);
                                         return (
                                             <tr key={request.id} className="hover:bg-gray-50 transition-colors">
@@ -347,21 +332,25 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                                                     <div className="text-sm text-gray-900">{request.leaveType.name}</div>
                                                     <div className="text-sm text-gray-500">({request.leaveType.code})</div>
                                                 </td>
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="text-sm text-gray-900">
+                                                        {formatDate(request.date_from)} to {formatDate(request.date_to)}
+                                                    </div>
+                                                    <div className="text-sm text-gray-500">{request.total_days} days</div>
+                                                </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                     {request.hr_approval ? (
                                                         <div className="flex flex-col">
                                                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 mb-1">
-                                                                Certified by HR
+                                                                Certified
                                                             </span>
                                                             <span className="text-xs text-gray-500">
-                                                                {new Date(
-                                                                    request.hr_approval.approved_at
-                                                                ).toLocaleDateString()}
+                                                                {formatDate(request.hr_approval.approved_at)}
                                                             </span>
                                                         </div>
                                                     ) : (
                                                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                                            Pending HR Certification
+                                                            Pending
                                                         </span>
                                                     )}
                                                 </td>
@@ -369,17 +358,15 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                                                     {request.dept_head_approval ? (
                                                         <div className="flex flex-col">
                                                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 mb-1">
-                                                                Approved by Dept Head
+                                                                Approved
                                                             </span>
                                                             <span className="text-xs text-gray-500">
-                                                                {new Date(
-                                                                    request.dept_head_approval.approved_at
-                                                                ).toLocaleDateString()}
+                                                                {formatDate(request.dept_head_approval.approved_at)}
                                                             </span>
                                                         </div>
                                                     ) : (
                                                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                                            Pending Dept Head
+                                                            Pending
                                                         </span>
                                                     )}
                                                 </td>
@@ -389,53 +376,54 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    {rejectingId === request.id ? (
-                                                        <div className="space-y-2">
-                                                            <textarea
-                                                                value={rejectRemarks}
-                                                                onChange={(e) => setRejectRemarks(e.target.value)}
-                                                                className="w-full border rounded p-2 text-sm"
-                                                                placeholder="Enter rejection reason (required)"
-                                                                rows={3}
-                                                                required
-                                                            />
-                                                            <div className="flex space-x-2">
-                                                                <button
-                                                                    onClick={() => handleReject(request.id)}
-                                                                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-                                                                >
-                                                                    Confirm Reject
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setRejectingId(null);
-                                                                        setRejectRemarks(""); // Clear remarks when canceling
-                                                                    }}
-                                                                    className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
-                                                                >
-                                                                    Cancel
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center justify-end space-x-3">
-                                                            {status === 'pending' && (
-                                                                <>
+                                                    {selectedStatus === 'pending_to_admin' && (
+                                                        rejectingId === request.id ? (
+                                                            <div className="space-y-2">
+                                                                <textarea
+                                                                    value={rejectRemarks}
+                                                                    onChange={(e) => setRejectRemarks(e.target.value)}
+                                                                    className="w-full border rounded p-2 text-sm"
+                                                                    placeholder="Enter rejection reason (required)"
+                                                                    rows={3}
+                                                                    required
+                                                                />
+                                                                <div className="flex space-x-2">
                                                                     <button
-                                                                        onClick={() => handleApprove(request.id)}
-                                                                        className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
-                                                                    >
-                                                                        Approve
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => setRejectingId(request.id)}
+                                                                        onClick={() => handleReject(request.id)}
                                                                         className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                                                                     >
-                                                                        Reject
+                                                                        Confirm Reject
                                                                     </button>
-                                                                </>
-                                                            )}
-                                                        </div>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setRejectingId(null);
+                                                                            setRejectRemarks("");
+                                                                        }}
+                                                                        className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
+                                                                    >
+                                                                        Cancel
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center justify-end space-x-3">
+                                                                <button
+                                                                    onClick={() => handleApprove(request.id)}
+                                                                    className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                                                                >
+                                                                    Approve
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setRejectingId(request.id)}
+                                                                    className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                                                                >
+                                                                    Reject
+                                                                </button>
+                                                            </div>
+                                                        )
+                                                    )}
+                                                    {(selectedStatus === 'fully_approved' || selectedStatus === 'rejected') && (
+                                                        <span className="text-gray-400 text-sm">No actions available</span>
                                                     )}
                                                 </td>
                                             </tr>
@@ -443,15 +431,17 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                                     })
                                 ) : (
                                     <tr>
-                                        <td colSpan="6" className="px-6 py-8 text-center">
+                                        <td colSpan="7" className="px-6 py-12 text-center">
                                             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
                                             <h3 className="mt-2 text-sm font-medium text-gray-900">No leave requests found</h3>
                                             <p className="mt-1 text-sm text-gray-500">
-                                                {selectedStatus === 'all' 
-                                                    ? 'There are no leave requests in the system.' 
-                                                    : `There are no ${statusLabels[selectedStatus]?.toLowerCase()} leave requests.`}
+                                                {selectedStatus === 'pending_to_admin' 
+                                                    ? 'There are no leave requests pending admin approval.' 
+                                                    : selectedStatus === 'fully_approved'
+                                                    ? 'There are no fully approved leave requests.'
+                                                    : 'There are no rejected leave requests.'}
                                             </p>
                                         </td>
                                     </tr>
@@ -459,6 +449,52 @@ export default function LeaveRequests({ leaveRequests: initialLeaveRequests, fil
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {leaveRequests.data && leaveRequests.data.length > 0 && (
+                        <div className="bg-white px-6 py-3 border-t border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div className="text-sm text-gray-700">
+                                    Showing <span className="font-medium">{leaveRequests.from}</span> to{' '}
+                                    <span className="font-medium">{leaveRequests.to}</span> of{' '}
+                                    <span className="font-medium">{leaveRequests.total}</span> results
+                                </div>
+                                <div className="flex space-x-2">
+                                    {/* Previous Page */}
+                                    {leaveRequests.prev_page_url ? (
+                                        <Link
+                                            href={leaveRequests.prev_page_url}
+                                            className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                            preserveState
+                                        >
+                                            Previous
+                                        </Link>
+                                    ) : (
+                                        <span className="px-3 py-1 text-sm bg-gray-50 text-gray-400 rounded cursor-not-allowed">
+                                            Previous
+                                        </span>
+                                    )}
+
+                                   
+
+                                    {/* Next Page */}
+                                    {leaveRequests.next_page_url ? (
+                                        <Link
+                                            href={leaveRequests.next_page_url}
+                                            className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                            preserveState
+                                        >
+                                            Next
+                                        </Link>
+                                    ) : (
+                                        <span className="px-3 py-1 text-sm bg-gray-50 text-gray-400 rounded cursor-not-allowed">
+                                            Next
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </AdminLayout>

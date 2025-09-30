@@ -32,10 +32,21 @@ class AuthenticatedSessionController extends Controller
     {
         $request->authenticate();
 
+        $user = Auth::user();
+        
+        // Check if the user can log in based on employee status
+        if (!$user->canLogIn()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return redirect()->route('login')
+                ->withErrors(['email' => 'Your account is inactive. Please contact administrator.']);
+        }
+
         $request->session()->regenerate();
 
-       return redirect()->intended(RouteServiceProvider::homeRoute());
-
+        return redirect()->intended(RouteServiceProvider::homeRoute());
     }
 
     /**

@@ -13,11 +13,11 @@ import {
     XMarkIcon,
     ArrowPathIcon,
     CalendarIcon,
-    CurrencyDollarIcon // Added CurrencyDollarIcon for employee mode
+    CurrencyDollarIcon
 } from '@heroicons/react/24/outline';
 
 export default function DeptHeadLayout({ children }) {
-    const { props } = usePage();
+    const { props, url } = usePage();
     const userRole = props.auth.role;
     
     const [collapsed, setCollapsed] = useState(false);
@@ -25,170 +25,121 @@ export default function DeptHeadLayout({ children }) {
 
     const toggleSidebar = () => setCollapsed(!collapsed);
 
+    // Helper function to check if a link is active
+    const isActiveLink = (href) => {
+        return url.startsWith(href);
+    };
+
+    // Navigation items for Dept Head mode
+    const deptHeadNavigation = [
+        { href: '/dept-head/dashboard', label: 'Dashboard', icon: HomeIcon },
+        { href: '/dept-head/leave-requests', label: 'Leave Approvals', icon: DocumentTextIcon },
+        { href: '/dept-head/employees', label: 'Team Management', icon: UserGroupIcon },
+        { href: '/dept-head/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
+        { href: '/dept-head/recall-requests', label: 'Recall Requests', icon: ArrowPathIcon },
+        { href: '/dept-head/chart-data', label: 'Analytics', icon: ChartBarIcon },
+    ];
+
+    // Navigation items for Employee mode
+    const employeeNavigation = [
+        { href: '/employee/dashboard', label: 'Dashboard', icon: HomeIcon },
+        { href: '/employee/my-leave-requests', label: 'My Leave Requests', icon: DocumentTextIcon },
+        { href: '/employee/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
+        { href: '/employee/credit-conversion', label: 'Credit Conversion', icon: CurrencyDollarIcon },
+    ];
+
+    const currentNavigation = mode === "dept_head" ? deptHeadNavigation : employeeNavigation;
+
     return (
         <div className="flex min-h-screen bg-gray-50">
-            {/* Fixed Sidebar */}
-            <div className={`fixed inset-y-0 left-0 transition-all duration-300 bg-white shadow-lg flex flex-col z-50 ${collapsed ? 'w-16' : 'w-64'}`}>
-                <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                    {!collapsed && (
-                        <h1 className="font-bold text-xl text-blue-800">
-                            {mode === "dept_head" ? "DEPARTMENT HEAD" : "EMPLOYEE MODE"}
-                        </h1>
+            {/* Fixed Sidebar with deptDark background */}
+            <div className={`fixed inset-y-0 left-0 transition-all duration-300 bg-dept-dark text-white flex flex-col z-50 ${collapsed ? 'w-16' : 'w-64'}`}>
+                <div className="flex items-center justify-between p-4 border-b border-dept-green/30">
+                    {!collapsed ? (
+                        <div className="flex items-center space-x-3">
+                            {/* Logo */}
+                            <div className="w-9 h-9 bg-dept-green rounded-lg flex items-center justify-center">
+                                <UserGroupIcon className="h-5 w-5 text-white" />
+                            </div>
+                            <h1 className="font-bold text-xl text-white">
+                                {mode === "dept_head" ? "DEPARTMENT HEAD" : "EMPLOYEE MODE"}
+                            </h1>
+                        </div>
+                    ) : (
+                        // Show only logo when collapsed
+                        <div className="flex justify-center w-full">
+                            <div className="w-9 h-9 bg-dept-green rounded-lg flex items-center justify-center">
+                                <UserGroupIcon className="h-5 w-5 text-white" />
+                            </div>
+                        </div>
                     )}
                     <button 
                         onClick={toggleSidebar}
-                        className="p-1 rounded-md hover:bg-gray-100 transition-colors"
+                        className="p-1.5 rounded-full hover:bg-dept-green/20 transition-colors"
                     >
-                        {collapsed ? <ChevronRightIcon className="h-5 w-5" /> : <ChevronLeftIcon className="h-5 w-5" />}
+                        {collapsed ? (
+                            <ChevronRightIcon className="h-5 w-5 text-dept-green" />
+                        ) : (
+                            <ChevronLeftIcon className="h-5 w-5 text-white" />
+                        )}
                     </button>
                 </div>
 
-                <nav className="flex flex-col p-3 space-y-1 flex-1 overflow-y-auto">
-                    {mode === "dept_head" ? (
-                        <>
+                <nav className="flex flex-col p-3 space-y-2 flex-1 mt-2 overflow-y-auto">
+                    {currentNavigation.map((item) => {
+                        const IconComponent = item.icon;
+                        const isActive = isActiveLink(item.href);
+                        
+                        return (
                             <Link 
-                                href="/dept-head/dashboard" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
+                                key={item.href}
+                                href={item.href} 
+                                className={`flex items-center p-3 rounded-lg transition-all duration-200 group relative ${
+                                    isActive 
+                                        ? 'bg-dept-green text-white shadow-lg shadow-dept-green/25' 
+                                        : 'hover:bg-dept-green/30 hover:text-white'
+                                }`}
                             >
-                                <HomeIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Dashboard</span>}
+                                <IconComponent className={`h-5 w-5 flex-shrink-0 ${
+                                    isActive ? 'text-white' : 'text-gray-300'
+                                }`} />
+                                {!collapsed && (
+                                    <span className={`ml-3 font-medium ${
+                                        isActive ? 'text-white' : 'text-gray-200'
+                                    }`}>
+                                        {item.label}
+                                    </span>
+                                )}
                                 {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Dashboard
+                                    <div className="absolute left-full ml-2 px-2 py-1 bg-dept-green text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                        {item.label}
                                     </div>
                                 )}
                             </Link>
-                            <Link 
-                                href="/dept-head/leave-requests" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <DocumentTextIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Leave Approvals</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Leave Approvals
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/dept-head/employees" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <UserGroupIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Team Management</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Team Management
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/dept-head/leave-calendar" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <CalendarIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Leave Calendar</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Leave Calendar
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/dept-head/reports" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <ChartBarIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Reports</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Reports
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/dept-head/recall-requests" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <ArrowPathIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Recall Requests</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Recall Requests
-                                    </div>
-                                )}
-                            </Link>
-                        </>
-                    ) : (
-                        <>
-                            <Link 
-                                href="/employee/dashboard" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <HomeIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Dashboard</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Dashboard
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/employee/my-leave-requests" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <DocumentTextIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">My Leave Requests</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        My Leave Requests
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/employee/leave-calendar" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <CalendarIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Leave Calendar</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Leave Calendar
-                                    </div>
-                                )}
-                            </Link>
-                            <Link 
-                                href="/employee/credit-conversion" 
-                                className="flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600 group"
-                            >
-                                <CurrencyDollarIcon className="h-5 w-5 flex-shrink-0" />
-                                {!collapsed && <span className="ml-3">Credit Conversion</span>}
-                                {collapsed && (
-                                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
-                                        Credit Conversion
-                                    </div>
-                                )}
-                            </Link>
-                        </>
-                    )}
+                        );
+                    })}
 
                     {/* Role Switch Button */}
                     {(userRole === "dept_head" || userRole === "hr" || userRole === "admin") && (
-                        <RoleSwitchButton collapsed={collapsed} currentMode={mode} />
+                        <RoleSwitchButton 
+                            collapsed={collapsed} 
+                            currentMode={mode} 
+                            deptColors={true}
+                        />
                     )}
 
                     {/* Logout */}
-                    <div className="mt-auto pt-3 border-t border-gray-100">
+                    <div className="mt-auto pt-4 border-t border-dept-green/30">
                         <Link
                             href="/logout"
                             method="post"
                             as="button"
-                            className="w-full flex items-center p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-red-50 text-red-600 hover:text-red-700 group"
+                            className="flex items-center w-full p-3 rounded-lg hover:bg-red-600/20 text-red-200 hover:text-white transition-all duration-200 group relative"
                         >
                             <XMarkIcon className="h-5 w-5 flex-shrink-0" />
                             {!collapsed && <span className="ml-3">Logout</span>}
                             {collapsed && (
-                                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                <div className="absolute left-full ml-2 px-2 py-1 bg-dept-green text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
                                     Logout
                                 </div>
                             )}
@@ -201,12 +152,15 @@ export default function DeptHeadLayout({ children }) {
             <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${collapsed ? 'ml-16' : 'ml-64'}`}>
                 {/* Header */}
                 <header className="bg-white shadow-sm z-10 sticky top-0">
-                    <div className="flex items-center justify-between px-6 py-3">
-                        <h2 className="text-lg font-semibold text-gray-800">
-                            Welcome, {props.auth.user.name}
-                        </h2>
+                    <div className="flex items-center justify-between px-6 py-4">
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-800">
+                                Welcome, {props.auth.user.name}
+                            </h2>
+                            
+                        </div>
                         <div className="flex items-center space-x-4">
-                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                            <span className="text-xs font-medium px-3 py-1 rounded-full bg-dept-green text-white">
                                 {mode === "dept_head" ? "Department Head" : "Employee Mode"}
                             </span>
                         </div>
@@ -214,8 +168,8 @@ export default function DeptHeadLayout({ children }) {
                 </header>
                 
                 {/* Page Content */}
-                <main className="flex-1 overflow-auto p-6">
-                    <PageTransition animation="fade-slide-up" duration={400} delay={100}>
+                <main className="flex-1 overflow-auto">
+                    <PageTransition animation="fade-slide-up" duration={400} delay={100} className="p-6">
                         {children}
                     </PageTransition>
                 </main>

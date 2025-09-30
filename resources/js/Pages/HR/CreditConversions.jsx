@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import HRLayout from '@/Layouts/HRLayout';
 import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
 import InputLabel from '@/Components/InputLabel';
 
-export default function CreditConversions({ auth, conversions, filters }) {
+export default function CreditConversions({ auth, conversions, stats, filters }) {
     const [searchTerm, setSearchTerm] = useState(filters.employee || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
 
@@ -45,13 +45,24 @@ export default function CreditConversions({ auth, conversions, filters }) {
         });
     };
 
-    const getStatusCount = (status) => {
-        return conversions.filter(conversion => conversion.status === status).length;
+    const handleFilter = () => {
+        router.get('/hr/credit-conversions', {
+            status: statusFilter,
+            employee: searchTerm,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+        });
     };
 
-    const totalPending = getStatusCount('pending');
-    const totalApproved = getStatusCount('approved');
-    const totalRejected = getStatusCount('rejected');
+    const clearFilters = () => {
+        setSearchTerm('');
+        setStatusFilter('');
+        router.get('/hr/credit-conversions', {}, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
 
     return (
         <HRLayout>
@@ -76,7 +87,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{conversions.length}</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">{stats.total}</h2>
                                 <p className="text-sm text-gray-600">Total Requests</p>
                             </div>
                         </div>
@@ -90,7 +101,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalPending}</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">{stats.pending}</h2>
                                 <p className="text-sm text-gray-600">Pending Requests</p>
                             </div>
                         </div>
@@ -104,7 +115,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalApproved}</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">{stats.approved}</h2>
                                 <p className="text-sm text-gray-600">Approved Requests</p>
                             </div>
                         </div>
@@ -118,7 +129,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalRejected}</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">{stats.rejected}</h2>
                                 <p className="text-sm text-gray-600">Rejected Requests</p>
                             </div>
                         </div>
@@ -141,6 +152,11 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
+                                    onKeyPress={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleFilter();
+                                        }
+                                    }}
                                 />
                             </div>
                         </div>
@@ -160,11 +176,18 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                 </select>
                             </div>
                             <button
-                                onClick={() => {
-                                    setSearchTerm('');
-                                    setStatusFilter('');
-                                    window.location.href = route('hr.credit-conversions');
-                                }}
+                                onClick={handleFilter}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center shadow-md hover:shadow-lg"
+                            >
+                                <div className="p-1 rounded-lg bg-blue-500 mr-2">
+                                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                    </svg>
+                                </div>
+                                Apply Filters
+                            </button>
+                            <button
+                                onClick={clearFilters}
                                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center shadow-md hover:shadow-lg"
                             >
                                 <div className="p-1 rounded-lg bg-gray-500 mr-2">
@@ -211,7 +234,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {conversions.length === 0 ? (
+                                {conversions.data.length === 0 ? (
                                     <tr>
                                         <td colSpan="8" className="px-6 py-8 text-center">
                                             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -224,7 +247,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                         </td>
                                     </tr>
                                 ) : (
-                                    conversions.map((conversion) => (
+                                    conversions.data.map((conversion) => (
                                         <tr key={conversion.conversion_id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
@@ -270,7 +293,7 @@ export default function CreditConversions({ auth, conversions, filters }) {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(conversion.status)}`}>
-                                                    {conversion.status.charAt(0).toUpperCase() + conversion.status.slice(1)}
+                                                    {getStatusIcon(conversion.status)} {conversion.status.charAt(0).toUpperCase() + conversion.status.slice(1)}
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -292,6 +315,53 @@ export default function CreditConversions({ auth, conversions, filters }) {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {conversions.data.length > 0 && (
+                        <div className="bg-white px-6 py-4 border-t border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div className="text-sm text-gray-700">
+                                    Showing <span className="font-medium">{conversions.from}</span> to <span className="font-medium">{conversions.to}</span> of{' '}
+                                    <span className="font-medium">{conversions.total}</span> results
+                                </div>
+                                <div className="flex space-x-2">
+                                    {/* Previous Page */}
+                                    {conversions.prev_page_url && (
+                                        <button
+                                            onClick={() => router.visit(conversions.prev_page_url, { preserveState: true, preserveScroll: true })}
+                                            className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                                        >
+                                            Previous
+                                        </button>
+                                    )}
+
+                                    {/* Page Numbers */}
+                                    {conversions.links.slice(1, -1).map((link, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => link.url && router.visit(link.url, { preserveState: true, preserveScroll: true })}
+                                            className={`px-3 py-1 text-sm border rounded-md transition-colors ${
+                                                link.active
+                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                    : 'border-gray-300 hover:bg-gray-50'
+                                            }`}
+                                            dangerouslySetInnerHTML={{ __html: link.label }}
+                                        />
+                                    ))}
+
+                                    {/* Next Page */}
+                                    {conversions.next_page_url && (
+                                        <button
+                                            onClick={() => router.visit(conversions.next_page_url, { preserveState: true, preserveScroll: true })}
+                                            className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                                        >
+                                            Next
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </HRLayout>

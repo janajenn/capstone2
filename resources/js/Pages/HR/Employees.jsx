@@ -1,11 +1,14 @@
 import HRLayout from '@/Layouts/HRLayout';
 import { useForm, usePage, Link, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { debounce } from 'lodash';
 
 export default function Employees({ employees, departments, filters }) {
     const { flash } = usePage().props;
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedDepartment, setSelectedDepartment] = useState(filters?.department || '');
+    const [searchTerm, setSearchTerm] = useState(filters?.search || '');
+    const searchInputRef = useRef(null);
 
     const { data, setData, post, reset, errors } = useForm({
         firstname: '',
@@ -28,12 +31,61 @@ export default function Employees({ employees, departments, filters }) {
         is_primary: false
     });
 
+    // Debounced search function
+    const debouncedSearch = useCallback(
+        debounce((term, department) => {
+            router.get(route('hr.employees'), {
+                search: term || null,
+                department: department || null,
+                page: 1 // Reset to first page when searching
+            }, {
+                preserveState: true,
+                replace: true,
+                preserveScroll: true
+            });
+        }, 300),
+        []
+    );
+
+    // Handle search input change
+    const handleSearchChange = (term) => {
+        setSearchTerm(term);
+        debouncedSearch(term, selectedDepartment);
+    };
+
     // Handle department filter change
     const handleFilterChange = (departmentId) => {
         setSelectedDepartment(departmentId);
         router.get(route('hr.employees'), {
-            department: departmentId || null
+            search: searchTerm || null,
+            department: departmentId || null,
+            page: 1 // Reset to first page when filtering
         }, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
+
+    // Handle pagination
+    const handlePageChange = (page) => {
+        router.get(route('hr.employees'), {
+            search: searchTerm || null,
+            department: selectedDepartment || null,
+            page: page
+        }, {
+            preserveState: true,
+            replace: true,
+            preserveScroll: true
+        });
+    };
+
+    // Clear all filters
+    const clearAllFilters = () => {
+        setSearchTerm('');
+        setSelectedDepartment('');
+        searchInputRef.current.value = '';
+        router.get(route('hr.employees'), {}, {
             preserveState: true,
             replace: true,
             preserveScroll: true
@@ -53,6 +105,36 @@ export default function Employees({ employees, departments, filters }) {
     const closeModal = () => {
         setIsModalOpen(false);
         reset();
+    };
+
+    // Generate pagination links
+    const renderPagination = () => {
+        if (!employees.links || employees.links.length <= 3) return null;
+
+        return (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+                <div className="text-sm text-gray-700">
+                    Showing {employees.from} to {employees.to} of {employees.total} results
+                </div>
+                <div className="flex space-x-1">
+                    {employees.links.map((link, index) => (
+                        <button
+                            key={index}
+                            onClick={() => link.url && handlePageChange(link.url.split('page=')[1])}
+                            disabled={!link.url}
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${
+                                link.active
+                                    ? 'bg-blue-600 text-white'
+                                    : link.url
+                                    ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                            }`}
+                            dangerouslySetInnerHTML={{ __html: link.label }}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
     };
 
     return (
@@ -78,37 +160,63 @@ export default function Employees({ employees, departments, filters }) {
                     </div>
                 )}
 
-                {/* Department Filter */}
+                {/* Filters Section */}
                 <div className="mb-6 bg-white rounded-xl shadow-sm p-4">
-                    <div className="flex items-center space-x-4">
-                        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                            Filter by Department:
-                        </label>
-                        <select
-                            value={selectedDepartment}
-                            onChange={(e) => handleFilterChange(e.target.value)}
-                            className="w-full md:w-64 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
-                        >
-                            <option value="">All Departments</option>
-                            {departments.map(dept => (
-                                <option key={dept.id} value={dept.id}>
-                                    {dept.name}
-                                </option>
-                            ))}
-                        </select>
-                        {selectedDepartment && (
-                            <button
-                                onClick={() => handleFilterChange('')}
-                                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                    <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
+                        {/* Search Bar */}
+                        <div className="flex-1">
+                            <label htmlFor="search" className="sr-only">Search employees</label>
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
+                                <input
+                                    ref={searchInputRef}
+                                    id="search"
+                                    type="text"
+                                    placeholder="Search employees by name, position, or department..."
+                                    defaultValue={searchTerm}
+                                    onChange={(e) => handleSearchChange(e.target.value)}
+                                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Department Filter */}
+                        <div className="flex items-center space-x-4">
+                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                                Department:
+                            </label>
+                            <select
+                                value={selectedDepartment}
+                                onChange={(e) => handleFilterChange(e.target.value)}
+                                className="w-full md:w-48 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
                             >
-                                Clear Filter
+                                <option value="">All Departments</option>
+                                {departments.map(dept => (
+                                    <option key={dept.id} value={dept.id}>
+                                        {dept.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Clear Filters Button */}
+                        {(searchTerm || selectedDepartment) && (
+                            <button
+                                onClick={clearAllFilters}
+                                className="px-4 py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition whitespace-nowrap"
+                            >
+                                Clear Filters
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* Modal Backdrop */}
-                {isModalOpen && (
+               {/* Modal Backdrop */}
+               {isModalOpen && (
                     <div
                         className="fixed inset-0 bg-black bg-opacity-50 z-50 transition-opacity duration-300"
                         onClick={closeModal}
@@ -396,13 +504,14 @@ export default function Employees({ employees, departments, filters }) {
                     </div>
                 </div>
 
-               {/* Employees Table */}
+                {/* Employees Table */}
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                         <h2 className="text-xl font-semibold text-gray-800">Employee List</h2>
                         <span className="text-sm text-gray-500">
-                            {employees.length} employee{employees.length !== 1 ? 's' : ''} found
+                            {employees.total} employee{employees.total !== 1 ? 's' : ''} found
                             {selectedDepartment && ` in ${departments.find(d => d.id == selectedDepartment)?.name}`}
+                            {searchTerm && ` matching "${searchTerm}"`}
                         </span>
                     </div>
                     <div className="overflow-x-auto">
@@ -417,7 +526,7 @@ export default function Employees({ employees, departments, filters }) {
                                 </tr>
                             </thead>
                             <tbody>
-                                {employees.map(emp => (
+                                {employees.data && employees.data.map(emp => (
                                     <tr key={emp.employee_id} className="border-t hover:bg-gray-50">
                                         <td className="p-4">{emp.firstname} {emp.lastname}</td>
                                         <td className="p-4">{emp.position}</td>
@@ -441,16 +550,21 @@ export default function Employees({ employees, departments, filters }) {
                                         </td>
                                     </tr>
                                 ))}
-                                {employees.length === 0 && (
+                                {(!employees.data || employees.data.length === 0) && (
                                     <tr>
                                         <td colSpan="5" className="p-8 text-center text-gray-500">
-                                            No employees found{selectedDepartment && ` in this department`}.
+                                            No employees found
+                                            {searchTerm && ` matching "${searchTerm}"`}
+                                            {selectedDepartment && !searchTerm && ` in this department`}.
                                         </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+                    
+                    {/* Pagination */}
+                    {renderPagination()}
                 </div>
             </div>
         </HRLayout>
