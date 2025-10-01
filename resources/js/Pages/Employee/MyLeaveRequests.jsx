@@ -1,45 +1,42 @@
 import EmployeeLayout from '@/Layouts/EmployeeLayout';
 import { usePage, Link } from '@inertiajs/react';
-import LeaveProgressTracker from '../Employee/LeaveProgressTracker';
+import CompactProgressIndicator from '@/Components/CompactProgressIndicator';
+import ProgressDetailsModal from '@/Components/ProgressDetailsModal';
 import LeaveRecallModal from '@/Components/LeaveRecallModal';
 import { motion } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 export default function MyLeaveRequests() {
     const { leaveRequests, employee } = usePage().props;
+    const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
     const [isRecallModalOpen, setIsRecallModalOpen] = useState(false);
-    const [selectedLeaveRequest, setSelectedLeaveRequest] = useState(null);
+    const [selectedRequest, setSelectedRequest] = useState(null);
+    const [selectedRecallData, setSelectedRecallData] = useState(null);
 
-    // Debug: Log the structure of leaveRequests
-    useEffect(() => {
-        console.log('leaveRequests structure:', leaveRequests);
-    }, [leaveRequests]);
+    const handleViewProgress = (request) => {
+        setSelectedRequest(request);
+        setIsProgressModalOpen(true);
+    };
 
-    const handleRecallClick = (leaveRequest) => {
-        setSelectedLeaveRequest(leaveRequest);
+    const handleViewRecallDetails = (request) => {
+        setSelectedRequest(request);
+        setSelectedRecallData(request.recall_data);
         setIsRecallModalOpen(true);
     };
 
-    const handleCloseModal = () => {
+    const handleCloseModals = () => {
+        setIsProgressModalOpen(false);
         setIsRecallModalOpen(false);
-        setSelectedLeaveRequest(null);
+        setSelectedRequest(null);
+        setSelectedRecallData(null);
     };
 
-    // Safe data extraction for Laravel pagination structure
+    // Safe data extraction for pagination
     const getPaginationData = () => {
         if (!leaveRequests) {
-            return {
-                data: [],
-                from: 0,
-                to: 0,
-                total: 0,
-                current_page: 1,
-                last_page: 1,
-                links: []
-            };
+            return { data: [], from: 0, to: 0, total: 0, current_page: 1, last_page: 1, links: [] };
         }
 
-        // Laravel pagination structure (no 'meta' property)
         if (leaveRequests.data !== undefined) {
             return {
                 data: leaveRequests.data || [],
@@ -54,7 +51,6 @@ export default function MyLeaveRequests() {
             };
         }
 
-        // If it's a simple array (non-paginated)
         return {
             data: Array.isArray(leaveRequests) ? leaveRequests : [],
             from: 1,
@@ -73,7 +69,7 @@ export default function MyLeaveRequests() {
 
     return (
         <EmployeeLayout>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <div className="flex justify-between items-center mb-8">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">My Leave Requests</h1>
@@ -81,19 +77,10 @@ export default function MyLeaveRequests() {
                             Showing {from}-{to} of {total} requests
                         </p>
                     </div>
-                    <a
-                        href={route('employee.leave-recalls')}
-                        className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                        <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                        </svg>
-                        View Leave Recalls
-                    </a>
                 </div>
 
                 <motion.div
-                    className="bg-white shadow-sm rounded-lg overflow-hidden"
+                    className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
@@ -102,11 +89,21 @@ export default function MyLeaveRequests() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leave Type</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Range</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Approval Progress</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Leave Details
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Duration
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Status
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Progress
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Actions
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -125,6 +122,8 @@ export default function MyLeaveRequests() {
                                         const startDate = new Date(request.date_from);
                                         const endDate = new Date(request.date_to);
                                         const duration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                                        const isRecalled = request.is_recalled;
+                                        const recallData = request.recall_data;
 
                                         return (
                                             <motion.tr
@@ -132,76 +131,111 @@ export default function MyLeaveRequests() {
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
                                                 transition={{ duration: 0.2 }}
-                                                whileHover={{ backgroundColor: 'rgba(249, 250, 251, 1)' }}
-                                                className="hover:bg-gray-50"
+                                                className={`hover:bg-gray-50 ${
+                                                    isRecalled ? 'bg-red-50 border-l-4 border-l-red-400' : ''
+                                                }`}
                                             >
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="flex items-center">
-                                                        <div className="flex-shrink-0 h-10 w-10 bg-blue-50 rounded-full flex items-center justify-center">
-                                                            <span className="text-blue-600">
+                                                {/* Leave Details Column */}
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-start space-x-3">
+                                                        <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+                                                            isRecalled ? 'bg-gray-300' : 'bg-blue-100'
+                                                        }`}>
+                                                            <span className={`text-sm ${
+                                                                isRecalled ? 'text-gray-600' : 'text-blue-600'
+                                                            }`}>
                                                                 {request.leave_type?.code === 'VL' ? '🏖️' :
                                                                  request.leave_type?.code === 'SL' ? '🤒' :
                                                                  request.leave_type?.code === 'MAT' ? '👶' : '📋'}
                                                             </span>
                                                         </div>
-                                                        <div className="ml-4">
-                                                            <div className="text-sm font-medium text-gray-900">{request.leave_type?.name || 'N/A'}</div>
-                                                            <div className="text-sm text-gray-500">{request.leave_type?.code || 'N/A'}</div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center space-x-2">
+                                                                <p className={`text-sm font-medium ${
+                                                                    isRecalled ? 'text-gray-600' : 'text-gray-900'
+                                                                }`}>
+                                                                    {request.leave_type?.name}
+                                                                </p>
+                                                                {isRecalled && (
+                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                                        Recalled
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className={`text-sm ${
+                                                                isRecalled ? 'text-gray-500' : 'text-gray-600'
+                                                            }`}>
+                                                                {startDate.toLocaleDateString()} - {endDate.toLocaleDateString()}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                Submitted: {new Date(request.created_at).toLocaleDateString()}
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">
-                                                        {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                    </div>
-                                                    <div className="text-xs text-gray-500">
-                                                        Submitted on {new Date(request.created_at).toLocaleDateString()}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+
+                                                {/* Duration Column */}
+                                                <td className="px-6 py-4">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                        isRecalled 
+                                                            ? 'bg-gray-200 text-gray-700' 
+                                                            : 'bg-blue-100 text-blue-800'
+                                                    }`}>
                                                         {duration} day{duration !== 1 ? 's' : ''}
                                                     </span>
                                                 </td>
+
+                                                {/* Status Column */}
                                                 <td className="px-6 py-4">
-                                                    <LeaveProgressTracker approvals={request.approvals} />
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                                        isRecalled
+                                                            ? 'bg-red-100 text-red-800'
+                                                            : request.status === 'approved'
+                                                            ? 'bg-green-100 text-green-800'
+                                                            : request.status === 'rejected'
+                                                            ? 'bg-red-100 text-red-800'
+                                                            : request.status === 'pending'
+                                                            ? 'bg-yellow-100 text-yellow-800'
+                                                            : 'bg-gray-100 text-gray-800'
+                                                    }`}>
+                                                        {isRecalled ? 'Recalled' : 
+                                                         request.status === 'approved' ? 'Approved' :
+                                                         request.status === 'rejected' ? 'Rejected' :
+                                                         request.status === 'pending' ? 'Pending' : request.status}
+                                                    </span>
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                    <div className="flex flex-col space-y-1">
-                                                        {request.status === 'approved' && !request.recalls?.some(recall => recall.status === 'approved') && (
-                                                            <button
-                                                                onClick={() => handleRecallClick(request)}
-                                                                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                                                            >
-                                                                Recall Leave
-                                                            </button>
-                                                        )}
-                                                        {request.recalls?.some(recall => recall.status === 'approved') && (
-                                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                                                <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                                                                </svg>
-                                                                Recalled
-                                                            </span>
-                                                        )}
-                                                        {request.recalls?.some(recall => recall.status === 'pending') && (
-                                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                                <svg className="w-3 h-3 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                                </svg>
-                                                                Recall Pending
-                                                            </span>
-                                                        )}
-                                                        {request.recalls?.some(recall => recall.status === 'rejected') && (
-                                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                                <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                                                </svg>
-                                                                Recall Rejected
-                                                            </span>
-                                                        )}
-                                                    </div>
+
+                                                {/* Progress Column */}
+                                                <td className="px-6 py-4">
+                                                    <CompactProgressIndicator 
+                                                        approvals={request.approvals} 
+                                                        isDeptHead={request.is_dept_head_request || employee?.user?.role === 'dept_head'}
+                                                        isRecalled={isRecalled}
+                                                        onClick={() => isRecalled ? handleViewRecallDetails(request) : handleViewProgress(request)}
+                                                    />
+                                                </td>
+
+                                                {/* Actions Column */}
+                                                <td className="px-6 py-4">
+                                                    {isRecalled && recallData ? (
+                                                        <button
+                                                            onClick={() => handleViewRecallDetails(request)}
+                                                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
+                                                        >
+                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                            </svg>
+                                                            Recall Details
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleViewProgress(request)}
+                                                            className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                                                        >
+                                                            View Details
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </motion.tr>
                                         );
@@ -211,8 +245,8 @@ export default function MyLeaveRequests() {
                         </table>
                     </div>
 
-                    {/* Pagination - Only show if paginated and multiple pages exist */}
-                    {isPaginated && last_page > 1 && (
+                     {/* Pagination - Only show if paginated and multiple pages exist */}
+                   {isPaginated && last_page > 1 && (
                         <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
                             <div className="flex items-center justify-between">
                                 <div className="flex justify-between flex-1 sm:hidden">
@@ -322,12 +356,22 @@ export default function MyLeaveRequests() {
                 </motion.div>
             </div>
 
+            {/* Progress Details Modal */}
+            <ProgressDetailsModal
+                isOpen={isProgressModalOpen}
+                onClose={handleCloseModals}
+                leaveRequest={selectedRequest}
+                isRecalled={selectedRequest?.is_recalled}
+                recallData={selectedRequest?.recall_data}
+                employee={employee}
+            />
+
             {/* Leave Recall Modal */}
             <LeaveRecallModal
                 isOpen={isRecallModalOpen}
-                onClose={handleCloseModal}
-                leaveRequest={selectedLeaveRequest}
-                employee={employee}
+                onClose={handleCloseModals}
+                recallData={selectedRecallData}
+                leaveRequest={selectedRequest}
             />
         </EmployeeLayout>
     );

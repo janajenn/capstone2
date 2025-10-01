@@ -25,51 +25,74 @@ use App\Models\Department;
 class AdminController extends Controller
 {
 
+    // In AdminController.php - leaveRequests method
     public function leaveRequests(Request $request)
-    {
-        $status = $request->get('status', 'pending_to_admin');
-        $perPage = 10;
-        
-        // Get current approver using static method
-        $currentApprover = User::getCurrentApprover();
-        
-        // Check if current user is authorized to view leave requests
-        if (!$currentApprover || $currentApprover->id !== auth()->id()) {
-            return Inertia::render('Admin/Unauthorized', [
-                'message' => 'You are not currently authorized to approve leave requests.',
-                'currentApprover' => $currentApprover ? $currentApprover->name : 'No active approver'
-            ]);
-        }
+{
+    $status = $request->get('status', 'pending_to_admin');
+    $perPage = 10;
     
-        // Base query with relationships
-        $query = LeaveRequest::with([
-                'employee.user',
-                'employee.department:id,name',
-                'leaveType:id,name,code',
-                'approvals' => function($q) {
-                    $q->whereIn('role', ['hr', 'dept_head', 'admin'])
-                      ->orderBy('created_at', 'desc');
-                }
-            ]);
+    $currentApprover = User::getCurrentApprover();
     
-        // Apply filters based on selected tab
-        switch ($status) {
-            case 'pending_to_admin':
-                // ✅ FIXED: Requests approved by HR and Dept Head, waiting for Admin
-                $query->where('status', 'pending') // Changed from 'approved' to 'pending'
-                      ->whereHas('approvals', function ($q) {
-                          $q->where('role', 'hr')->where('status', 'approved');
-                      })
-                      ->whereHas('approvals', function ($q) {
-                          $q->where('role', 'dept_head')->where('status', 'approved');
-                      })
-                      ->whereDoesntHave('approvals', function ($q) {
-                          $q->where('role', 'admin');
-                      });
-                break;
-    
+    if (!$currentApprover || $currentApprover->id !== auth()->id()) {
+        return Inertia::render('Admin/Unauthorized', [
+            'message' => 'You are not currently authorized to approve leave requests.',
+            'currentApprover' => $currentApprover ? $currentApprover->name : 'No active approver'
+        ]);
+    }
+
+    $query = LeaveRequest::with([
+            'employee.user',
+            'employee.department:id,name',
+            'leaveType:id,name,code',
+            'approvals' => function($q) {
+                $q->whereIn('role', ['hr', 'dept_head', 'admin'])
+                  ->orderBy('created_at', 'desc');
+            },
+            'recalls'
+        ]);
+
+    switch ($status) {
+        case 'pending_to_admin':
+            // FIXED: Properly query for requests that need admin approval
+            $query->where(function($q) {
+                $q->where(function($q2) {
+                    // Regular employees: Approved by HR and Dept Head, waiting for Admin
+                    $q2->where('status', 'pending_admin')
+                       ->whereHas('approvals', function($q3) {
+                           $q3->where('role', 'hr')->where('status', 'approved');
+                       })
+                       ->whereHas('approvals', function($q3) {
+                           $q3->where('role', 'dept_head')->where('status', 'approved');
+                       })
+                       ->whereHas('employee.user', function($q3) {
+                           $q3->where('role', '!=', 'dept_head');
+                       });
+                })->orWhere(function($q2) {
+                    // Dept heads: Approved by HR only (bypassed dept head), waiting for Admin
+                    $q2->where('status', 'pending_admin')
+                       ->whereHas('approvals', function($q3) {
+                           $q3->where('role', 'hr')->where('status', 'approved');
+                       })
+                       ->whereHas('employee.user', function($q3) {
+                           $q3->where('role', 'dept_head');
+                       });
+                });
+            })->whereDoesntHave('approvals', function($q) {
+                $q->where('role', 'admin');
+            });
+            break;
+
+        case 'dept_head_requests':
+            $query->where('status', 'pending_admin')
+                  ->whereHas('employee.user', function($q) {
+                      $q->where('role', 'dept_head');
+                  })
+                  ->whereHas('approvals', function($q) {
+                      $q->where('role', 'hr')->where('status', 'approved');
+                  });
+            break;
+
             case 'fully_approved':
-                // Requests fully approved by Admin
                 $query->where('status', 'approved')
                       ->whereHas('approvals', function($q) {
                           $q->where('role', 'admin')->where('status', 'approved');
@@ -77,54 +100,101 @@ class AdminController extends Controller
                 break;
     
             case 'rejected':
-                // Requests rejected by Admin
                 $query->where('status', 'rejected')
                       ->whereHas('approvals', function($q) {
                           $q->where('role', 'admin')->where('status', 'rejected');
                       });
                 break;
-        }
-    
-        // Get paginated results
-        $paginatedRequests = $query->orderBy('created_at', 'desc')
-                                  ->paginate($perPage)
-                                  ->through(function ($request) {
-                                      return [
-                                          'id' => $request->id,
-                                          'date_from' => $request->date_from,
-                                          'date_to' => $request->date_to,
-                                          'status' => $request->status,
-                                          'total_days' => $request->total_days,
-                                          'created_at' => $request->created_at,
-                                          'employee' => [
-                                              'id' => $request->employee->id,
-                                              'firstname' => $request->employee->firstname,
-                                              'lastname' => $request->employee->lastname,
-                                              'department' => $request->employee->department?->name,
-                                              'position' => $request->employee->position,
-                                          ],
-                                          'leaveType' => [
-                                              'id' => $request->leaveType?->id,
-                                              'name' => $request->leaveType?->name,
-                                              'code' => $request->leaveType?->code,
-                                          ],
-                                          'hr_approval' => $request->approvals->firstWhere('role', 'hr'),
-                                          'dept_head_approval' => $request->approvals->firstWhere('role', 'dept_head'),
-                                          'admin_approval' => $request->approvals->firstWhere('role', 'admin'),
-                                      ];
-                                  });
-    
-        return Inertia::render('Admin/LeaveRequests', [
-            'leaveRequests' => $paginatedRequests,
-            'filters' => ['status' => $status],
-            'currentApprover' => $currentApprover,
-            'isActiveApprover' => auth()->user()->isActiveApprover(),
-            'flash' => [
-                'success' => session('success'),
-                'error' => session('error'),
-            ]
-        ]);
     }
+
+    $paginatedRequests = $query->orderBy('created_at', 'desc')
+                      ->paginate($perPage)
+                      ->through(function ($request) {
+                          $isDeptHead = $request->employee->user->role === 'dept_head';
+
+                           // ADD RECALL ELIGIBILITY CHECK
+                           $canBeRecalled = $this->canBeRecalled($request);
+                           $hasRecall = $request->recalls->isNotEmpty();
+                           $recallData = $request->recalls->first();
+                          
+                          return [
+                              'id' => $request->id,
+                              'date_from' => $request->date_from,
+                              'date_to' => $request->date_to,
+                              'status' => $request->status,
+                              'total_days' => $request->total_days,
+                              'created_at' => $request->created_at,
+                              'is_dept_head_request' => $isDeptHead,
+                              'employee' => [
+                                  'id' => $request->employee->id,
+                                  'firstname' => $request->employee->firstname,
+                                  'lastname' => $request->employee->lastname,
+                                  'department' => $request->employee->department?->name,
+                                  'position' => $request->employee->position,
+                                  'role' => $request->employee->user->role,
+                              ],
+                              'leaveType' => [
+                                  'id' => $request->leaveType?->id,
+                                  'name' => $request->leaveType?->name,
+                                  'code' => $request->leaveType?->code,
+                              ],
+                              'hr_approval' => $request->approvals->firstWhere('role', 'hr'),
+                              'dept_head_approval' => $request->approvals->firstWhere('role', 'dept_head'),
+                              'admin_approval' => $request->approvals->firstWhere('role', 'admin'),
+                              'can_be_recalled' => $canBeRecalled,
+                              'is_recalled' => $request->status === 'recalled',
+                              'recall_data' => $request->recalls->first() ? [
+                                  'reason' => $request->recalls->first()->reason_for_change,
+                                  'new_date_from' => $request->recalls->first()->new_leave_date_from,
+                                  'new_date_to' => $request->recalls->first()->new_leave_date_to,
+                                  'recalled_at' => $request->recalls->first()->created_at,
+                                  'recalled_by' => $request->recalls->first()->approved_by_admin
+                              ] : null
+                          ];
+                      });
+
+    return Inertia::render('Admin/LeaveRequests', [
+        'leaveRequests' => $paginatedRequests,
+        'filters' => ['status' => $status],
+        'currentApprover' => $currentApprover,
+        'isActiveApprover' => auth()->user()->isActiveApprover(),
+    ]);
+}
+
+
+private function canBeRecalled(LeaveRequest $request)
+{
+    // Only Vacation Leave (VL) can be recalled
+    if ($request->leaveType->code !== 'VL') {
+        return false;
+    }
+    
+    // Must be fully approved
+    if ($request->status !== 'approved') {
+        return false;
+    }
+    
+    // Must have admin approval
+    if (!$request->approvals->where('role', 'admin')->where('status', 'approved')->first()) {
+        return false;
+    }
+    
+    // Must not already be recalled
+    if ($request->recalls->isNotEmpty()) {
+        return false;
+    }
+    
+    // Must not be in the past (optional - you might want to allow recalling past leaves)
+    $today = now()->startOfDay();
+    $leaveEndDate = \Carbon\Carbon::parse($request->date_to)->startOfDay();
+    
+    // Allow recalling if the leave hasn't ended yet, or ended recently (within 7 days)
+    if ($leaveEndDate->lessThan($today->subDays(7))) {
+        return false;
+    }
+    
+    return true;
+}
 
     public function approve(Request $request, $id)
     {
@@ -141,7 +211,7 @@ class AdminController extends Controller
         \Log::info('👤 Admin approval attempt for leave request ID: ' . $id . ' by user: ' . auth()->user()->name);
     
         try {
-            $leaveRequest = LeaveRequest::with('leaveType')->findOrFail($id);
+            $leaveRequest = LeaveRequest::with('leaveType', 'employee.user')->findOrFail($id);
             
             // Check if already approved by admin
             $existingAdminApproval = LeaveApproval::where('leave_id', $id)
@@ -164,74 +234,104 @@ class AdminController extends Controller
                     'approved_at' => now()
                 ]);
     
-                // Update leave request status only (no approved_by/approved_at since they're in leave_approvals)
-                $leaveRequest->status = 'approved';
+                // CHECK IF THIS IS A DEPARTMENT HEAD REQUEST
+                $isDeptHeadRequest = $leaveRequest->employee->user->role === 'dept_head' || 
+                                    $leaveRequest->is_dept_head_request;
+    
+                if ($isDeptHeadRequest) {
+                    // For department heads: HR + Admin = Fully Approved
+                    $leaveRequest->status = 'approved';
+                    \Log::info("✅ Department Head request fully approved: HR + Admin approvals complete");
+                } else {
+                    // For regular employees: Check if all approvals are complete
+                    $isFullyApproved = $this->isFullyApproved($leaveRequest);
+                    $leaveRequest->status = $isFullyApproved ? 'approved' : 'pending_admin';
+                    
+                    if ($isFullyApproved) {
+                        \Log::info("✅ Regular employee request fully approved: HR + Dept Head + Admin approvals complete");
+                    }
+                }
+    
                 $leaveRequest->save();
     
                 // Check if all approvals are complete
                 $isFullyApproved = $this->isFullyApproved($leaveRequest);
     
-                // Send notification to employee
-                $notificationService = new NotificationService();
-                $notificationService->createLeaveRequestNotification(
-                    $leaveRequest->employee_id,
-                    'approved',
-                    $id,
-                    $leaveRequest->leaveType->name ?? 'Leave',
-                    $leaveRequest->date_from,
-                    $leaveRequest->date_to,
-                    $request->input('remarks', 'Approved by ' . $currentApprover->name)
-                );
-    
-                if ($isFullyApproved) {
-                    // Get leave type code to determine which service to use
-                    $leaveTypeCode = $leaveRequest->leaveType->code;
+               // Send notification to employee
+            $notificationService = new NotificationService();
+            $notificationService->createLeaveRequestNotification(
+                $leaveRequest->employee_id,
+                'approved', // This will send approved notification
+                $id,
+                $leaveRequest->leaveType->name ?? 'Leave',
+                $leaveRequest->date_from,
+                $leaveRequest->date_to,
+                $request->input('remarks', 'Approved by ' . $currentApprover->name)
+            );
+
+            // Only deduct credits if fully approved
+            if ($leaveRequest->status === 'approved') {
+                // Get leave type code to determine which service to use
+                $leaveTypeCode = $leaveRequest->leaveType->code;
+                
+                if (in_array($leaveTypeCode, ['SL', 'VL'])) {
+                    // Process SL/VL leave types using LeaveCreditService
+                    $leaveCreditService = new LeaveCreditService();
+                    $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
+                    \Log::info("✅ Leave credits deducted for SL/VL leave type: {$leaveTypeCode}");
+                } else {
+                    // Process other leave types using LeaveBalanceService
+                    $leaveBalanceService = new LeaveBalanceService();
+                    $result = $leaveBalanceService->deductLeaveBalance($leaveRequest);
                     
-                    if (in_array($leaveTypeCode, ['SL', 'VL'])) {
-                        // Process SL/VL leave types using LeaveCreditService
-                        $leaveCreditService = new LeaveCreditService();
-                        $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
-                        \Log::info("✅ Leave credits deducted for SL/VL leave type: {$leaveTypeCode}");
-                    } else {
-                        // Process other leave types using LeaveBalanceService
-                        $leaveBalanceService = new LeaveBalanceService();
-                        $result = $leaveBalanceService->deductLeaveBalance($leaveRequest);
-                        
-                        // FIX: Check if result is an array before accessing array keys
-                        if (is_array($result) && isset($result['success']) && !$result['success']) {
-                            // If balance deduction fails, throw an exception to rollback the transaction
-                            throw new \Exception($result['message'] ?? "Failed to deduct leave balance for {$leaveTypeCode}");
-                        }
-                        
-                        // If result is not an array (e.g., returns true for success), log success
-                        if ($result === true) {
-                            \Log::info("✅ Leave balance deducted successfully for leave type: {$leaveTypeCode}");
-                        } else if (is_array($result) && $result['success']) {
-                            \Log::info("✅ Leave balance deducted for leave type: {$leaveTypeCode}");
-                        }
+                    // FIX: Check if result is an array before accessing array keys
+                    if (is_array($result) && isset($result['success']) && !$result['success']) {
+                        // If balance deduction fails, throw an exception to rollback the transaction
+                        throw new \Exception($result['message'] ?? "Failed to deduct leave balance for {$leaveTypeCode}");
+                    }
+                    
+                    // If result is not an array (e.g., returns true for success), log success
+                    if ($result === true) {
+                        \Log::info("✅ Leave balance deducted successfully for leave type: {$leaveTypeCode}");
+                    } else if (is_array($result) && $result['success']) {
+                        \Log::info("✅ Leave balance deducted for leave type: {$leaveTypeCode}");
                     }
                 }
-    
-                \Log::info("🎉 Leave request ID: {$id} fully processed and approved");
-            });
-    
-            return redirect()->back()->with('success', 'Leave request approved successfully.');
-    
-        } catch (\Exception $e) {
-            \Log::error('❌ Approval error: ' . $e->getMessage());
-            \Log::error('📝 Stack trace: ' . $e->getTraceAsString());
-            return redirect()->back()->with('error', 'Error approving leave: ' . $e->getMessage());
-        }
+            }
+
+            \Log::info("🎉 Leave request ID: {$id} processed. Final status: {$leaveRequest->status}");
+        });
+
+        return redirect()->back()->with('success', 'Leave request approved successfully.');
+
+    } catch (\Exception $e) {
+        \Log::error('❌ Approval error: ' . $e->getMessage());
+        \Log::error('📝 Stack trace: ' . $e->getTraceAsString());
+        return redirect()->back()->with('error', 'Error approving leave: ' . $e->getMessage());
     }
+}
+/**
+ * Check if all required approvals are complete for a leave request
+ */
 /**
  * Check if all required approvals are complete for a leave request
  */
 private function isFullyApproved(LeaveRequest $leaveRequest)
 {
-    // Get all required approval roles for this leave type or company policy
-    $requiredRoles = ['hr', 'dept_head', 'admin']; // Adjust based on your requirements
-    
-    // Count how many approvals are already completed
+    $isDeptHeadRequest = $leaveRequest->employee->user->role === 'dept_head' || 
+                        $leaveRequest->is_dept_head_request;
+
+    if ($isDeptHeadRequest) {
+        // Department heads only need HR and Admin approval
+        $requiredRoles = ['hr', 'admin'];
+        \Log::info("👨‍💼 Department head request detected for leave ID {$leaveRequest->id}. Required roles: " . implode(', ', $requiredRoles));
+    } else {
+        // Regular employees need HR, Dept Head, and Admin approval
+        $requiredRoles = ['hr', 'dept_head', 'admin'];
+        \Log::info("👤 Regular employee request detected for leave ID {$leaveRequest->id}. Required roles: " . implode(', ', $requiredRoles));
+    }
+
+    // Count how many approvals are already completed for the required roles
     $completedApprovals = LeaveApproval::where('leave_id', $leaveRequest->id)
         ->where('status', 'approved')
         ->whereIn('role', $requiredRoles)
@@ -246,7 +346,6 @@ private function isFullyApproved(LeaveRequest $leaveRequest)
     
     return $isFullyApproved;
 }
-
 
     public function reject(Request $request, $id)
     {
@@ -741,4 +840,171 @@ private function getLeaveTypeColor($leaveTypeCode)
     // Default color kung wala sa list
     return $colors[$leaveTypeCode] ?? '#9CA3AF';
 }
+
+
+
+/**
+ * Admin recall leave request (only for Vacation Leave)
+ */
+/**
+ * Admin recall leave request (only for Vacation Leave)
+ */
+/**
+ * Admin recall leave request (only for Vacation Leave)
+ */
+public function recallLeaveRequest(Request $request, $id)
+{
+    \Log::info('👤 Admin recall attempt for leave request ID: ' . $id . ' by user: ' . auth()->user()->name);
+
+    try {
+        $leaveRequest = LeaveRequest::with(['leaveType', 'employee'])->findOrFail($id);
+        
+        // Check if this is a Vacation Leave request
+        if ($leaveRequest->leaveType->code !== 'VL') {
+            return redirect()->back()->with('error', 'Only Vacation Leave (VL) requests can be recalled.');
+        }
+
+        // Check if leave request is already recalled
+        if ($leaveRequest->recalls()->where('status', 'approved')->exists()) {
+            return redirect()->back()->with('error', 'This leave request has already been recalled.');
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+            'new_leave_date_from' => 'required|date|after_or_equal:today',
+            'new_leave_date_to' => 'required|date|after_or_equal:new_leave_date_from'
+        ]);
+
+        DB::transaction(function () use ($leaveRequest, $validated, $id) {
+            // Create recall record with new dates
+            $recall = $leaveRequest->recalls()->create([
+                'employee_id' => $leaveRequest->employee_id,
+                'approved_leave_date' => $leaveRequest->date_from,
+                'new_leave_date_from' => $validated['new_leave_date_from'],
+                'new_leave_date_to' => $validated['new_leave_date_to'],
+                'reason_for_change' => $validated['reason'],
+                'status' => 'approved', // Admin recall is automatically approved
+                'approved_by_depthead' => null, // Bypass department head approval
+                'approved_by_hr' => null,       // Bypass HR approval
+                'approved_by_admin' => auth()->id(), // Admin directly approves
+            ]);
+
+            // Restore leave credits
+            $this->restoreLeaveCredits($leaveRequest);
+
+            // Update leave request status to recalled
+            $leaveRequest->update(['status' => 'recalled']);
+
+            // Send notification to employee
+            $notificationService = new NotificationService();
+            $notificationService->createLeaveRequestNotification(
+                $leaveRequest->employee_id,
+                'recalled',
+                $id,
+                $leaveRequest->leaveType->name ?? 'Leave',
+                $leaveRequest->date_from,
+                $leaveRequest->date_to,
+                $validated['reason']
+            );
+
+            \Log::info("✅ Leave request ID: {$id} recalled by admin. New dates: {$validated['new_leave_date_from']} to {$validated['new_leave_date_to']}");
+        });
+
+        return redirect()->back()->with('success', 'Leave request recalled successfully. Leave credits have been restored.');
+
+    } catch (\Exception $e) {
+        \Log::error('❌ Recall error: ' . $e->getMessage());
+        \Log::error('📝 Stack trace: ' . $e->getTraceAsString());
+        return redirect()->back()->with('error', 'Error recalling leave: ' . $e->getMessage());
+    }
+}
+/**
+ * Restore leave credits for recalled leave request
+ */
+/**
+ * Restore leave credits for recalled leave request
+ */
+private function restoreLeaveCredits(LeaveRequest $leaveRequest)
+{
+    $leaveTypeCode = $leaveRequest->leaveType->code;
+    
+    // Only restore credits for VL leave type
+    if ($leaveTypeCode !== 'VL') {
+        \Log::info("⏭️ Skipping credit restoration for non-VL leave type: {$leaveTypeCode}");
+        return;
+    }
+
+    $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
+    
+    if (!$leaveCredit) {
+        \Log::error("❌ No leave credits found for employee: {$leaveRequest->employee_id}");
+        throw new \Exception('No leave credits found for this employee.');
+    }
+
+    // Calculate working days to restore
+    $period = \Carbon\CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
+    $workingDays = collect($period)->filter(function ($date) {
+        return !$date->isWeekend();
+    })->count();
+
+    // Store balance before restoration
+    $balanceBefore = $leaveCredit->vl_balance;
+
+    // Restore VL credits
+    $leaveCredit->vl_balance += $workingDays;
+    $leaveCredit->last_updated = now();
+    $leaveCredit->save();
+
+    // Store balance after restoration
+    $balanceAfter = $leaveCredit->vl_balance;
+
+    // Log the restoration - USE THE CORRECT FIELD NAME
+    LeaveCreditLog::create([
+        'employee_id' => $leaveRequest->employee_id,
+        'type' => 'VL',
+        'date' => now(),
+        'year' => now()->year,
+        'month' => now()->month,
+        'points_deducted' => -$workingDays, // Use negative value to indicate addition
+        'balance_before' => $balanceBefore,
+        'balance_after' => $balanceAfter,
+        'remarks' => "Credits restored after admin recall of leave request ID #{$leaveRequest->id}",
+    ]);
+
+    \Log::info("✅ Restored {$workingDays} VL credits for employee {$leaveRequest->employee_id}. New balance: {$leaveCredit->vl_balance}");
+}
+
+
+
+/**
+ * Update leave request status based on approvals
+ */
+private function updateLeaveRequestStatus($leaveRequestId)
+{
+    $leaveRequest = LeaveRequest::with(['approvals', 'employee.user'])->find($leaveRequestId);
+    
+    if (!$leaveRequest) return;
+    
+    $hrApproved = $leaveRequest->approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
+    $deptHeadApproved = $leaveRequest->approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
+    $adminApproved = $leaveRequest->approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
+    
+    $isDeptHead = $leaveRequest->employee->user->role === 'dept_head';
+    
+    if ($adminApproved) {
+        $leaveRequest->status = 'approved';
+    } elseif ($deptHeadApproved && $hrApproved && !$isDeptHead) {
+        $leaveRequest->status = 'pending_admin';
+    } elseif ($hrApproved && $isDeptHead) {
+        $leaveRequest->status = 'pending_admin';
+    } elseif ($hrApproved && !$isDeptHead) {
+        $leaveRequest->status = 'pending_dept_head';
+    } else {
+        $leaveRequest->status = 'pending';
+    }
+    
+    $leaveRequest->save();
+}
+
+
 }

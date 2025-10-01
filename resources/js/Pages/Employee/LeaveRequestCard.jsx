@@ -69,9 +69,12 @@ export default function LeaveRequestCard({ request }) {
                 </div>
 
                 <div className="pt-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Approval Progress</h4>
-                    <LeaveProgressTracker approvals={request.approvals} />
-                </div>
+    <h4 className="text-sm font-medium text-gray-700 mb-2">Approval Progress</h4>
+    <LeaveProgressTracker 
+        approvals={request.approvals} 
+        isDeptHead={request.is_dept_head_request}
+    />
+</div>
             </div>
         </div>
     );

@@ -233,18 +233,25 @@ public function submitLeaveRequest(Request $request)
         $attachmentPath = $request->file('attachment')->store('leave_attachments', 'public');
     }
 
-    // Create leave request with partial credits
+    // Check if employee is a department head
+    $isDeptHead = $user->role === 'dept_head';
+    
+    // If dept head is applying, set special status
+    $status = $isDeptHead ? 'pending_hr_to_admin' : 'pending';
+
+    // Create leave request
     $leaveRequest = LeaveRequest::create([
         'employee_id' => $employeeId,
         'leave_type_id' => $validated['leave_type_id'],
         'date_from' => $validated['date_from'],
         'date_to' => $validated['date_to'],
         'reason' => $validated['reason'],
-        'status' => 'pending',
+        'status' => $status, // Use special status for dept heads
         'attachment_path' => $attachmentPath,
         'days_with_pay' => $daysWithPay,
         'days_without_pay' => $daysWithoutPay,
         'total_days' => $workingDays,
+        'is_dept_head_request' => $isDeptHead, // Add this flag
     ]);
 
     // Save details
@@ -268,6 +275,7 @@ public function submitLeaveRequest(Request $request)
 
    // In EmployeeController.php
 // In EmployeeController.php
+// In EmployeeController.php - myLeaveRequests method
 public function myLeaveRequests(Request $request)
 {
     $user = $request->user()->load('employee');
@@ -277,26 +285,114 @@ public function myLeaveRequests(Request $request)
         abort(400, 'Employee profile not found for user.');
     }
 
-    $leaveRequests = LeaveRequest::with(['leaveType', 'details', 'approvals', 'recalls'])
+    $leaveRequests = LeaveRequest::with([
+            'leaveType', 
+            'details', 
+            'approvals', 
+            'recalls',
+            'employee.department'
+        ])
         ->where('employee_id', $employeeId)
         ->orderBy('created_at', 'desc')
-        ->paginate(5);
-
-    // Debug: Check the structure
-    logger('Pagination structure:', [
-        'has_data' => $leaveRequests->count(),
-        'total' => $leaveRequests->total(),
-        'structure' => $leaveRequests->toArray()
-    ]);
+        ->paginate(5)
+        ->through(function ($request) use ($user) {
+            $latestRecall = $request->recalls->sortByDesc('created_at')->first();
+            
+            // FIXED: Calculate display status based on approvals
+            $displayStatus = $request->status;
+            $hrApproved = $request->approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
+            $deptHeadApproved = $request->approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
+            $adminApproved = $request->approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
+            
+            // Calculate user-friendly status for display
+            if ($adminApproved) {
+                $displayStatus = 'approved';
+            } elseif ($deptHeadApproved && $hrApproved) {
+                $displayStatus = 'pending_admin';
+            } elseif ($hrApproved) {
+                $displayStatus = 'pending_dept_head';
+            } else {
+                $displayStatus = 'pending';
+            }
+            
+            return [
+                'id' => $request->id,
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'status' => $displayStatus, // Use calculated display status
+                'actual_status' => $request->status, // Keep original status
+                'total_days' => $request->total_days,
+                'created_at' => $request->created_at,
+                'reason' => $request->reason,
+                'days_with_pay' => $request->days_with_pay,
+                'days_without_pay' => $request->days_without_pay,
+                'attachment_path' => $request->attachment_path,
+                'is_dept_head_request' => $request->is_dept_head_request || $user->role === 'dept_head',
+                
+                // Add recall information
+                'is_recalled' => $request->status === 'recalled',
+                'recall_data' => $latestRecall ? [
+                    'id' => $latestRecall->id,
+                    'reason' => $latestRecall->reason_for_change,
+                    'new_date_from' => $latestRecall->new_leave_date_from,
+                    'new_date_to' => $latestRecall->new_leave_date_to,
+                    'recalled_at' => $latestRecall->created_at,
+                    'recalled_by' => $latestRecall->approved_by_admin,
+                    'status' => $latestRecall->status,
+                ] : null,
+                
+                // Relationships
+                'leave_type' => $request->leaveType ? [
+                    'id' => $request->leaveType->id,
+                    'name' => $request->leaveType->name,
+                    'code' => $request->leaveType->code,
+                ] : null,
+                
+                'approvals' => $request->approvals->map(function($approval) {
+                    return [
+                        'id' => $approval->id,
+                        'role' => $approval->role,
+                        'status' => $approval->status,
+                        'remarks' => $approval->remarks,
+                        'approved_at' => $approval->approved_at,
+                        'approved_by' => $approval->approved_by,
+                    ];
+                }),
+                
+                'recalls' => $request->recalls->map(function($recall) {
+                    return [
+                        'id' => $recall->id,
+                        'status' => $recall->status,
+                        'reason' => $recall->reason_for_change,
+                        'created_at' => $recall->created_at,
+                    ];
+                }),
+                
+                'details' => $request->details->map(function($detail) {
+                    return [
+                        'id' => $detail->id,
+                        'field_name' => $detail->field_name,
+                        'field_value' => $detail->field_value,
+                    ];
+                }),
+                
+                'employee' => $request->employee ? [
+                    'id' => $request->employee->id,
+                    'firstname' => $request->employee->firstname,
+                    'lastname' => $request->employee->lastname,
+                    'department' => $request->employee->department ? [
+                        'id' => $request->employee->department->id,
+                        'name' => $request->employee->department->name,
+                    ] : null,
+                ] : null,
+            ];
+        });
 
     return Inertia::render('Employee/MyLeaveRequests', [
         'leaveRequests' => $leaveRequests,
         'employee' => $user->employee,
     ]);
 }
-
-
-
 //leave balance
 
 /**
@@ -659,5 +755,38 @@ public function leaveCalendar(Request $request)
             'conversionStats' => $conversionStats,
         ]);
     }
+
+
+
+
+    /**
+ * Update leave request status based on approvals
+ */
+private function updateLeaveRequestStatus($leaveRequestId)
+{
+    $leaveRequest = LeaveRequest::with(['approvals', 'employee.user'])->find($leaveRequestId);
+    
+    if (!$leaveRequest) return;
+    
+    $hrApproved = $leaveRequest->approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
+    $deptHeadApproved = $leaveRequest->approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
+    $adminApproved = $leaveRequest->approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
+    
+    $isDeptHead = $leaveRequest->employee->user->role === 'dept_head';
+    
+    if ($adminApproved) {
+        $leaveRequest->status = 'approved';
+    } elseif ($deptHeadApproved && $hrApproved && !$isDeptHead) {
+        $leaveRequest->status = 'pending_admin';
+    } elseif ($hrApproved && $isDeptHead) {
+        $leaveRequest->status = 'pending_admin';
+    } elseif ($hrApproved && !$isDeptHead) {
+        $leaveRequest->status = 'pending_dept_head';
+    } else {
+        $leaveRequest->status = 'pending';
+    }
+    
+    $leaveRequest->save();
+}
 }
 

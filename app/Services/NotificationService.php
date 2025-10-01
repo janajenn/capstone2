@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Notification;
 use App\Models\Employee;
+use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 class NotificationService
 {
@@ -12,18 +14,63 @@ class NotificationService
      */
     public function createNotification($employeeId, $type, $title, $message, $data = null)
     {
-        return Notification::create([
-            'employee_id' => $employeeId,
-            'type' => $type,
-            'title' => $title,
-            'message' => $message,
-            'data' => $data,
-        ]);
+        // Validate employee_id exists
+        if (!$employeeId) {
+            Log::error('Notification creation failed: employee_id is null', [
+                'type' => $type,
+                'title' => $title,
+                'message' => $message
+            ]);
+            return null;
+        }
+
+        // Verify employee exists
+        $employee = Employee::where('employee_id', $employeeId)->first();
+        if (!$employee) {
+            Log::error('Notification creation failed: employee not found', [
+                'employee_id' => $employeeId,
+                'type' => $type,
+                'title' => $title
+            ]);
+            return null;
+        }
+
+        try {
+            return Notification::create([
+                'employee_id' => $employeeId,
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'data' => $data ? json_encode($data) : null,
+                'is_read' => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Notification creation failed: ' . $e->getMessage(), [
+                'employee_id' => $employeeId,
+                'type' => $type,
+                'title' => $title
+            ]);
+            return null;
+        }
     }
 
-    //LEAVE REQUEST NOTIFICATION
-      public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null)
+    /**
+     * Create leave request notification with proper employee_id handling
+     */
+    public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null)
     {
+        // Validate employee_id
+        if (!$employeeId) {
+            Log::error('Leave request notification failed: employee_id is null', [
+                'status' => $status,
+                'request_id' => $requestId,
+                'leave_type' => $leaveType
+            ]);
+            return null;
+        }
+
         // Map status to proper notification type and message
         $notificationData = $this->getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks);
         
@@ -87,11 +134,29 @@ class NotificationService
                     'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Department Head approval."
                 ];
                 
+            case 'hr_approved_pending_admin':
+                return [
+                    'title' => 'Leave Request Approved by HR',
+                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Admin approval."
+                ];
+
+            case 'hr_approved_pending_dept_head':
+                return [
+                    'title' => 'Leave Request Approved by HR',
+                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Department Head approval."
+                ];
+                
             case 'hr_rejected':
                 return [
                     'title' => 'Leave Request Rejected by HR',
                     'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by HR." . 
                                 ($remarks ? " Remarks: {$remarks}" : "")
+                ];
+
+            case 'admin_pending':
+                return [
+                    'title' => 'Department Head Leave Request Pending',
+                    'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} by a Department Head requires your approval."
                 ];
                 
             default:
@@ -103,12 +168,20 @@ class NotificationService
         }
     }
 
-
+    /**
+     * Create notification for admin about department head requests
+     */
+    
     /**
      * Create credit conversion notification
      */
     public function createCreditConversionNotification($employeeId, $status, $conversionId, $leaveType, $creditsRequested, $cashEquivalent)
     {
+        if (!$employeeId) {
+            Log::error('Credit conversion notification failed: employee_id is null');
+            return null;
+        }
+
         $statusText = ucfirst($status);
         $title = "Credit Conversion {$statusText}";
         
@@ -134,6 +207,10 @@ class NotificationService
      */
     public function getUnreadCount($employeeId)
     {
+        if (!$employeeId) {
+            return 0;
+        }
+
         return Notification::where('employee_id', $employeeId)
             ->where('is_read', false)
             ->count();
@@ -144,6 +221,10 @@ class NotificationService
      */
     public function getNotifications($employeeId, $limit = 10)
     {
+        if (!$employeeId) {
+            return collect();
+        }
+
         return Notification::where('employee_id', $employeeId)
             ->orderBy('created_at', 'desc')
             ->limit($limit)
@@ -155,7 +236,12 @@ class NotificationService
      */
     public function markAsRead($notificationId, $employeeId)
     {
-        \Log::info('Attempting to mark notification as read', [
+        if (!$employeeId) {
+            Log::error('Mark as read failed: employee_id is null');
+            return false;
+        }
+
+        Log::info('Attempting to mark notification as read', [
             'notification_id' => $notificationId,
             'employee_id' => $employeeId
         ]);
@@ -166,7 +252,7 @@ class NotificationService
 
         if ($notification) {
             $notification->markAsRead();
-            \Log::info('Notification marked as read successfully', [
+            Log::info('Notification marked as read successfully', [
                 'notification_id' => $notificationId,
                 'employee_id' => $employeeId,
                 'was_read' => $notification->is_read
@@ -174,7 +260,7 @@ class NotificationService
             return true;
         }
 
-        \Log::warning('Notification not found for marking as read', [
+        Log::warning('Notification not found for marking as read', [
             'notification_id' => $notificationId,
             'employee_id' => $employeeId
         ]);
@@ -187,6 +273,10 @@ class NotificationService
      */
     public function markAllAsRead($employeeId)
     {
+        if (!$employeeId) {
+            return 0;
+        }
+
         return Notification::where('employee_id', $employeeId)
             ->where('is_read', false)
             ->update([
@@ -200,6 +290,11 @@ class NotificationService
      */
     public function createLeaveRecallNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null)
     {
+        if (!$employeeId) {
+            Log::error('Leave recall notification failed: employee_id is null');
+            return null;
+        }
+
         $statusText = ucfirst($status);
         $title = "Leave Recall Request {$statusText}";
         
@@ -225,4 +320,80 @@ class NotificationService
 
         return $this->createNotification($employeeId, 'leave_recall', $title, $message, $data);
     }
+
+    /**
+     * Get employee_id from user_id
+     */
+    
+    
+   public function getEmployeeIdFromUserId($userId)
+   {
+       // Get the user first
+       $user = User::find($userId);
+       
+       if (!$user) {
+           Log::error('User not found for notification', ['user_id' => $userId]);
+           return null;
+       }
+
+       // The employee_id is stored in the users table
+       return $user->employee_id;
+   }
+
+   /**
+    * Get user_id from employee_id - FIXED VERSION
+    */
+   public function getUserIdFromEmployeeId($employeeId)
+   {
+       // Find user by employee_id
+       $user = User::where('employee_id', $employeeId)->first();
+       
+       if (!$user) {
+           Log::error('User not found for employee', ['employee_id' => $employeeId]);
+           return null;
+       }
+
+       return $user->id;
+   }
+
+   /**
+    * Create notification for admin about department head requests - FIXED VERSION
+    */
+   public function createAdminNotification($adminUserId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $employeeName, $remarks = null)
+   {
+       // Get employee_id from user_id for admin - using the fixed method
+       $adminEmployeeId = $this->getEmployeeIdFromUserId($adminUserId);
+       
+       if (!$adminEmployeeId) {
+           Log::error('Admin notification failed: admin employee not found', [
+               'user_id' => $adminUserId,
+               'request_id' => $requestId
+           ]);
+           return null;
+       }
+
+       $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+       $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
+
+       $title = "Department Head Leave Request";
+       $message = "{$employeeName} has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires your approval.";
+
+       $data = [
+           'request_id' => $requestId,
+           'status' => $status,
+           'leave_type' => $leaveType,
+           'date_from' => $dateFrom,
+           'date_to' => $dateTo,
+           'employee_name' => $employeeName,
+           'remarks' => $remarks,
+       ];
+
+       return $this->createNotification(
+           $adminEmployeeId, 
+           'leave_request', 
+           $title, 
+           $message, 
+           $data
+       );
+   }
 }

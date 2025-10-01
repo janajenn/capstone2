@@ -12,8 +12,13 @@ const formatDate = (dateString) => {
 };
 
 // Helper function to determine approval status based on leave_approvals
+// Helper function to determine approval status based on leave_approvals
 const getApprovalStatus = (request) => {
   if (!request.approvals || request.approvals.length === 0) {
+    // Check if it's a department head request
+    if (request.employee?.user?.role === 'dept_head' || request.is_dept_head_request) {
+      return 'dept_head_pending';
+    }
     return 'hr_pending';
   }
 
@@ -24,18 +29,43 @@ const getApprovalStatus = (request) => {
   }
 
   // Get approvals by role
-  const hrApproval = request.approvals.find(a => a.role === 'hr');
-  const deptHeadApproval = request.approvals.find(a => a.role === 'dept_head');
-  const adminApproval = request.approvals.find(a => a.role === 'admin');
+  const hrApproval = request.approvals.find(a => a.role === 'hr' && a.status === 'approved');
+  const deptHeadApproval = request.approvals.find(a => a.role === 'dept_head' && a.status === 'approved');
+  const adminApproval = request.approvals.find(a => a.role === 'admin' && a.status === 'approved');
 
-  // Check if fully approved (all three roles have approved)
-  if (hrApproval && deptHeadApproval && adminApproval) {
-    return 'fully_approved';
+  // Check if this is a department head request
+  const isDeptHead = request.employee?.user?.role === 'dept_head' || request.is_dept_head_request;
+
+  // Check if fully approved
+  if (isDeptHead) {
+    // Department heads only need HR and Admin approval
+    if (hrApproval && adminApproval) {
+      return 'fully_approved';
+    }
+  } else {
+    // Regular employees need HR, Dept Head, and Admin approval
+    if (hrApproval && deptHeadApproval && adminApproval) {
+      return 'fully_approved';
+    }
   }
 
   // Check if approved by HR only
   if (hrApproval && !deptHeadApproval && !adminApproval) {
+    // Check if this is a department head request (bypass dept head approval)
+    if (isDeptHead) {
+      return 'approved_by_hr_to_admin'; // Special status for dept head requests
+    }
     return 'approved_by_hr';
+  }
+
+  // Check if approved by HR and Dept Head (regular employees only)
+  if (hrApproval && deptHeadApproval && !adminApproval && !isDeptHead) {
+    return 'in_progress';
+  }
+
+  // Check if approved by HR and Admin (department heads only)
+  if (hrApproval && adminApproval && !deptHeadApproval && isDeptHead) {
+    return 'fully_approved'; // This should already be caught above, but just in case
   }
 
   // If there are approvals but don't match specific categories
@@ -49,8 +79,12 @@ const getDisplayStatus = (request) => {
   switch (approvalStatus) {
     case 'hr_pending':
       return 'HR Pending';
+    case 'dept_head_pending':
+      return 'Dept Head Request - Pending';
     case 'approved_by_hr':
       return 'Approved by HR';
+    case 'approved_by_hr_to_admin':
+      return 'Approved by HR → To Admin';
     case 'in_progress':
       // Check which approvals exist for more specific status
       const hrApproval = request.approvals.find(a => a.role === 'hr' && a.status === 'approved');
@@ -78,8 +112,12 @@ const getDisplayStatusColor = (request) => {
   switch (approvalStatus) {
     case 'hr_pending':
       return 'bg-yellow-100 text-yellow-800';
+    case 'dept_head_pending':
+      return 'bg-purple-100 text-purple-800';
     case 'approved_by_hr':
       return 'bg-blue-100 text-blue-800';
+    case 'approved_by_hr_to_admin':
+      return 'bg-indigo-100 text-indigo-800';
     case 'in_progress':
       return 'bg-purple-100 text-purple-800';
     case 'fully_approved':
@@ -89,6 +127,11 @@ const getDisplayStatusColor = (request) => {
     default:
       return 'bg-gray-100 text-gray-800';
   }
+};
+
+// Check if request is from department head
+const isDeptHeadRequest = (request) => {
+  return request.is_dept_head_request || request.employee?.user?.role === 'dept_head';
 };
 
 export default function LeaveRequests() {
@@ -114,6 +157,7 @@ export default function LeaveRequests() {
       return {
         total: 0,
         pending: 0,
+        dept_head_pending: 0,
         approved: 0,
         rejected: 0
       };
@@ -122,72 +166,90 @@ export default function LeaveRequests() {
     return {
       total: leaveRequests.total,
       pending: leaveRequests.data.filter(request => getApprovalStatus(request) === 'hr_pending').length,
+      dept_head_pending: leaveRequests.data.filter(request => getApprovalStatus(request) === 'dept_head_pending').length,
       approved: leaveRequests.data.filter(request => getApprovalStatus(request) === 'fully_approved').length,
       rejected: leaveRequests.data.filter(request => getApprovalStatus(request) === 'rejected').length
     };
   }, [leaveRequests]);
 
   // Filter leave requests based on active tab using approval status
-  const filteredRequests = useMemo(() => {
-    if (!leaveRequests.data) return [];
+// Filter leave requests based on active tab using approval status
+const filteredRequests = useMemo(() => {
+  if (!leaveRequests.data) return [];
 
-    return leaveRequests.data.filter(request => {
-      const approvalStatus = getApprovalStatus(request);
+  return leaveRequests.data.filter(request => {
+    const approvalStatus = getApprovalStatus(request);
+    const hasHRApproval = request.approvals?.some(approval => 
+      approval.role === 'hr' && approval.status === 'approved'
+    );
 
-      switch (activeTab) {
-        case 'hr_pending':
-          return approvalStatus === 'hr_pending';
-        case 'approved_by_hr':
-          return approvalStatus === 'approved_by_hr';
-        case 'rejected':
-          return approvalStatus === 'rejected';
-        case 'fully_approved':
-          return approvalStatus === 'fully_approved';
-        default:
-          return true;
-      }
-    });
-  }, [leaveRequests.data, activeTab]);
+    switch (activeTab) {
+      case 'hr_pending':
+        return approvalStatus === 'hr_pending';
+      case 'dept_head_pending':
+        return approvalStatus === 'dept_head_pending';
+      case 'approved_by_hr':
+        // Show ALL requests that have HR approval, regardless of current status
+        return hasHRApproval;
+      case 'rejected':
+        return approvalStatus === 'rejected';
+      case 'fully_approved':
+        return approvalStatus === 'fully_approved';
+      default:
+        return true;
+    }
+  });
+}, [leaveRequests.data, activeTab]);
 
-  // Count requests for each tab
-  const tabCounts = useMemo(() => {
-    if (!leaveRequests.data) return { hr_pending: 0, approved_by_hr: 0, rejected: 0, fully_approved: 0 };
+// Count requests for each tab
+const tabCounts = useMemo(() => {
+  if (!leaveRequests.data) return { hr_pending: 0, dept_head_pending: 0, approved_by_hr: 0, rejected: 0, fully_approved: 0 };
 
-    const counts = {
-      hr_pending: 0,
-      approved_by_hr: 0,
-      rejected: 0,
-      fully_approved: 0
-    };
+  const counts = {
+    hr_pending: 0,
+    dept_head_pending: 0,
+    approved_by_hr: 0,
+    rejected: 0,
+    fully_approved: 0
+  };
 
-    leaveRequests.data.forEach(request => {
-      const approvalStatus = getApprovalStatus(request);
+  leaveRequests.data.forEach(request => {
+    const approvalStatus = getApprovalStatus(request);
+    const hasHRApproval = request.approvals?.some(approval => 
+      approval.role === 'hr' && approval.status === 'approved'
+    );
 
-      switch (approvalStatus) {
-        case 'hr_pending':
-          counts.hr_pending++;
-          break;
-        case 'approved_by_hr':
-          counts.approved_by_hr++;
-          break;
-        case 'rejected':
-          counts.rejected++;
-          break;
-        case 'fully_approved':
-          counts.fully_approved++;
-          break;
-        default:
-          // For in_progress status, don't count in any tab
-          break;
-      }
-    });
+    switch (approvalStatus) {
+      case 'hr_pending':
+        counts.hr_pending++;
+        break;
+      case 'dept_head_pending':
+        counts.dept_head_pending++;
+        break;
+      case 'rejected':
+        counts.rejected++;
+        break;
+      case 'fully_approved':
+        counts.fully_approved++;
+        break;
+      default:
+        // For in_progress status, don't count in other tabs
+        break;
+    }
 
-    return counts;
-  }, [leaveRequests.data]);
+    // Count for approved_by_hr tab - ALL requests with HR approval
+    if (hasHRApproval) {
+      counts.approved_by_hr++;
+    }
+  });
+
+  return counts;
+}, [leaveRequests.data]);
 
   // Tab configuration
   const tabs = [
     { id: 'hr_pending', name: 'HR Pending', count: tabCounts.hr_pending },
+    { id: 'dept_head_pending', name: 'Dept Head Requests', count: tabCounts.dept_head_pending },
     { id: 'approved_by_hr', name: 'Approved by HR', count: tabCounts.approved_by_hr },
     { id: 'rejected', name: 'Rejected', count: tabCounts.rejected },
     { id: 'fully_approved', name: 'Fully Approved', count: tabCounts.fully_approved },
@@ -325,7 +387,8 @@ export default function LeaveRequests() {
 
   // Check if a request can be approved (only pending requests)
   const canApprove = (request) => {
-    return getApprovalStatus(request) === 'hr_pending';
+    const status = getApprovalStatus(request);
+    return status === 'hr_pending' || status === 'dept_head_pending';
   };
 
   // Check if a request can generate form (only fully approved requests)
@@ -337,6 +400,7 @@ export default function LeaveRequests() {
   const getAvailableActions = (request) => {
     const actions = [];
     const approvalStatus = getApprovalStatus(request);
+    const isDeptHead = isDeptHeadRequest(request);
 
     // View action is always available
     actions.push({
@@ -353,10 +417,10 @@ export default function LeaveRequests() {
     });
 
     // Approve/Reject actions for pending requests
-    if (approvalStatus === 'hr_pending') {
+    if (approvalStatus === 'hr_pending' || approvalStatus === 'dept_head_pending') {
       actions.push({
         type: 'approve',
-        label: 'Approve',
+        label: isDeptHead ? 'Approve → To Admin' : 'Approve',
         color: 'text-green-600 hover:text-green-900',
         icon: (
           <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -455,7 +519,7 @@ export default function LeaveRequests() {
         )}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
             <div className="flex items-center">
               <div className="p-3 rounded-lg bg-blue-50">
@@ -479,7 +543,21 @@ export default function LeaveRequests() {
               </div>
               <div className="ml-4">
                 <h2 className="text-2xl font-bold text-gray-800">{summaryData.pending}</h2>
-                <p className="text-sm text-gray-600">Pending Requests</p>
+                <p className="text-sm text-gray-600">Pending HR</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex items-center">
+              <div className="p-3 rounded-lg bg-purple-50">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{summaryData.dept_head_pending}</h2>
+                <p className="text-sm text-gray-600">Dept Head Requests</p>
               </div>
             </div>
           </div>
@@ -543,6 +621,7 @@ export default function LeaveRequests() {
                 >
                   <option value="all">All Status</option>
                   <option value="hr_pending">HR Pending</option>
+                  <option value="dept_head_pending">Dept Head Requests</option>
                   <option value="approved_by_hr">Approved by HR</option>
                   <option value="rejected">Rejected</option>
                   <option value="fully_approved">Fully Approved</option>
@@ -611,7 +690,7 @@ export default function LeaveRequests() {
                     />
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Employee
+                    Employee & Type
                   </th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Leave Type
@@ -646,6 +725,8 @@ export default function LeaveRequests() {
                 ) : (
                   filteredRequests.map((request) => {
                     const actions = getAvailableActions(request);
+                    const isDeptHead = isDeptHeadRequest(request);
+                    
                     return (
                       <tr key={request.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -667,9 +748,17 @@ export default function LeaveRequests() {
                             <div className="ml-4">
                               <div className="text-sm font-medium text-gray-900">
                                 {request.employee?.firstname} {request.employee?.lastname}
+                                {isDeptHead && (
+                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                    Dept Head
+                                  </span>
+                                )}
                               </div>
                               <div className="text-sm text-gray-500">
                                 {request.employee?.department?.name}
+                              </div>
+                              <div className="text-xs text-blue-600">
+                                {isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
                               </div>
                             </div>
                           </div>
@@ -707,6 +796,11 @@ export default function LeaveRequests() {
                                     {approval.role.charAt(0).toUpperCase()}
                                   </span>
                                 ))}
+                                {isDeptHead && !request.approvals.find(a => a.role === 'dept_head') && (
+                                  <span className="px-1 text-xs text-gray-300" title="Department Head Approval Bypassed">
+                                    D
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               'No approvals yet'

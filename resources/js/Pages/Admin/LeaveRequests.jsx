@@ -2,15 +2,18 @@ import AdminLayout from "@/Layouts/AdminLayout";
 import { Head, useForm, router, Link } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
+import AdminRecallModal from "@/Components/AdminRecallModal"; // Import the modal
 
 const statusColors = {
     pending_to_admin: 'bg-yellow-100 text-yellow-800',
+    dept_head_requests: 'bg-purple-100 text-purple-800',
     approved: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800'
 };
 
 const statusLabels = {
     pending_to_admin: 'Pending Admin Approval',
+    dept_head_requests: 'Department Head Requests',
     approved: 'Fully Approved',
     rejected: 'Rejected'
 };
@@ -27,6 +30,8 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
     const [rejectingId, setRejectingId] = useState(null);
     const [rejectRemarks, setRejectRemarks] = useState('');
     const [selectedStatus, setSelectedStatus] = useState(filters.status || 'pending_to_admin');
+    const [isRecallModalOpen, setIsRecallModalOpen] = useState(false);
+    const [selectedLeaveRequest, setSelectedLeaveRequest] = useState(null);
 
     // Handle tab change
     const handleTabChange = (status) => {
@@ -35,6 +40,17 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
             preserveState: true,
             replace: true
         });
+    };
+
+    // Handle recall click
+    const handleRecallClick = (leaveRequest) => {
+        setSelectedLeaveRequest(leaveRequest);
+        setIsRecallModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsRecallModalOpen(false);
+        setSelectedLeaveRequest(null);
     };
 
     const handleApprove = (id) => {
@@ -118,6 +134,20 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
         
         // Otherwise, use the actual status from the database
         return request.status;
+    };
+
+    // Check if request is from department head
+    const isDeptHeadRequest = (request) => {
+        return request.is_dept_head_request || request.employee?.role === 'dept_head';
+    };
+
+    // Get approval workflow type
+    const getWorkflowType = (request) => {
+        if (isDeptHeadRequest(request)) {
+            return "HR → Admin (Dept Head Request)";
+        } else {
+            return "HR → Dept Head → Admin";
+        }
     };
 
     // Show unauthorized message if user is not active approver
@@ -245,6 +275,21 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                             )}
                         </button>
                         <button
+                            onClick={() => handleTabChange('dept_head_requests')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                selectedStatus === 'dept_head_requests'
+                                    ? 'bg-purple-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            }`}
+                        >
+                            Dept Head Requests
+                            {selectedStatus === 'dept_head_requests' && leaveRequests.data && leaveRequests.data.length > 0 && (
+                                <span className="ml-2 bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
+                                    {leaveRequests.total}
+                                </span>
+                            )}
+                        </button>
+                        <button
                             onClick={() => handleTabChange('fully_approved')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'fully_approved'
@@ -284,7 +329,7 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Employee
+                                        Employee & Workflow
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Leave Type
@@ -301,6 +346,9 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status
                                     </th>
+                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Recall
+                                    </th>
                                     <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Actions
                                     </th>
@@ -310,6 +358,9 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                 {leaveRequests.data && leaveRequests.data.length > 0 ? (
                                     leaveRequests.data.map((request) => {
                                         const status = getRequestStatus(request);
+                                        const isDeptHead = isDeptHeadRequest(request);
+                                        const workflowType = getWorkflowType(request);
+                                        
                                         return (
                                             <tr key={request.id} className="hover:bg-gray-50 transition-colors">
                                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -322,9 +373,17 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                                         <div className="ml-4">
                                                             <div className="text-sm font-medium text-gray-900">
                                                                 {request.employee.firstname} {request.employee.lastname}
+                                                                {isDeptHead && (
+                                                                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                                                        Dept Head
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                             <div className="text-sm text-gray-500">{request.employee.department}</div>
                                                             <div className="text-sm text-gray-500">{request.employee.position}</div>
+                                                            <div className="text-xs text-blue-600 mt-1">
+                                                                {workflowType}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </td>
@@ -355,7 +414,11 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {request.dept_head_approval ? (
+                                                    {isDeptHead ? (
+                                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                                            Bypassed
+                                                        </span>
+                                                    ) : request.dept_head_approval ? (
                                                         <div className="flex flex-col">
                                                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 mb-1">
                                                                 Approved
@@ -375,8 +438,33 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                                         {statusLabels[status]}
                                                     </span>
                                                 </td>
+                                                
+                                                {/* RECALL COLUMN - ADDED HERE */}
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                    {request.can_be_recalled && (
+                                                        <button
+                                                            onClick={() => handleRecallClick(request)}
+                                                            className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
+                                                        >
+                                                            Recall
+                                                        </button>
+                                                    )}
+                                                    {request.has_recall && (
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                                            Recalled
+                                                        </span>
+                                                    )}
+
+
+{request.has_recall && (
+    <div className="mt-1 text-xs text-purple-600">
+        New dates: {request.recall_new_date_from && formatDate(request.recall_new_date_from)} - {request.recall_new_date_to && formatDate(request.recall_new_date_to)}
+    </div>
+)}
+                                                </td>
+
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    {selectedStatus === 'pending_to_admin' && (
+                                                    {selectedStatus === 'pending_to_admin' || selectedStatus === 'dept_head_requests' ? (
                                                         rejectingId === request.id ? (
                                                             <div className="space-y-2">
                                                                 <textarea
@@ -421,8 +509,7 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                                                 </button>
                                                             </div>
                                                         )
-                                                    )}
-                                                    {(selectedStatus === 'fully_approved' || selectedStatus === 'rejected') && (
+                                                    ) : (
                                                         <span className="text-gray-400 text-sm">No actions available</span>
                                                     )}
                                                 </td>
@@ -431,7 +518,7 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                     })
                                 ) : (
                                     <tr>
-                                        <td colSpan="7" className="px-6 py-12 text-center">
+                                        <td colSpan="8" className="px-6 py-12 text-center">
                                             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
@@ -439,6 +526,8 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                             <p className="mt-1 text-sm text-gray-500">
                                                 {selectedStatus === 'pending_to_admin' 
                                                     ? 'There are no leave requests pending admin approval.' 
+                                                    : selectedStatus === 'dept_head_requests'
+                                                    ? 'There are no department head leave requests.'
                                                     : selectedStatus === 'fully_approved'
                                                     ? 'There are no fully approved leave requests.'
                                                     : 'There are no rejected leave requests.'}
@@ -475,8 +564,6 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                                         </span>
                                     )}
 
-                                   
-
                                     {/* Next Page */}
                                     {leaveRequests.next_page_url ? (
                                         <Link
@@ -496,6 +583,13 @@ export default function LeaveRequests({ leaveRequests, filters, flash, currentAp
                         </div>
                     )}
                 </div>
+
+                {/* Admin Recall Modal */}
+                <AdminRecallModal
+                    isOpen={isRecallModalOpen}
+                    onClose={handleCloseModal}
+                    leaveRequest={selectedLeaveRequest}
+                />
             </div>
         </AdminLayout>
     );

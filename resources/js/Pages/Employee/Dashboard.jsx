@@ -37,10 +37,10 @@ export default function Dashboard() {
                     </Link>
                 </div>
 
-                {/* Add the Leave Request Card - spans all columns */}
-                {latestLeaveRequest && (
+               
+                {/* {latestLeaveRequest && (
                     <LeaveRequestCard request={latestLeaveRequest} />
-                )}
+                )} */}
             </div>
         </EmployeeLayout>
     );

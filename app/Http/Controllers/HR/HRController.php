@@ -1,7 +1,8 @@
 <?php
 
 namespace App\Http\Controllers\HR;
-
+use Illuminate\Support\Facades\Mail;
+use App\Mail\EmployeeWelcomeMail;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\Department;
@@ -52,90 +53,172 @@ class HRController extends Controller
             'filters' => $request->only(['search', 'department']),
         ]);
     }
-
-public function storeEmployee(Request $request)
-{
-    $validated = $request->validate([
-        'firstname' => 'required|string|max:255',
-        'middlename' => 'nullable|string|max:255',
-        'lastname' => 'required|string|max:255',
-        'gender' => 'required|in:male,female',
-        'date_of_birth' => 'required|date',
-        'position' => 'required|string|max:255',
-        'department_id' => 'required|exists:departments,id',
-        'status' => 'required|in:active,inactive',
-        'contact_number' => 'required|string|max:20',
-        'address' => 'required|string|max:255',
-        'civil_status' => 'required|in:single,married,widowed,divorced',
-        'biometric_id' => 'nullable|integer|unique:employees,biometric_id',
-        'monthly_salary' => 'required|numeric|min:0',
-        'daily_rate' => 'required|numeric|min:0',
-        'email' => 'required|email|unique:users,email',
-        'password' => 'required|string|min:6',
-        'role' => 'required|in:employee,hr,admin,dept_head',
-        'is_primary' => 'nullable|boolean', // Add this validation
-    ]);
-
-    try {
-        \DB::beginTransaction();
-        
-        // 1. Create the employee
-        $employee = Employee::create([
-            'firstname' => $validated['firstname'],
-            'middlename' => $validated['middlename'],
-            'lastname' => $validated['lastname'],
-            'gender' => $validated['gender'],
-            'date_of_birth' => $validated['date_of_birth'],
-            'position' => $validated['position'],
-            'department_id' => $validated['department_id'],
-            'status' => $validated['status'],
-            'contact_number' => $validated['contact_number'],
-            'address' => $validated['address'],
-            'civil_status' => $validated['civil_status'],
-            'biometric_id' => $validated['biometric_id'] ?? null,
-            'monthly_salary' => $validated['monthly_salary'],
-            'daily_rate' => $validated['daily_rate'],
+    public function storeEmployee(Request $request)
+    {
+        $validated = $request->validate([
+            'firstname' => 'required|string|max:255',
+            'middlename' => 'nullable|string|max:255',
+            'lastname' => 'required|string|max:255',
+            'gender' => 'required|in:male,female',
+            'date_of_birth' => 'required|date',
+            'position' => 'required|string|max:255',
+            'department_id' => 'required|exists:departments,id',
+            'status' => 'required|in:active,inactive',
+            'contact_number' => 'required|string|max:20',
+            'address' => 'required|string|max:255',
+            'civil_status' => 'required|in:single,married,widowed,divorced',
+            'biometric_id' => 'nullable|integer|unique:employees,biometric_id',
+            'monthly_salary' => 'required|numeric|min:0',
+            'daily_rate' => 'required|numeric|min:0',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:6',
+            'role' => 'required|in:employee,hr,admin,dept_head',
+            'is_primary' => 'nullable|boolean',
         ]);
-
-        // 2. Determine if this user should be primary admin
-        $isPrimary = false;
-        if ($validated['role'] === 'admin' && isset($validated['is_primary']) && $validated['is_primary']) {
-            $isPrimary = true;
+    
+        try {
+            \DB::beginTransaction();
+            
+            // 1. Create the employee
+            $employee = Employee::create([
+                'firstname' => $validated['firstname'],
+                'middlename' => $validated['middlename'],
+                'lastname' => $validated['lastname'],
+                'gender' => $validated['gender'],
+                'date_of_birth' => $validated['date_of_birth'],
+                'position' => $validated['position'],
+                'department_id' => $validated['department_id'],
+                'status' => $validated['status'],
+                'contact_number' => $validated['contact_number'],
+                'address' => $validated['address'],
+                'civil_status' => $validated['civil_status'],
+                'biometric_id' => $validated['biometric_id'] ?? null,
+                'monthly_salary' => $validated['monthly_salary'],
+                'daily_rate' => $validated['daily_rate'],
+            ]);
+    
+            // 2. Determine if this user should be primary admin
+            $isPrimary = false;
+            if ($validated['role'] === 'admin' && isset($validated['is_primary']) && $validated['is_primary']) {
+                $isPrimary = true;
+            }
+    
+            // 3. Create the user and link to employee
+            $user = User::create([
+                'name' => $validated['firstname'] . ' ' . $validated['lastname'],
+                'email' => $validated['email'],
+                'password' => bcrypt($validated['password']),
+                'role' => $validated['role'],
+                'employee_id' => $employee->employee_id,
+                'is_primary' => $isPrimary,
+            ]);
+    
+            // 4. Create default leave credit record for SL/VL (earnable leaves)
+            LeaveCredit::create([
+                'employee_id' => $employee->employee_id,
+                'sl_balance' => 0,
+                'vl_balance' => 0,
+                'last_updated' => now(),
+                'remarks' => 'Initial balance for new employee',
+            ]);
+    
+            // 5. Create leave balance records for non-earnable leave types with fixed allocations
+            $this->createFixedLeaveBalances($employee->employee_id);
+    
+            // 6. Attempt to send welcome email (but don't fail if it doesn't work)
+            $emailSent = false;
+            try {
+                Mail::to($validated['email'])->send(
+                    new EmployeeWelcomeMail($employee, $validated['email'], $validated['password'])
+                );
+                $emailSent = true;
+                \Log::info('Welcome email sent successfully to: ' . $validated['email']);
+            } catch (\Exception $emailException) {
+                // Just log the error but continue with success response
+                \Log::warning('Welcome email failed for ' . $validated['email'] . ': ' . $emailException->getMessage());
+                $emailSent = false;
+            }
+    
+            \DB::commit();
+            
+            // Return appropriate message based on email status
+            if ($emailSent) {
+                return redirect()->back()->with('success', 'Employee created successfully! Welcome email sent.');
+            } else {
+                return redirect()->back()->with('success', 'Employee created successfully! Please provide login credentials to the employee in person.');
+            }
+            
+        } catch (\Exception $e) {
+            \DB::rollback();
+            \Log::error('Error creating employee: ' . $e->getMessage(), [
+                'data' => $validated,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()->withErrors(['error' => 'Failed to create employee: ' . $e->getMessage()]);
         }
-
-        // 3. Create the user and link to employee
-        User::create([
-            'name' => $validated['firstname'] . ' ' . $validated['lastname'],
-            'email' => $validated['email'],
-            'password' => bcrypt($validated['password']),
-            'role' => $validated['role'],
-            'employee_id' => $employee->employee_id,
-            'is_primary' => $isPrimary, // Add this
-        ]);
-
-        // 4. Create default leave credit record for the new employee
-        LeaveCredit::create([
-            'employee_id' => $employee->employee_id,
-            'sl_balance' => 0,
-            'vl_balance' => 0,
-            'last_updated' => now(),
-            'remarks' => 'Initial balance for new employee',
-        ]);
-
-        \DB::commit();
-        
-        return redirect()->back()->with('success', 'Employee and user created successfully!');
-    } catch (\Exception $e) {
-        \DB::rollback();
-        \Log::error('Error creating employee: ' . $e->getMessage(), [
-            'data' => $validated,
-            'trace' => $e->getTraceAsString()
-        ]);
-        
-        return redirect()->back()->withErrors(['error' => 'Failed to create employee: ' . $e->getMessage()]);
     }
-}
+    
+    /**
+     * Create fixed allocation leave balances for non-earnable leave types
+     */
+    /**
+ * Create fixed allocation leave balances for non-earnable leave types
+ */
+private function createFixedLeaveBalances($employeeId)
+{
+    $currentYear = now()->year;
+    
+    \Log::info("Starting createFixedLeaveBalances for employee {$employeeId}");
+    
+    // Get ALL non-earnable leave types (including those with 0 or null default_days)
+    $nonEarnableLeaveTypes = \App\Models\LeaveType::where('earnable', false)->get();
+    
+    \Log::info("Found {$nonEarnableLeaveTypes->count()} non-earnable leave types");
+    
+    $createdCount = 0;
+    
+    foreach ($nonEarnableLeaveTypes as $leaveType) {
+        // Use default_days if set, otherwise 0
+        $defaultDays = $leaveType->default_days ?? 0;
+        
+        \Log::info("Processing {$leaveType->name} with default_days: {$defaultDays}");
+        
+        // Check if balance already exists
+        $existingBalance = \App\Models\LeaveBalance::where('employee_id', $employeeId)
+            ->where('leave_type_id', $leaveType->id)
+            ->where('year', $currentYear)
+            ->first();
+            
+        if ($existingBalance) {
+            \Log::info("Leave balance already exists for {$leaveType->name}, skipping");
+            continue;
+        }
+        
+        try {
+            \App\Models\LeaveBalance::create([
+                'employee_id' => $employeeId,
+                'leave_type_id' => $leaveType->id,
+                'year' => $currentYear,
+                'total_earned' => $defaultDays,
+                'total_used' => 0,
+                'balance' => $defaultDays,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            
+            $createdCount++;
+            \Log::info("✅ Created leave balance for employee {$employeeId}: {$leaveType->name} - {$defaultDays} days");
+            
+        } catch (\Exception $e) {
+            \Log::error("❌ Failed to create leave balance for {$leaveType->name}: " . $e->getMessage());
+        }
+    }
 
+    \Log::info("Created {$createdCount} leave balances for employee {$employeeId}");
+    
+    return $createdCount;
+}
 
 public function editEmployee(Employee $employee)
 {
@@ -335,7 +418,6 @@ public function addMonthlyCredits()
 }
 
 
-// Add this method to your HRController
 public function showLeaveCredit($employee_id)
 {
     $employee = Employee::with(['department', 'user', 'leaveCredit'])
@@ -372,6 +454,8 @@ public function showLeaveCredit($employee_id)
                 'type' => $balance->leaveType->name,
                 'code' => $balance->leaveType->code,
                 'balance' => $balance->balance,
+                'total_earned' => $balance->total_earned,
+                'total_used' => $balance->total_used,
                 'default_days' => $balance->leaveType->default_days,
                 'earnable' => false,
                 'description' => 'Fixed allocation'
@@ -384,6 +468,56 @@ public function showLeaveCredit($employee_id)
         'nonEarnableLeaveBalances' => $nonEarnableLeaveBalances,
     ]);
 }
+
+
+/**
+ * Debug method to check leave balances for a specific employee
+ */
+public function debugLeaveBalances($employee_id)
+{
+    $employee = Employee::findOrFail($employee_id);
+    
+    // Check what leave types exist
+    $allLeaveTypes = \App\Models\LeaveType::all();
+    echo "All Leave Types:\n";
+    foreach ($allLeaveTypes as $type) {
+        echo " - {$type->name} (Code: {$type->code}, Earnable: {$type->earnable}, Default Days: {$type->default_days})\n";
+    }
+    
+    echo "\nNon-earnable leave types with default_days > 0:\n";
+    $nonEarnableTypes = \App\Models\LeaveType::where('earnable', false)
+        ->whereNotNull('default_days')
+        ->where('default_days', '>', 0)
+        ->get();
+    foreach ($nonEarnableTypes as $type) {
+        echo " - {$type->name} (Default Days: {$type->default_days})\n";
+    }
+    
+    // Check what leave balances exist for this employee
+    echo "\nExisting Leave Balances for Employee {$employee_id}:\n";
+    $leaveBalances = \App\Models\LeaveBalance::where('employee_id', $employee_id)->get();
+    if ($leaveBalances->count() > 0) {
+        foreach ($leaveBalances as $balance) {
+            $leaveType = \App\Models\LeaveType::find($balance->leave_type_id);
+            echo " - {$leaveType->name}: {$balance->balance} days (Total Earned: {$balance->total_earned}, Used: {$balance->total_used})\n";
+        }
+    } else {
+        echo " - No leave balances found!\n";
+    }
+    
+    // Check leave credits
+    $leaveCredit = \App\Models\LeaveCredit::where('employee_id', $employee_id)->first();
+    echo "\nLeave Credits:\n";
+    if ($leaveCredit) {
+        echo " - SL Balance: {$leaveCredit->sl_balance}\n";
+        echo " - VL Balance: {$leaveCredit->vl_balance}\n";
+    } else {
+        echo " - No leave credits found!\n";
+    }
+    
+    die(); // Stop execution to see the output
+}
+
 
 //LEAVE TYPES
 public function leaveTypes()
@@ -564,55 +698,104 @@ public function dashboard(Request $request)
 
 public function leaveRequests(Request $request)
 {
-    $perPage = 15; // Number of records per page
+    $perPage = 15; // This should be 15, but frontend filtering breaks it
     
     $query = LeaveRequest::with([
             'leaveType',
             'employee.department',
+            'employee.user',
             'details',
             'approvals'
         ])
         ->orderBy('created_at', 'desc');
 
-    // Filter by approval status (using subqueries)
+    // Filter by status using database status and approval relationships
     if ($request->has('status') && $request->status !== 'all') {
         switch ($request->status) {
             case 'hr_pending':
-                // Requests with no HR approval yet
-                $query->whereDoesntHave('approvals', function ($q) {
-                    $q->where('role', 'hr');
-                });
+                // All requests pending HR approval (status = 'pending')
+                $query->where('status', 'pending');
                 break;
 
-            case 'approved_by_hr':
-                // Requests approved by HR but not by dept_head or admin
-                $query->whereHas('approvals', function ($q) {
-                    $q->where('role', 'hr')->where('status', 'approved');
-                })->whereDoesntHave('approvals', function ($q) {
-                    $q->whereIn('role', ['dept_head', 'admin']);
-                });
+            case 'dept_head_pending':
+                // Department head requests that need HR approval
+                $query->where('status', 'pending')
+                      ->where(function($q) {
+                          $q->where('is_dept_head_request', true)
+                            ->orWhereHas('employee', function($employeeQuery) {
+                                $employeeQuery->whereHas('user', function($userQuery) {
+                                    $userQuery->where('role', 'dept_head');
+                                });
+                            });
+                      });
+                break;
+
+                case 'approved_by_hr':
+                    // Show ALL requests that have HR approval, regardless of final status
+                    $query->whereHas('approvals', function($q) {
+                        $q->where('role', 'hr')->where('status', 'approved');
+                    });
+                    break;
+
+            case 'dept_head_pending':
+                // Requests approved by HR and waiting for dept head
+                $query->where('status', 'pending_dept_head')
+                      ->whereHas('approvals', function($q) {
+                          $q->where('role', 'hr')->where('status', 'approved');
+                      })
+                      ->whereHas('employee.user', function($q) {
+                          $q->where('role', '!=', 'dept_head');
+                      });
+                break;
+
+            case 'dept_head_to_admin':
+                // Dept head requests that went directly to admin after HR approval
+                $query->where('status', 'pending_admin')
+                      ->whereHas('employee.user', function($q) {
+                          $q->where('role', 'dept_head');
+                      })
+                      ->whereHas('approvals', function($q) {
+                          $q->where('role', 'hr')->where('status', 'approved');
+                      });
                 break;
 
             case 'rejected':
-                // Requests with any rejection
-                $query->whereHas('approvals', function ($q) {
-                    $q->where('status', 'rejected');
-                });
+                $query->where('status', 'rejected');
                 break;
 
-            case 'fully_approved':
-                // Requests with all three approvals
-                $query->whereHas('approvals', function ($q) {
-                    $q->where('role', 'hr')->where('status', 'approved');
-                })->whereHas('approvals', function ($q) {
-                    $q->where('role', 'dept_head')->where('status', 'approved');
-                })->whereHas('approvals', function ($q) {
-                    $q->where('role', 'admin')->where('status', 'approved');
-                });
-                break;
-
+                case 'fully_approved':
+                    // Show all fully approved requests - both regular employees and department heads
+                    $query->where('status', 'approved')
+                          ->where(function($q) {
+                              $q->where(function($q2) {
+                                  // Regular employees: Need HR, Dept Head, and Admin approval
+                                  $q2->whereHas('approvals', function($q3) {
+                                          $q3->where('role', 'hr')->where('status', 'approved');
+                                      })
+                                      ->whereHas('approvals', function($q3) {
+                                          $q3->where('role', 'dept_head')->where('status', 'approved');
+                                      })
+                                      ->whereHas('approvals', function($q3) {
+                                          $q3->where('role', 'admin')->where('status', 'approved');
+                                      })
+                                      ->whereHas('employee.user', function($q3) {
+                                          $q3->where('role', '!=', 'dept_head');
+                                      });
+                              })->orWhere(function($q2) {
+                                  // Department heads: Only need HR and Admin approval (bypass dept head)
+                                  $q2->whereHas('approvals', function($q3) {
+                                          $q3->where('role', 'hr')->where('status', 'approved');
+                                      })
+                                      ->whereHas('approvals', function($q3) {
+                                          $q3->where('role', 'admin')->where('status', 'approved');
+                                      })
+                                      ->whereHas('employee.user', function($q3) {
+                                          $q3->where('role', 'dept_head');
+                                      });
+                              });
+                          });
+                    break;
             default:
-                // For 'all' or other statuses, no additional filtering
                 break;
         }
     }
@@ -641,8 +824,6 @@ public function leaveRequests(Request $request)
         'filters' => $request->only(['status', 'date_from', 'date_to', 'search']),
     ]);
 }
-
-
 public function showLeaveRequest($id)
 {
     $leaveRequest = LeaveRequest::with([
@@ -679,44 +860,98 @@ public function showLeaveRequest($id)
 // In HRController - modify the approveLeaveRequest method
 public function approveLeaveRequest(Request $request, $id)
 {
-    $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
+    try {
+        $leaveRequest = LeaveRequest::with(['employee', 'leaveType', 'employee.user'])->findOrFail($id);
 
-    // Validate that the request is pending
-    if ($leaveRequest->status !== 'pending') {
-        return back()->withErrors(['message' => 'This request has already been processed.']);
+        // Validate that the request is pending
+        if (!in_array($leaveRequest->status, ['pending', 'pending_hr_to_admin'])) {
+            return back()->withErrors(['message' => 'This request has already been processed.']);
+        }
+
+        // Check if this is a department head's request
+        $isDeptHeadRequest = $leaveRequest->employee->user->role === 'dept_head' || 
+                            $leaveRequest->is_dept_head_request;
+
+        // Create HR approval record
+        \App\Models\LeaveApproval::create([
+            'leave_id' => $leaveRequest->id,
+            'approved_by' => $request->user()->id,
+            'role' => 'hr',
+            'status' => 'approved',
+            'remarks' => $request->remarks ?? '',
+            'approved_at' => now(),
+        ]);
+
+        $notificationService = new NotificationService();
+
+        // FIXED: Update status correctly based on employee type
+        if ($isDeptHeadRequest) {
+            // For dept heads, go directly to admin after HR approval
+            $leaveRequest->update(['status' => 'pending_admin']);
+            
+            // Send notification to admin (get primary admin)
+            $primaryAdmin = User::where('is_primary', true)->where('role', 'admin')->first();
+            if ($primaryAdmin) {
+                $notificationService->createAdminNotification(
+                    $primaryAdmin->id,
+                    'admin_pending',
+                    $id,
+                    $leaveRequest->leaveType->name ?? 'Leave',
+                    $leaveRequest->date_from,
+                    $leaveRequest->date_to,
+                    $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
+                    "Department Head Leave Request - Requires Admin Approval"
+                );
+            }
+        } else {
+            // For regular employees, go to department head
+            $leaveRequest->update(['status' => 'pending_dept_head']);
+            
+            // Get department head user for notification
+            $deptHeadUser = User::where('role', 'dept_head')
+                ->whereHas('employee', function($query) use ($leaveRequest) {
+                    $query->where('department_id', $leaveRequest->employee->department_id);
+                })->first();
+                
+            if ($deptHeadUser) {
+                $deptHeadEmployeeId = $notificationService->getEmployeeIdFromUserId($deptHeadUser->id);
+                if ($deptHeadEmployeeId) {
+                    $notificationService->createLeaveRequestNotification(
+                        $deptHeadEmployeeId,
+                        'dept_head_pending',
+                        $id,
+                        $leaveRequest->leaveType->name ?? 'Leave',
+                        $leaveRequest->date_from,
+                        $leaveRequest->date_to,
+                        $request->remarks ?? ''
+                    );
+                }
+            }
+        }
+
+        // Always notify the employee who made the request
+        $notificationService->createLeaveRequestNotification(
+            $leaveRequest->employee_id,
+            $isDeptHeadRequest ? 'hr_approved_pending_admin' : 'hr_approved_pending_dept_head',
+            $id,
+            $leaveRequest->leaveType->name ?? 'Leave',
+            $leaveRequest->date_from,
+            $leaveRequest->date_to,
+            $request->remarks ?? ''
+        );
+
+        return redirect()->route('hr.leave-requests')->with('success', 'Leave request approved successfully.');
+
+    } catch (\Exception $e) {
+        \Log::error('HR Approval Error: ' . $e->getMessage(), [
+            'request_id' => $id,
+            'user_id' => $request->user()->id,
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return back()->withErrors(['error' => 'Failed to approve leave request: ' . $e->getMessage()]);
     }
-
-    // REMOVE THE BALANCE CHECK AND DEDUCTION LOGIC FROM HR APPROVAL
-    // HR should only approve/reject, not deduct balances
-
-    // // Simply update the status and create approval record
-    // $leaveRequest->update(['status' => 'approved_by_hr']); // Use intermediate status
-
-    // Create approval record
-    \App\Models\LeaveApproval::create([
-        'leave_id' => $leaveRequest->id,
-        'approved_by' => $request->user()->id,
-        'role' => 'hr',
-        'status' => 'approved',
-        'remarks' => $request->remarks ?? '',
-        'approved_at' => now(),
-    ]);
-
-    // Send notification to employee
-    $notificationService = new NotificationService();
-    $notificationService->createLeaveRequestNotification(
-        $leaveRequest->employee_id,
-        'hr_approved',
-        $id,
-        $leaveRequest->leaveType->name ?? 'Leave',
-        $leaveRequest->date_from,
-        $leaveRequest->date_to,
-        $request->remarks ?? ''
-    );
-
-    return redirect()->route('hr.leave-requests')->with('success', 'Leave request approved successfully.');
 }
-
 
 // In HRController - modify the bulkAction method
 public function bulkAction(Request $request)
@@ -1478,4 +1713,34 @@ public function rejectRecallRequest(Request $request, $id)
 //         }
 //     }
 
+
+/**
+ * Update leave request status based on approvals
+ */
+private function updateLeaveRequestStatus($leaveRequestId)
+{
+    $leaveRequest = LeaveRequest::with(['approvals', 'employee.user'])->find($leaveRequestId);
+    
+    if (!$leaveRequest) return;
+    
+    $hrApproved = $leaveRequest->approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
+    $deptHeadApproved = $leaveRequest->approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
+    $adminApproved = $leaveRequest->approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
+    
+    $isDeptHead = $leaveRequest->employee->user->role === 'dept_head';
+    
+    if ($adminApproved) {
+        $leaveRequest->status = 'approved';
+    } elseif ($deptHeadApproved && $hrApproved && !$isDeptHead) {
+        $leaveRequest->status = 'pending_admin';
+    } elseif ($hrApproved && $isDeptHead) {
+        $leaveRequest->status = 'pending_admin';
+    } elseif ($hrApproved && !$isDeptHead) {
+        $leaveRequest->status = 'pending_dept_head';
+    } else {
+        $leaveRequest->status = 'pending';
+    }
+    
+    $leaveRequest->save();
+}
  }

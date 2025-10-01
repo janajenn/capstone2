@@ -60,6 +60,8 @@ Route::prefix('admin')->middleware(['role:admin'])->group(function () {
     Route::post('/cancel-delegation/{id}', [AdminController::class, 'cancelDelegation'])->name('admin.cancel-delegation');
     Route::get('/leave-calendar', [AdminController::class, 'leaveCalendar'])->name('admin.leave-calendar');
 
+    Route::post('/admin/leave-requests/{id}/recall', [AdminController::class, 'recallLeaveRequest'])->name('admin.recall-leave');
+
     Route::get('/leave-requests', [AdminController::class, 'leaveRequests'])
     ->name('admin.leave-requests.index');
 
@@ -122,9 +124,9 @@ Route::post('/hr/leave-requests/{id}/reject', [HRController::class, 'rejectLeave
 Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'])->name('hr.leave-requests.bulk-action');
 
 // Leave Recall Request Routes (HR)
-Route::get('/hr/recall-requests', [HRController::class, 'recallRequests'])->name('hr.recall-requests');
-Route::post('/hr/recall-requests/{id}/approve', [HRController::class, 'approveRecallRequest'])->name('hr.recall-requests.approve');
-Route::post('/hr/recall-requests/{id}/reject', [HRController::class, 'rejectRecallRequest'])->name('hr.recall-requests.reject');
+// Route::get('/hr/recall-requests', [HRController::class, 'recallRequests'])->name('hr.recall-requests');
+// Route::post('/hr/recall-requests/{id}/approve', [HRController::class, 'approveRecallRequest'])->name('hr.recall-requests.approve');
+// Route::post('/hr/recall-requests/{id}/reject', [HRController::class, 'rejectRecallRequest'])->name('hr.recall-requests.reject');
 
 // Leave Form Demo Route (for testing)
 Route::get('/leave-form-demo', function() {
@@ -156,9 +158,9 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
         Route::delete('/dept-head/employees/{employee}/remove', [DeptHeadController::class, 'removeFromDepartment'])->name('dept_head.employees.remove');
         Route::get('/dept-head/leave-calendar', [DeptHeadController::class, 'leaveCalendar'])->name('dept_head.leave-calendar');
         // Leave Recall Request Routes (Dept Head)
-        Route::get('/dept-head/recall-requests', [DeptHeadController::class, 'recallRequests'])->name('dept_head.recall-requests');
-        Route::post('/dept-head/recall-requests/{id}/approve', [DeptHeadController::class, 'approveRecallRequest'])->name('dept_head.recall-requests.approve');
-        Route::post('/dept-head/recall-requests/{id}/reject', [DeptHeadController::class, 'rejectRecallRequest'])->name('dept_head.recall-requests.reject');
+        // Route::get('/dept-head/recall-requests', [DeptHeadController::class, 'recallRequests'])->name('dept_head.recall-requests');
+        // Route::post('/dept-head/recall-requests/{id}/approve', [DeptHeadController::class, 'approveRecallRequest'])->name('dept_head.recall-requests.approve');
+        // Route::post('/dept-head/recall-requests/{id}/reject', [DeptHeadController::class, 'rejectRecallRequest'])->name('dept_head.recall-requests.reject');
 
         Route::get('/dept-head/leave-requests', [DeptHeadController::class, 'leaveRequests'])->name('dept_head.leave-requests');
         Route::get('/dept-head/leave-requests/{id}', [DeptHeadController::class, 'showLeaveRequest'])->name('dept_head.leave-requests.show');
@@ -225,9 +227,9 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
         })->name('employee.test-csrf');
         
         // Leave Recall Routes
-        Route::get('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'index'])->name('employee.leave-recalls');
-        Route::post('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'store'])->name('employee.leave-recalls.store');
-        Route::get('/employee/leave-recalls/{leaveRecall}', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'show'])->name('employee.leave-recalls.show');
+        // Route::get('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'index'])->name('employee.leave-recalls');
+        // Route::post('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'store'])->name('employee.leave-recalls.store');
+        // Route::get('/employee/leave-recalls/{leaveRecall}', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'show'])->name('employee.leave-recalls.show');
 
 
         // Leave Balances Routes
