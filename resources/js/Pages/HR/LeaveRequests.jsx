@@ -330,8 +330,11 @@ const tabCounts = useMemo(() => {
 
   // Handle form generation
   const handleGenerateForm = (request) => {
-    setSelectedRequestForForm(request);
-    setShowFormModal(true);
+    // Show confirmation dialog first
+    if (confirm('Please review the form in case there are mistakes. Do you want to proceed with generating the leave form?')) {
+      setSelectedRequestForForm(request);
+      setShowFormModal(true);
+    }
   };
 
   // Close form modal
@@ -353,7 +356,31 @@ const tabCounts = useMemo(() => {
       created_at: request.created_at,
       status: getApprovalStatus(request),
       reason: request.reason || '',
-      remarks: request.details?.[0]?.details || ''
+      remarks: request.details?.[0]?.details || '',
+      details: request.details || [], // Include the details array
+      days_with_pay: request.days_with_pay || 0,
+      days_without_pay: request.days_without_pay || 0
+    };
+
+    // Get leave credit logs for the specific leave type
+    const getLeaveCreditData = (leaveType) => {
+      if (!request.employee?.leave_credit_logs) return null;
+      
+      // Find the most recent log for this leave type
+      const relevantLogs = request.employee.leave_credit_logs.filter(log => 
+        log.type === leaveType
+      );
+      
+      if (relevantLogs.length === 0) return null;
+      
+      // Get the most recent log
+      const latestLog = relevantLogs[0];
+      
+      return {
+        total_earned: latestLog.balance_before,
+        less_application: latestLog.points_deducted,
+        balance: latestLog.balance_after
+      };
     };
 
     // Transform employee data
@@ -367,16 +394,22 @@ const tabCounts = useMemo(() => {
       leave_credits: {
         vacation_leave: 0,
         sick_leave: 0
-      }
+      },
+      leave_credit_logs: request.employee?.leave_credit_logs || []
     };
 
     // Transform approvers data
-    const approversData = request.approvals?.map(approval => ({
-      name: approval.approver?.name || 'System User',
-      role: approval.role === 'hr' ? 'HRMO-Designate' : 
-            approval.role === 'dept_head' ? 'Department Head' : 
-            approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver'
-    })) || [];
+    const approversData = request.approvals?.map(approval => {
+      console.log('Approval data:', approval);
+      console.log('Approver data:', approval.approver);
+      return {
+        name: approval.approver?.name || 'System User',
+        role: approval.role === 'hr' ? 'HRMO-Designate' : 
+              approval.role === 'dept_head' ? 'Department Head' : 
+              approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver',
+        approved_at: approval.approved_at
+      };
+    }) || [];
 
     return {
       leaveRequest: leaveRequestData,
@@ -879,15 +912,16 @@ const tabCounts = useMemo(() => {
 
         {/* Leave Form Modal */}
         {showFormModal && selectedRequestForForm && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white z-10 border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-75 z-50">
+            <div className="h-full w-full flex flex-col">
+              {/* Header */}
+              <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
                 <h2 className="text-xl font-semibold text-gray-800">
                   Generate Leave Form - {selectedRequestForForm.employee?.firstname} {selectedRequestForForm.employee?.lastname}
                 </h2>
                 <button
                   onClick={closeFormModal}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -895,7 +929,8 @@ const tabCounts = useMemo(() => {
                 </button>
               </div>
               
-              <div className="p-6">
+              {/* Content - Full height, no scroll */}
+              <div className="flex-1 bg-white overflow-hidden">
                 <LeaveForm 
                   {...prepareFormData(selectedRequestForForm)}
                 />

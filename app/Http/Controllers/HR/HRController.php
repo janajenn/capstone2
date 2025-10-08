@@ -19,6 +19,7 @@ use App\Models\CreditConversion;
 use App\Services\CreditConversionService;
 use App\Services\NotificationService;
 use App\Models\LeaveRecall;
+use App\Models\LeaveCreditLog;
 
 
 class HRController extends Controller
@@ -366,6 +367,7 @@ public function update(Request $request, User $employee)
     $leaveCredit->update([
         'sl_balance' => $request->sl_balance,
         'vl_balance' => $request->vl_balance,
+        'imported_at' => $request->imported_at,
     ]);
 
     return redirect()->back()->with('success', 'Leave credits updated successfully.');
@@ -400,10 +402,16 @@ public function addMonthlyCredits()
             ['employee_id' => $employee->id],
             ['sl_balance' => 0, 'vl_balance' => 0]
         );
-
+    
+        // Only start auto-adding credits AFTER import date
+        if ($credit->imported_at && $credit->imported_at > $now->startOfMonth()) {
+            continue; // skip this month, since they were imported after
+        }
+    
         $credit->increment('sl_balance', 1.25);
         $credit->increment('vl_balance', 1.25);
     }
+    
 
     MonthlyCreditLog::create([
         'year' => $year,
@@ -705,7 +713,10 @@ public function leaveRequests(Request $request)
             'employee.department',
             'employee.user',
             'details',
-            'approvals'
+            'approvals.approver',
+            'employee.leaveCreditLogs' => function($query) {
+                $query->orderBy('created_at', 'desc');
+            }
         ])
         ->orderBy('created_at', 'desc');
 
@@ -884,30 +895,37 @@ public function approveLeaveRequest(Request $request, $id)
 
         $notificationService = new NotificationService();
 
-        // FIXED: Update status correctly based on employee type
+        // Update status correctly based on employee type
         if ($isDeptHeadRequest) {
             // For dept heads, go directly to admin after HR approval
             $leaveRequest->update(['status' => 'pending_admin']);
             
-            // Send notification to admin (get primary admin)
-            $primaryAdmin = User::where('is_primary', true)->where('role', 'admin')->first();
-            if ($primaryAdmin) {
-                $notificationService->createAdminNotification(
-                    $primaryAdmin->id,
-                    'admin_pending',
-                    $id,
-                    $leaveRequest->leaveType->name ?? 'Leave',
-                    $leaveRequest->date_from,
-                    $leaveRequest->date_to,
-                    $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
-                    "Department Head Leave Request - Requires Admin Approval"
-                );
+            // Send notification to admin using admin-specific method
+            $adminUsers = User::where('role', 'admin')->get();
+            foreach ($adminUsers as $admin) {
+                $adminEmployeeId = $notificationService->getEmployeeIdFromUserId($admin->id);
+                if ($adminEmployeeId) {
+                    $notificationService->createAdminNotification(
+                        $adminEmployeeId,
+                        'leave_request_approval',
+                        'Department Head Leave Request - Requires Admin Approval',
+                        "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname} (Department Head) has a leave request that requires your approval after HR review.",
+                        [
+                            'request_id' => $id,
+                            'employee_name' => "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname}",
+                            'leave_type' => $leaveRequest->leaveType->name,
+                            'date_from' => $leaveRequest->date_from,
+                            'date_to' => $leaveRequest->date_to,
+                            'is_dept_head_request' => true
+                        ]
+                    );
+                }
             }
         } else {
             // For regular employees, go to department head
             $leaveRequest->update(['status' => 'pending_dept_head']);
             
-            // Get department head user for notification
+            // Get department head user for notification using dept-head specific method
             $deptHeadUser = User::where('role', 'dept_head')
                 ->whereHas('employee', function($query) use ($leaveRequest) {
                     $query->where('department_id', $leaveRequest->employee->department_id);
@@ -916,28 +934,40 @@ public function approveLeaveRequest(Request $request, $id)
             if ($deptHeadUser) {
                 $deptHeadEmployeeId = $notificationService->getEmployeeIdFromUserId($deptHeadUser->id);
                 if ($deptHeadEmployeeId) {
-                    $notificationService->createLeaveRequestNotification(
+                    $notificationService->createDeptHeadNotification(
                         $deptHeadEmployeeId,
-                        'dept_head_pending',
-                        $id,
-                        $leaveRequest->leaveType->name ?? 'Leave',
-                        $leaveRequest->date_from,
-                        $leaveRequest->date_to,
-                        $request->remarks ?? ''
+                        'leave_request_approval',
+                        'Leave Request Requires Department Head Approval',
+                        "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname} from your department has a leave request that requires your approval after HR review.",
+                        [
+                            'request_id' => $id,
+                            'employee_name' => "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname}",
+                            'leave_type' => $leaveRequest->leaveType->name,
+                            'date_from' => $leaveRequest->date_from,
+                            'date_to' => $leaveRequest->date_to,
+                            'department_id' => $leaveRequest->employee->department_id
+                        ]
                     );
                 }
             }
         }
 
-        // Always notify the employee who made the request
-        $notificationService->createLeaveRequestNotification(
+        // Notify the employee who made the request using employee-specific method
+        $notificationService->createEmployeeNotification(
             $leaveRequest->employee_id,
-            $isDeptHeadRequest ? 'hr_approved_pending_admin' : 'hr_approved_pending_dept_head',
-            $id,
-            $leaveRequest->leaveType->name ?? 'Leave',
-            $leaveRequest->date_from,
-            $leaveRequest->date_to,
-            $request->remarks ?? ''
+            'leave_request',
+            $isDeptHeadRequest ? 'Leave Request Approved by HR - Pending Admin' : 'Leave Request Approved by HR - Pending Department Head',
+            $isDeptHeadRequest ? 
+                "Your {$leaveRequest->leaveType->name} leave request has been approved by HR and is pending Admin approval." :
+                "Your {$leaveRequest->leaveType->name} leave request has been approved by HR and is pending Department Head approval.",
+            [
+                'request_id' => $id,
+                'status' => $isDeptHeadRequest ? 'hr_approved_pending_admin' : 'hr_approved_pending_dept_head',
+                'leave_type' => $leaveRequest->leaveType->name,
+                'date_from' => $leaveRequest->date_from,
+                'date_to' => $leaveRequest->date_to,
+                'remarks' => $request->remarks ?? ''
+            ]
         );
 
         return redirect()->route('hr.leave-requests')->with('success', 'Leave request approved successfully.');
@@ -952,7 +982,6 @@ public function approveLeaveRequest(Request $request, $id)
         return back()->withErrors(['error' => 'Failed to approve leave request: ' . $e->getMessage()]);
     }
 }
-
 // In HRController - modify the bulkAction method
 public function bulkAction(Request $request)
 {
@@ -1742,5 +1771,535 @@ private function updateLeaveRequestStatus($leaveRequestId)
     }
     
     $leaveRequest->save();
+}
+
+
+
+// LEAVE RECORDINGS MANAGEMENT
+
+/**
+ * Display leave recordings for all employees
+ */
+/**
+ * Display leave recordings for all employees (simplified view)
+ */
+/**
+ * Display leave recordings for all employees (simplified view)
+ */
+public function leaveRecordings(Request $request)
+{
+    $perPage = 10;
+    
+    // Get employees with basic info
+    $query = Employee::with(['department', 'user'])
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->where('firstname', 'like', "%{$search}%")
+                  ->orWhere('lastname', 'like', "%{$search}%")
+                  ->orWhereHas('department', function ($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%");
+                  });
+            });
+        })
+        ->when($request->department, function ($query, $department) {
+            return $query->where('department_id', $department);
+        });
+
+    $employees = $query->orderBy('firstname')
+        ->orderBy('lastname')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('HR/LeaveRecordings', [
+        'employees' => $employees,
+        'departments' => Department::all(),
+        'years' => $this->getAvailableYears(),
+        'filters' => $request->only(['search', 'department']),
+    ]);
+}
+
+/**
+ * Display specific employee's leave recordings
+ */
+public function showEmployeeRecordings($employeeId, Request $request)
+{
+    $year = $request->year ?? now()->year;
+    
+    $employee = Employee::with(['department'])->findOrFail($employeeId);
+    $recordings = $this->getEmployeeLeaveRecordings($employeeId, $year);
+
+    return Inertia::render('HR/EmployeeRecordings', [
+        'employee' => [
+            'employee_id' => $employee->employee_id,
+            'firstname' => $employee->firstname,
+            'lastname' => $employee->lastname,
+            'department' => $employee->department->name,
+            'position' => $employee->position,
+        ],
+        'recordings' => $recordings,
+        'year' => $year,
+        'years' => $this->getAvailableYears(),
+    ]);
+}
+
+/**
+ * Get available years for filtering
+ */
+private function getAvailableYears()
+{
+    $currentYear = now()->year;
+    $years = [];
+    
+    for ($i = $currentYear - 5; $i <= $currentYear + 1; $i++) {
+        $years[] = $i;
+    }
+    
+    return $years;
+}
+
+/**
+ * Calculate the imported balance for a leave type
+ */
+private function calculateImportedBalance($employeeId, $type, $importedAt)
+{
+    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
+
+    $currentBalance = ($type === 'VL') ? $leaveCredit->vl_balance : $leaveCredit->sl_balance;
+
+    $start = $importedAt->startOfMonth();
+
+    $end = Carbon::now()->startOfMonth();
+
+    $totalMonths = $start->diffInMonths($end) + 1;
+
+    $totalEarned = $totalMonths * 1.25;
+
+    $totalDed = LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', $type)
+        ->where('date', '>=', $start)
+        ->sum('points_deducted');
+
+    return $currentBalance - $totalEarned + $totalDed;
+}
+
+/**
+ * Get monthly used leaves from logs
+ */
+/**
+ * Get monthly used leaves from logs (excluding late deductions)
+ */
+private function getMonthlyUsed($employeeId, $type, $year, $month)
+{
+    $query = LeaveCreditLog::where('employee_id', $employeeId) // Fixed typo: was 'employeeId'
+        ->where('type', $type)
+        ->where('year', $year)
+        ->where('month', $month);
+
+    // For VL type, exclude late deductions from the "used" calculation
+    if ($type === 'VL') {
+        $query->where(function($q) {
+            $q->whereNull('remarks')
+              ->orWhere('remarks', 'not like', '%Late%');
+        });
+    }
+
+    return $query->sum('points_deducted');
+}
+
+/**
+ * Get leave earned for the month
+ */
+private function getLeaveEarned($employeeId, $type, $year, $month)
+{
+    $employee = Employee::find($employeeId);
+    
+    if ($employee && $employee->status === 'active') {
+        return 1.25;
+    }
+    
+    return 0;
+}
+
+/**
+ * Get employee leave recordings with running balance calculation
+ */
+private function getEmployeeLeaveRecordings($employeeId, $year)
+{
+    $recordings = [];
+    
+    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
+
+    if (!$leaveCredit || !$leaveCredit->imported_at) {
+        $importedAt = Carbon::create($year, 1, 1);
+    } else {
+        $importedAt = Carbon::parse($leaveCredit->imported_at);
+    }
+
+    $importedYear = $importedAt->year;
+    $importedMonth = $importedAt->month;
+
+    $previous_vl = null;
+    $previous_sl = null;
+    
+    for ($month = 1; $month <= 12; $month++) {
+        $monthStart = Carbon::create($year, $month, 1);
+        
+        $isManual = $year < $importedYear || ($year === $importedYear && $month < $importedMonth);
+        $isFuture = $year > now()->year || ($year === now()->year && $month > now()->month);
+        
+        $remarks = $this->getRemarks($employeeId, $year, $month);
+        
+        $earned = null;
+        $vl_balance = null;
+        $sl_balance = null;
+        
+        if ($isManual) {
+            $remarks = 'Imported data';
+        } elseif ($isFuture) {
+            $remarks = 'Pending month';
+        } else {
+            $earned = $this->getLeaveEarned($employeeId, 'VL', $year, $month);
+            if ($previous_vl === null) {
+                $previous_vl = $this->calculateImportedBalance($employeeId, 'VL', $importedAt);
+                $previous_sl = $this->calculateImportedBalance($employeeId, 'SL', $importedAt);
+            }
+            
+            // Get regular usage (excluding lates)
+            $vl_used = $this->getMonthlyUsed($employeeId, 'VL', $year, $month);
+            $sl_used = $this->getMonthlyUsed($employeeId, 'SL', $year, $month);
+            
+            // Get late deductions (these are separate and only affect VL)
+            $lates = $this->getTotalLates($employeeId, $year, $month);
+            
+            // Calculate balances including both regular usage and late deductions for VL
+            $vl_balance = round($previous_vl + $earned - $vl_used - $lates, 3);
+            $sl_balance = round($previous_sl + $earned - $sl_used, 3);
+            
+            $previous_vl = $vl_balance;
+            $previous_sl = $sl_balance;
+        }
+        
+        // Get values for display
+        $vl_used = $this->getMonthlyUsed($employeeId, 'VL', $year, $month);
+        $sl_used = $this->getMonthlyUsed($employeeId, 'SL', $year, $month);
+        $lates = $this->getTotalLates($employeeId, $year, $month);
+        
+        $recordings[] = [
+            'month' => $month,
+            'year' => $year,
+            'date_month' => $this->formatMonthYear($month, $year),
+            'inclusive_dates' => $this->getInclusiveDates($employeeId, $year, $month),
+            'total_lates' => round($lates, 3), // Late deductions in days
+            'vl_earned' => $earned !== null ? round($earned, 3) : null,
+            'vl_used' => round($vl_used, 3), // Only regular VL usage, not including lates
+            'vl_balance' => $vl_balance,
+            'sl_earned' => $earned !== null ? round($earned, 3) : null,
+            'sl_used' => round($sl_used, 3),
+            'sl_balance' => $sl_balance,
+            'remarks' => $remarks,
+            'total_vl_sl' => ($vl_balance !== null && $sl_balance !== null) ? round($vl_balance + $sl_balance, 3) : null,
+        ];
+    }
+    
+    return $recordings;
+}
+
+/**
+ * Get inclusive dates from leave requests (SL and VL only)
+ */
+private function getInclusiveDates($employeeId, $year, $month)
+{
+    $startDate = "{$year}-{$month}-01";
+    $endDate = date('Y-m-t', strtotime($startDate));
+    
+    $leaveRequests = LeaveRequest::where('employee_id', $employeeId)
+        ->where('status', 'approved')
+        ->whereHas('leaveType', function($query) {
+            $query->whereIn('code', ['VL', 'SL']); // Only VL and SL leaves
+        })
+        ->where(function ($query) use ($startDate, $endDate) {
+            $query->whereBetween('date_from', [$startDate, $endDate])
+                  ->orWhereBetween('date_to', [$startDate, $endDate])
+                  ->orWhere(function ($q) use ($startDate, $endDate) {
+                      $q->where('date_from', '<=', $startDate)
+                        ->where('date_to', '>=', $endDate);
+                  });
+        })
+        ->with('leaveType')
+        ->get();
+    
+    return $leaveRequests->map(function ($request) {
+        return [
+            'from' => $request->date_from,
+            'to' => $request->date_to,
+            'type' => $request->leaveType->name ?? 'Leave',
+            'code' => $request->leaveType->code ?? ''
+        ];
+    });
+}
+
+/**
+ * Get total lates from attendance logs
+ */
+/**
+ * Get total late deductions from leave_credit_logs for VL type with "Late" remarks
+ */
+private function getTotalLates($employeeId, $year, $month)
+{
+    return LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', 'VL') // Late deductions affect VL balance
+        ->where('year', $year)
+        ->where('month', $month)
+        ->where('remarks', 'like', '%Late%') // Look for logs with "Late" in remarks
+        ->sum('points_deducted');
+}
+
+/**
+ * Get remarks for the month from the latest log entry
+ */
+private function getRemarks($employeeId, $year, $month)
+{
+    // Get the latest log entry for any leave type in this month
+    $log = \App\Models\LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('year', $year)
+        ->where('month', $month)
+        ->orderBy('date', 'desc')
+        ->orderBy('created_at', 'desc')
+        ->first();
+    
+    return $log->remarks ?? '';
+}
+
+/**
+ * Update remarks for a specific recording
+ */
+public function updateRemarks(Request $request, $id)
+{
+    $request->validate([
+        'remarks' => 'nullable|string|max:500',
+        'employee_id' => 'required|exists:employees,employee_id',
+        'year' => 'required|integer',
+        'month' => 'required|integer|between:1,12',
+    ]);
+
+    try {
+        // Find or create leave credit log for the specified month
+        $log = \App\Models\LeaveCreditLog::where('employee_id', $request->employee_id)
+            ->where('year', $request->year)
+            ->where('month', $request->month)
+            ->first();
+
+        if ($log) {
+            $log->update(['remarks' => $request->remarks]);
+        } else {
+            // Create a new log entry if none exists
+            \App\Models\LeaveCreditLog::create([
+                'employee_id' => $request->employee_id,
+                'year' => $request->year,
+                'month' => $request->month,
+                'remarks' => $request->remarks,
+                'type' => 'REMARKS', // Special type for remarks-only entries
+                'points_deducted' => 0,
+                'balance_before' => 0,
+                'balance_after' => 0,
+                'date' => now(),
+            ]);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Remarks updated successfully.']);
+    } catch (\Exception $e) {
+        return response()->json(['success' => false, 'message' => 'Failed to update remarks: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Get available years for filtering
+ */
+
+
+/**
+ * Format month and year for display
+ */
+private function formatMonthYear($month, $year)
+{
+    return date('F Y', strtotime("{$year}-{$month}-01"));
+}
+
+
+/**
+ * Debug method to check leave deduction process
+ */
+public function debugLeaveDeduction($leaveRequestId)
+{
+    try {
+        $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($leaveRequestId);
+        
+        \Log::info("=== LEAVE DEDUCTION DEBUG ===");
+        \Log::info("Leave Request ID: " . $leaveRequest->id);
+        \Log::info("Employee: " . $leaveRequest->employee->firstname . " " . $leaveRequest->employee->lastname);
+        \Log::info("Leave Type: " . $leaveRequest->leaveType->name . " (" . $leaveRequest->leaveType->code . ")");
+        \Log::info("Dates: " . $leaveRequest->date_from . " to " . $leaveRequest->date_to);
+        \Log::info("Status: " . $leaveRequest->status);
+        
+        // Check if this is SL or VL
+        $isSLorVL = in_array($leaveRequest->leaveType->code, ['SL', 'VL']);
+        \Log::info("Is SL/VL: " . ($isSLorVL ? 'YES' : 'NO'));
+        
+        if ($isSLorVL) {
+            // Calculate working days
+            $workingDays = $this->calculateWorkingDays($leaveRequest->date_from, $leaveRequest->date_to);
+            \Log::info("Working Days: " . $workingDays);
+            
+            // Check current balance
+            $currentBalance = $this->getCurrentLeaveBalance($leaveRequest->employee_id, $leaveRequest->leaveType->code);
+            \Log::info("Current Balance: " . $currentBalance);
+            
+            // Check if deduction logs exist
+            $existingLogs = \App\Models\LeaveCreditLog::where('employee_id', $leaveRequest->employee_id)
+                ->where('type', $leaveRequest->leaveType->code)
+                ->whereBetween('date', [$leaveRequest->date_from, $leaveRequest->date_to])
+                ->get();
+                
+            \Log::info("Existing Deduction Logs: " . $existingLogs->count());
+            
+            foreach ($existingLogs as $log) {
+                \Log::info(" - Log ID: " . $log->id . ", Points: " . $log->points_deducted . ", Date: " . $log->date);
+            }
+        }
+        
+        \Log::info("=== END DEBUG ===");
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'leave_request' => $leaveRequest,
+                'is_sl_vl' => $isSLorVL,
+                'working_days' => $isSLorVL ? $workingDays : null,
+                'current_balance' => $isSLorVL ? $currentBalance : null,
+                'existing_logs' => $isSLorVL ? $existingLogs : null,
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error("Debug Leave Deduction Error: " . $e->getMessage());
+        return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+    }
+}
+
+private function calculateWorkingDays($startDate, $endDate)
+{
+    $start = new \DateTime($startDate);
+    $end = new \DateTime($endDate);
+    $workingDays = 0;
+    
+    for ($date = clone $start; $date <= $end; $date->modify('+1 day')) {
+        $dayOfWeek = $date->format('N');
+        if ($dayOfWeek < 6) { // Monday to Friday
+            $workingDays++;
+        }
+    }
+    
+    return $workingDays;
+}
+
+private function getCurrentLeaveBalance($employeeId, $type)
+{
+    $latestLog = \App\Models\LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', $type)
+        ->orderBy('date', 'desc')
+        ->orderBy('created_at', 'desc')
+        ->first();
+        
+    if ($latestLog) {
+        return $latestLog->balance_after;
+    }
+    
+    $leaveCredit = \App\Models\LeaveCredit::where('employee_id', $employeeId)->first();
+    return $type === 'VL' ? ($leaveCredit->vl_balance ?? 0) : ($leaveCredit->sl_balance ?? 0);
+}
+
+/**
+ * Manual fix for missing leave deductions
+ */
+public function fixMissingDeductions($leaveRequestId)
+{
+    try {
+        $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($leaveRequestId);
+        
+        \Log::info("=== FIXING MISSING DEDUCTIONS ===");
+        \Log::info("Leave Request: " . $leaveRequest->id . " (" . $leaveRequest->leaveType->code . ")");
+        \Log::info("Leave Dates: " . $leaveRequest->date_from . " to " . $leaveRequest->date_to);
+        
+        // Check if this is SL/VL
+        if (!in_array($leaveRequest->leaveType->code, ['SL', 'VL'])) {
+            return response()->json([
+                'success' => false, 
+                'message' => 'Not an SL/VL leave type - no deduction needed'
+            ]);
+        }
+        
+        // Check if deduction already exists (with correct dates)
+        $leaveYear = date('Y', strtotime($leaveRequest->date_from));
+        $leaveMonth = date('n', strtotime($leaveRequest->date_from));
+        
+        $existingLogs = \App\Models\LeaveCreditLog::where('employee_id', $leaveRequest->employee_id)
+            ->where('type', $leaveRequest->leaveType->code)
+            ->where('year', $leaveYear)
+            ->where('month', $leaveMonth)
+            ->get();
+            
+        if ($existingLogs->count() > 0) {
+            \Log::info("Deduction logs already exist for month {$leaveMonth}/{$leaveYear}: " . $existingLogs->count());
+            return response()->json([
+                'success' => false,
+                'message' => 'Deduction logs already exist for this request month'
+            ]);
+        }
+        
+        // Process the deduction with correct dates
+        $workingDays = $this->calculateWorkingDays($leaveRequest->date_from, $leaveRequest->date_to);
+        $currentBalance = $this->getCurrentLeaveBalance($leaveRequest->employee_id, $leaveRequest->leaveType->code);
+        $newBalance = $currentBalance - $workingDays;
+        
+        \Log::info("Creating deduction with:", [
+            'working_days' => $workingDays,
+            'current_balance' => $currentBalance,
+            'new_balance' => $newBalance,
+            'year' => $leaveYear,
+            'month' => $leaveMonth
+        ]);
+        
+        $log = \App\Models\LeaveCreditLog::create([
+            'employee_id' => $leaveRequest->employee_id,
+            'type' => $leaveRequest->leaveType->code,
+            'date' => $leaveRequest->date_from,
+            'year' => $leaveYear,
+            'month' => $leaveMonth,
+            'points_deducted' => $workingDays,
+            'balance_before' => $currentBalance,
+            'balance_after' => $newBalance,
+            'remarks' => 'Manual fix: Leave deduction for ' . $leaveRequest->leaveType->name . ' (Request #' . $leaveRequest->id . ')',
+        ]);
+        
+        \Log::info("Missing deduction fixed successfully. Log ID: " . $log->id);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Deduction created successfully',
+            'log_id' => $log->id,
+            'working_days' => $log->points_deducted,
+            'balance_before' => $log->balance_before, 
+            'balance_after' => $log->balance_after,
+            'year' => $log->year,
+            'month' => $log->month
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error("Fix missing deductions failed: " . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
 }
  }

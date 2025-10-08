@@ -23,7 +23,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
             'SOLOPL': 'SOLO PARENT LEAVE',
             'STL': 'STUDY LEAVE',
             '10DVL': '10-DAY VAWC LEAVE',
-            'RP': 'REHABILITATION PRIVILEGE',
+            'RL': 'REHABILITATION PRIVILEGE',
             'SLBW': 'SPECIAL LEAVE BENEFITS FOR WOMEN',
             'AL': 'ADOPTION LEAVE',
             'FL': 'FORCE LEAVE'
@@ -38,8 +38,24 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
 
     // Helper function to get approver by role
     const getApproverByRole = (role) => {
-        if (!approvers || approvers.length === 0) return null;
-        return approvers.find(approver => approver.role === role);
+        console.log('Getting approver for role:', role);
+        console.log('Approvers array:', approvers);
+        if (!approvers || approvers.length === 0) {
+            console.log('No approvers found, returning null');
+            return null;
+        }
+        
+        // Map the role parameter to the display role names
+        const roleMapping = {
+            'hr': 'HRMO-Designate',
+            'dept_head': 'Department Head', 
+            'admin': 'Municipal Vice Mayor'
+        };
+        
+        const displayRole = roleMapping[role];
+        const approver = approvers.find(approver => approver.role === displayRole);
+        console.log('Found approver for role', role, ':', approver);
+        return approver;
     };
 
     // Helper function to get leave details and checkboxes from field_value
@@ -54,7 +70,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
             vacationLocation: fieldValues.find(v => ['within_philippines', 'abroad'].includes(v)) || null,
             
             // Sick Leave options
-            sickType: fieldValues.find(v => ['in_hospital', 'outpatient'].includes(v)) || null,
+            sick_type: fieldValues.find(v => ['in_hospital', 'outpatient'].includes(v)) || null,
             illness: fieldValues.find(v => v && !['in_hospital', 'outpatient', 'within_philippines', 'abroad', 'masters_completion', 'board_exam', 'continuing_education', 'gynecological_surgery', 'miscarriage'].includes(v)) || null,
             
             // Study Leave options
@@ -69,28 +85,76 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
         };
     };
 
-    // Calculate working days
-    const calculateWorkingDays = () => {
-        if (!leaveRequest?.start_date || !leaveRequest?.end_date) return '';
+    // Get working days from stored data
+    const getWorkingDays = () => {
+        // Use the stored working days from the leave request
+        const daysWithPay = leaveRequest?.days_with_pay || 0;
+        const daysWithoutPay = leaveRequest?.days_without_pay || 0;
+        const totalDays = daysWithPay + daysWithoutPay;
         
-        const start = new Date(leaveRequest.start_date);
-        const end = new Date(leaveRequest.end_date);
-        const diffTime = Math.abs(end - start);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        return diffDays;
+        return totalDays > 0 ? totalDays : '';
     };
 
-    // Calculate leave credits balance
-    const calculateLeaveBalance = (leaveType) => {
-        const currentCredits = leaveType === 'VL' 
-            ? (employee?.leave_credits?.vacation_leave || 0)
-            : (employee?.leave_credits?.sick_leave || 0);
+    // Get HR approval date
+    const getHRApprovalDate = () => {
+        if (!approvers || approvers.length === 0) {
+            return formatDate(new Date());
+        }
         
-        const appliedDays = (isLeaveType(leaveType) ? calculateWorkingDays() : 0);
-        return Math.max(0, currentCredits - appliedDays);
+        // Find HR approver and get their approval date
+        const hrApprover = approvers.find(approver => 
+            approver.role === 'HRMO-Designate' || approver.role === 'hr'
+        );
+        
+        if (hrApprover && hrApprover.approved_at) {
+            return formatDate(hrApprover.approved_at);
+        }
+        
+        // Fallback to current date if no HR approval date found
+        return formatDate(new Date());
+    };
+
+    // Get leave credit data from logs
+    const getLeaveCreditData = (leaveType) => {
+        if (!employee?.leave_credit_logs) return null;
+        
+        // Find the most recent log for this leave type
+        const relevantLogs = employee.leave_credit_logs.filter(log => 
+            log.type === leaveType
+        );
+        
+        if (relevantLogs.length === 0) return null;
+        
+        // Get the most recent log
+        const latestLog = relevantLogs[0];
+        
+        return {
+            total_earned: latestLog.balance_before,
+            less_application: latestLog.points_deducted,
+            balance: latestLog.balance_after
+        };
     };
 
     const leaveDetails = getLeaveDetails();
+
+    // Debug logging
+    console.log('=== LEAVE FORM DEBUG ===');
+    console.log('leaveRequest:', leaveRequest);
+    console.log('leaveRequest.details:', leaveRequest?.details);
+    console.log('leaveDetails:', leaveDetails);
+    console.log('Field values:', leaveRequest?.details?.map(d => d.field_value).filter(Boolean));
+    console.log('Employee leave credit logs:', employee?.leave_credit_logs);
+    console.log('VL Credit Data:', getLeaveCreditData('VL'));
+    console.log('SL Credit Data:', getLeaveCreditData('SL'));
+    console.log('Specific checks:');
+    console.log('- vacationLocation:', leaveDetails.vacationLocation);
+    console.log('- sick_type:', leaveDetails.sick_type);
+    console.log('- illness:', leaveDetails.illness);
+    console.log('- studyPurpose:', leaveDetails.studyPurpose);
+    console.log('- slbwCondition:', leaveDetails.slbwCondition);
+    console.log('- expectedDeliveryDate:', leaveDetails.expectedDeliveryDate);
+    console.log('- physicianName:', leaveDetails.physicianName);
+    console.log('========================');
 
     return (
         <div className="leave-form-container">
@@ -117,55 +181,26 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
 
                 <div className="form-title">APPLICATION FOR LEAVE</div>
 
-                {/* Form Header Table - Exact format from image */}
-                <table className="form-header-table">
-                    <tbody>
-                        <tr>
-                            <td className="left-section">
-                                Office/Department:
-                            </td>
-                            <td className="right-section">
-                                Name: (Last) (First) (Middle)
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="left-section">
-                                Date of filing:
-                            </td>
-                            <td className="middle-section">
-                                Position:
-                            </td>
-                            <td className="right-section">
-                                Salary:
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+               
 
                 {/* Basic Information Table - Populated data */}
                 <table className="form-info-table">
-                    <tbody>
-                        <tr>
-                            <td className="left-section">
-                                <strong>{employee?.department?.name || 'N/A'}</strong>
-                            </td>
-                            <td className="right-section">
-                                <strong>{employee?.full_name || 'N/A'}</strong>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="left-section">
-                                <strong>{formatDate(leaveRequest?.created_at)}</strong>
-                            </td>
-                            <td className="middle-section">
-                                <strong>{employee?.position || 'N/A'}</strong>
-                            </td>
-                            <td className="right-section">
-                                <strong>₱{employee?.salary ? Number(employee.salary).toLocaleString() : 'N/A'}</strong>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+    <tbody>
+        <tr>
+            <td className="left-section" style={{ minWidth: '500px' }}>
+                <strong style={{ marginRight: '160px' }}>1.Office/Department: {employee?.department?.name || 'N/A'}</strong>
+                <strong>2.Name: {employee?.full_name || 'N/A'}</strong>
+            </td>
+        </tr>
+        <tr>
+            <td className="left-section">
+                <strong style={{ marginRight: '140px' }}>3.Date of filing: {formatDate(leaveRequest?.created_at)}</strong>
+                <strong style={{ marginRight: '100px' }}>4.Position: {employee?.position || 'N/A'}</strong>
+                <strong>5.Salary: ₱{employee?.salary ? Number(employee.salary).toLocaleString() : 'N/A'}</strong>
+            </td>
+        </tr>
+    </tbody>
+</table>
 
                 <br />
 
@@ -187,7 +222,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                 <div className="leave-type-option">
                                     <span className={`checkbox ${isLeaveType('FL') ? 'checked' : ''}`}>
                                         {isLeaveType('FL') ? '✓' : ''}
-                                    </span> Mandatory/Forced Leave
+                                    </span> Forced Leave
                                 </div><br />
                                 
                                 <div className="leave-type-option">
@@ -233,8 +268,8 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                 </div><br />
                                 
                                 <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('RP') ? 'checked' : ''}`}>
-                                        {isLeaveType('RP') ? '✓' : ''}
+                                    <span className={`checkbox ${isLeaveType('RL') ? 'checked' : ''}`}>
+                                        {isLeaveType('RL') ? '✓' : ''}
                                     </span> Rehabilitation Privilege
                                 </div><br />
                                 
@@ -279,11 +314,11 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                     {/* Sick Leave */}
                                     <div>
                                         In case of Sick Leave:<br />
-                                        <span className={`checkbox ${leaveDetails.sickType === 'in_hospital' ? 'checked' : ''}`}>
-                                            {leaveDetails.sickType === 'in_hospital' ? '✓' : ''}
+                                        <span className={`checkbox ${leaveDetails.sick_type === 'in_hospital' ? 'checked' : ''}`}>
+                                            {leaveDetails.sick_type === 'in_hospital' ? '✓' : ''}
                                         </span> In Hospital (Specify illness):_____________________________________<br /><br />
-                                        <span className={`checkbox ${leaveDetails.sickType === 'outpatient' ? 'checked' : ''}`}>
-                                            {leaveDetails.sickType === 'outpatient' ? '✓' : ''}
+                                        <span className={`checkbox ${leaveDetails.sick_type === 'outpatient' ? 'checked' : ''}`}>
+                                            {leaveDetails.sick_type === 'outpatient' ? '✓' : ''}
                                         </span> Out Patient (Specify illness):_____________________________________<br /><br />
                                         {leaveDetails.illness && ( <>
                                             <strong>Illness/Reason: {leaveDetails.illness}</strong><br /><br />
@@ -343,7 +378,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                         <tr>
                             <td>
                                 6.C NUMBER OF WORKING DAYS APPLIED FOR<br /><br />
-                                <strong>{calculateWorkingDays()} days</strong><br /><br />
+                                <strong>{(leaveRequest?.days_with_pay || 0) + (leaveRequest?.days_without_pay || 0)} days</strong><br /><br />
                                 Inclusive Dates: <br />
                                 <strong>{formatDate(leaveRequest?.start_date)} to {formatDate(leaveRequest?.end_date)}</strong>
                             </td>
@@ -353,7 +388,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                 <span className="checkbox"></span> Requested<br /><br />
                                 
                                 <div className="signature-section">
-                                    <div className="system-signature">System-Generated Signature</div>
+                                    <div className="system-signature">Digitally Signed by Applicant</div>
                                     <div className="signature-label">(Signature of Applicant)</div>
                                 </div>
                             </td>
@@ -374,7 +409,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                             <td style={{ width: '50%' }}>
                                 7.A CERTIFICATION OF LEAVE CREDITS<br /><br />
                                 <div style={{ textAlign: 'center' }}>
-                                    As of {formatDate(new Date())} <br /><br />
+                                    As of {getHRApprovalDate()} <br /><br />
                                 </div>
                                 
                                 <table className="leave-credits-table">
@@ -388,26 +423,46 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                     <tbody>
                                         <tr>
                                             <td>Total Earned</td>
-                                            <td>{employee?.leave_credits?.vacation_leave || '__'}</td>
-                                            <td>{employee?.leave_credits?.sick_leave || '__'}</td>
+                                            <td>
+                                                {isLeaveType('VL') 
+                                                    ? (getLeaveCreditData('VL')?.total_earned || '__')
+                                                    : '__'
+                                                }
+                                            </td>
+                                            <td>
+                                                {isLeaveType('SL') 
+                                                    ? (getLeaveCreditData('SL')?.total_earned || '__')
+                                                    : '__'
+                                                }
+                                            </td>
                                         </tr>
                                         <tr>
                                             <td>Less this application</td>
-                                            <td>{isLeaveType('VL') ? calculateWorkingDays() : '0'}</td>
-                                            <td>{isLeaveType('SL') ? calculateWorkingDays() : '0'}</td>
+                                            <td>
+                                                {isLeaveType('VL') 
+                                                    ? (getLeaveCreditData('VL')?.less_application || '0')
+                                                    : '0'
+                                                }
+                                            </td>
+                                            <td>
+                                                {isLeaveType('SL') 
+                                                    ? (getLeaveCreditData('SL')?.less_application || '0')
+                                                    : '0'
+                                                }
+                                            </td>
                                         </tr>
                                         <tr>
                                             <td>Balance</td>
                                             <td>
                                                 {isLeaveType('VL') 
-                                                    ? calculateLeaveBalance('VL')
-                                                    : (employee?.leave_credits?.vacation_leave || '__')
+                                                    ? (getLeaveCreditData('VL')?.balance || '__')
+                                                    : '__'
                                                 }
                                             </td>
                                             <td>
                                                 {isLeaveType('SL') 
-                                                    ? calculateLeaveBalance('SL')
-                                                    : (employee?.leave_credits?.sick_leave || '__')
+                                                    ? (getLeaveCreditData('SL')?.balance || '__')
+                                                    : '__'
                                                 }
                                             </td>
                                         </tr>
@@ -417,9 +472,13 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                 <br />
                                 <div className="signature-section">
                                     <div className="approver-signature-line">
-                                        {getApproverByRole('hr')?.name || 'HRMO-Designate'}
+                                        {(() => {
+                                            const hrApprover = getApproverByRole('hr');
+                                            console.log('HR Approver in template:', hrApprover);
+                                            return hrApprover?.name || 'HRMO-Designate';
+                                        })()}
                                     </div>
-                                    <div className="verification-text">Verified & Approved (System-Generated)</div>
+                                    <div className="verification-text">Digitally Signed and Certified by</div>
                                     <div className="signature-label">(HRMO-Designate)</div>
                                 </div>
                             </td>
@@ -433,7 +492,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                     <div className="approver-signature-line">
                                         {getApproverByRole('dept_head')?.name || 'Department Head'}
                                     </div>
-                                    <div className="verification-text">Verified & Approved (System-Generated)</div>
+                                    <div className="verification-text">Digitally Signed and Approved by</div>
                                     <div className="signature-label">(Department Head/Authorized Personnel)</div>
                                 </div>
                             </td>
@@ -449,8 +508,8 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                         <tr>
                             <td style={{ width: '50%', borderRight: 'none' }}>
                                 7.C APPROVED FOR:<br />
-                                <strong>{calculateWorkingDays()} days with pay</strong><br />
-                                _____ days without pay<br />
+                                <strong>{leaveRequest?.days_with_pay || 0} days with pay</strong><br />
+                                <strong>{leaveRequest?.days_without_pay || 0} days without pay</strong><br />
                                 _____ others (specify)__________
                             </td>
                             <td style={{ width: '50%', borderLeft: 'none' }}>
@@ -468,7 +527,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                     <div className="approver-role">
                                         {getApproverByRole('admin')?.role === 'admin' ? 'Municipal Vice Mayor' : 'Administrator'}
                                     </div>
-                                    <div className="verification-text">Verified & Approved (System-Generated)</div>
+                                    <div className="verification-text">Digitally Signed and Approved by</div>
                                 </div>
                             </td>
                         </tr>
@@ -481,7 +540,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                 .leave-form-container {
                     font-family: Arial, sans-serif;
                     font-size: 11px;
-                    background: #fffafa;
+                    background: #f5f5f5;
                     padding: 30px;
                 }
 
@@ -731,7 +790,7 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                     
                     /* Remove any background colors for better printing */
                     .section-title {
-                        background: #f0f0f0 !important;
+                        background:rgb(200, 198, 198) !important;
                         -webkit-print-color-adjust: exact;
                         color-adjust: exact;
                     }

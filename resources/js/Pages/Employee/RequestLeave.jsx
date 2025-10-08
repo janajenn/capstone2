@@ -2,6 +2,25 @@ import EmployeeLayout from '@/Layouts/EmployeeLayout';
 import { useForm, usePage, router } from '@inertiajs/react';
 import { useMemo, useState, useRef, useEffect } from 'react';
 
+// Leave type priority configuration
+const LEAVE_TYPE_PRIORITY = {
+  'VACATION LEAVE': 1,
+  'SICK LEAVE': 2,
+  'FORCE LEAVE': 3,
+  'SPECIAL PRIVILEGE LEAVE': 4
+};
+
+// Function to sort leave types by priority
+const sortLeaveTypesByPriority = (leaveTypes) => {
+  if (!leaveTypes) return [];
+  
+  return [...leaveTypes].sort((a, b) => {
+    const aPriority = LEAVE_TYPE_PRIORITY[a.name.toUpperCase()] || 999;
+    const bPriority = LEAVE_TYPE_PRIORITY[b.name.toUpperCase()] || 999;
+    return aPriority - bPriority;
+  });
+};
+
 // Function to calculate working days (excluding weekends)
 const calculateWorkingDays = (startDate, endDate) => {
   if (!startDate || !endDate) return 0;
@@ -94,7 +113,6 @@ const typeSpecificFields = (code) => {
   }
 };
 
-// Custom Date Input Component
 const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error, helperText, allowPastDates = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -192,11 +210,13 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
 
   return (
     <div className="relative" ref={datePickerRef}>
-      <label className="block text-sm text-gray-600">{label}</label>
+      <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>
       <div className="relative">
         <input
           type="text"
-          className="mt-1 w-full border rounded p-2 cursor-pointer bg-white"
+          className={`w-full border border-gray-300 rounded-lg p-3 cursor-pointer bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
+            error ? 'border-rose-500 focus:ring-rose-500 focus:border-rose-500' : ''
+          }`}
           value={formatDate(value)}
           onClick={() => setIsOpen(!isOpen)}
           readOnly
@@ -210,35 +230,35 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
       </div>
 
       {isOpen && (
-        <div className="absolute z-10 mt-1 w-64 bg-white border border-gray-300 rounded-lg shadow-lg">
-          <div className="p-3 border-b">
+        <div className="absolute z-50 mt-1 w-72 bg-white border border-gray-300 rounded-lg shadow-lg">
+          <div className="p-4 border-b border-gray-200">
             <div className="flex justify-between items-center">
               <button
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
-                className="p-1 hover:bg-gray-100 rounded"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin='round' strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <svg className="h-4 w-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <span className="font-medium">
+              <span className="font-semibold text-gray-900">
                 {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
               </span>
               <button
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
-                className="p-1 hover:bg-gray-100 rounded"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin='round' strokeWidth={2} d="M9 5l7 7-7 7" />
+                <svg className="h-4 w-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
             </div>
           </div>
 
-          <div className="p-3">
-            <div className="grid grid-cols-7 gap-1 text-xs text-gray-500 mb-2">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="text-center">{day}</div>
+          <div className="p-4">
+            <div className="grid grid-cols-7 gap-1 text-xs text-gray-500 mb-3">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                <div key={day} className="text-center font-medium">{day}</div>
               ))}
             </div>
 
@@ -261,14 +281,23 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
                     onClick={() => handleDateSelect(day.date)}
                     disabled={isDisabled}
                     className={`
-                      h-8 w-8 text-sm rounded flex items-center justify-center
+                      h-8 w-8 text-sm rounded-lg flex items-center justify-center transition-all
                       ${isDisabled
                         ? 'text-gray-300 cursor-not-allowed'
                         : 'hover:bg-blue-100 cursor-pointer'
                       }
-                      ${isSelected ? 'bg-blue-600 text-white hover:bg-blue-700' : ''}
-                      ${isToday && !isSelected ? 'bg-blue-100 text-blue-600' : ''}
-                      ${!day.isCurrentMonth ? 'text-gray-300' : ''}
+                      ${isSelected 
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm' 
+                        : ''
+                      }
+                      ${isToday && !isSelected 
+                        ? 'bg-blue-100 text-blue-600 font-semibold' 
+                        : ''
+                      }
+                      ${!day.isCurrentMonth 
+                        ? 'text-gray-300' 
+                        : 'text-gray-700'
+                      }
                     `}
                   >
                     {day.date.getDate()}
@@ -280,9 +309,103 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
         </div>
       )}
 
-      {error && <div className="text-xs text-rose-600 mt-1">{error}</div>}
-      {helperText && <div className="text-xs text-gray-500 mt-1">{helperText}</div>}
+      {error && (
+        <div className="text-xs text-rose-600 mt-2 flex items-center">
+          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+          {error}
+        </div>
+      )}
+      {helperText && !error && (
+        <div className="text-xs text-gray-500 mt-2">{helperText}</div>
+      )}
     </div>
+  );
+};
+
+
+// Leave Type Card Component
+const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBalances }) => {
+  const getLeaveBalance = (type) => {
+    const code = type.code.toUpperCase();
+    
+    if (type.earnable) {
+      if (code === 'SL') return leaveCredits?.sl || 0;
+      if (code === 'VL') return leaveCredits?.vl || 0;
+    } else {
+      const balanceRecord = leaveBalances?.[type.id];
+      return balanceRecord?.balance || type.default_days || 0;
+    }
+    return 0;
+  };
+
+  const balance = getLeaveBalance(leaveType);
+  const isLowBalance = balance <= (leaveType.default_days || 5) * 0.2; // 20% threshold
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`
+        w-full p-6 text-left transition-all duration-200 ease-in-out
+        rounded-xl border-2 bg-white
+        ${isSelected 
+          ? 'border-blue-500 shadow-lg shadow-blue-100 transform scale-[1.02]' 
+          : 'border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 hover:scale-[1.01]'
+        }
+      `}
+    >
+      {/* Header */}
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded-md mb-2">
+            {leaveType.code}
+          </span>
+          <h3 className="text-lg font-semibold text-gray-900">{leaveType.name}</h3>
+        </div>
+        {isSelected && (
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+        )}
+      </div>
+
+      {/* Balance Information */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm text-gray-600">Available Balance</span>
+        <span className={`text-lg font-bold ${isLowBalance ? 'text-amber-600' : 'text-green-600'}`}>
+          {balance} days
+        </span>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+        <div 
+          className={`h-2 rounded-full transition-all duration-300 ${
+            isLowBalance ? 'bg-amber-500' : 'bg-green-500'
+          }`}
+          style={{ 
+            width: `${Math.min((balance / (leaveType.default_days || 15)) * 100, 100)}%` 
+          }}
+        ></div>
+      </div>
+
+      {/* Footer Info */}
+      <div className="flex justify-between items-center text-xs text-gray-500">
+        <div className="flex items-center space-x-2">
+          {leaveType.document_required && (
+            <span className="flex items-center">
+              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+              </svg>
+              Document Required
+            </span>
+          )}
+        </div>
+        {!leaveType.earnable && leaveType.default_days && (
+          <span>Fixed: {leaveType.default_days} days</span>
+        )}
+      </div>
+    </button>
   );
 };
 
@@ -291,7 +414,13 @@ export default function RequestLeave() {
   const { leaveTypes, flash, existingRequests, leaveCredits, leaveBalances, errors } = props;
 
   const [selectedTypeId, setSelectedTypeId] = useState(null);
-  const [showBalanceWarning, setShowBalanceWarning] = useState(false); // MOVE THIS UP
+  const [showBalanceWarning, setShowBalanceWarning] = useState(false);
+
+  // Sort leave types by priority
+  const sortedLeaveTypes = useMemo(() => 
+    sortLeaveTypesByPriority(leaveTypes), 
+    [leaveTypes]
+  );
 
   const selectedType = useMemo(() => leaveTypes?.find((lt) => lt.id === selectedTypeId) || null, [leaveTypes, selectedTypeId]);
   const specificFields = useMemo(() => typeSpecificFields(selectedType?.code), [selectedType]);
@@ -433,265 +562,316 @@ export default function RequestLeave() {
 
   return (
       <EmployeeLayout>
-          <h1 className="text-2xl font-bold">Request a Leave</h1>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">Request a Leave</h1>
+              <p className="text-gray-600 mb-8">Select a leave type and fill out the required information</p>
 
-          {flash?.success && (
-              <div className="mt-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
-                  {flash.success}
+              {flash?.success && (
+                  <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center">
+                          <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span className="text-green-800">{flash.success}</span>
+                      </div>
+                  </div>
+              )}
+
+              {/* Leave Type Cards Grid */}
+              <div className="mb-8">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Select Leave Type</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {sortedLeaveTypes?.map((lt) => (
+                          <LeaveTypeCard
+                              key={lt.id}
+                              leaveType={lt}
+                              isSelected={selectedTypeId === lt.id}
+                              onClick={() => handleSelectType(lt)}
+                              leaveCredits={leaveCredits}
+                              leaveBalances={leaveBalances}
+                          />
+                      ))}
+                  </div>
               </div>
-          )}
 
-          {/* Leave Type Cards */}
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-              {leaveTypes?.map((lt) => (
-                  <button
-                      key={lt.id}
-                      type="button"
-                      onClick={() => handleSelectType(lt)}
-                      className={`p-4 rounded border text-left ${selectedTypeId === lt.id ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-                  >
-                      <div className="text-sm text-gray-500">{lt.code}</div>
-                      <div className="text-lg font-semibold">{lt.name}</div>
-                      {lt.document_required && <div className="mt-1 text-xs text-rose-600">Document required</div>}
-                      {!lt.earnable && lt.default_days && (
-                          <div className="mt-1 text-xs text-blue-600">
-                              Fixed: {lt.default_days} days/year
-                          </div>
-                      )}
-                  </button>
-              ))}
-          </div>
+              {/* Dynamic Form */}
+              {selectedType && (
+                  <form onSubmit={submit} className="mt-8 space-y-6" encType="multipart/form-data">
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                          <h2 className="text-xl font-semibold text-gray-900 mb-6">
+                              Leave Request Details - {selectedType.name}
+                          </h2>
 
-          {/* Dynamic Form */}
-          {selectedType && (
-              <form onSubmit={submit} className="mt-8 space-y-4" encType="multipart/form-data">
-                  {errors.leave_type_id && <div className="text-xs text-rose-600">{errors.leave_type_id}</div>}
-                  <input type="hidden" name="leave_type_id" value={data.leave_type_id} />
+                          {errors.leave_type_id && <div className="text-xs text-rose-600">{errors.leave_type_id}</div>}
+                          <input type="hidden" name="leave_type_id" value={data.leave_type_id} />
 
-                  {/* Fixed Leave Balance Warning */}
-                  {showBalanceWarning && (
-                      <div className="p-4 bg-rose-100 border border-rose-200 rounded-lg">
-                          <div className="flex items-start">
-                              <div className="flex-shrink-0">
-                                  <svg className="h-5 w-5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                  </svg>
-                              </div>
-                              <div className="ml-3">
-                                  <h3 className="text-sm font-medium text-rose-800">
-                                      Leave Balance Exceeded
-                                  </h3>
-                                  <div className="mt-1 text-sm text-rose-700">
-                                      <p>
-                                          You are requesting <strong>{balanceInfo?.requestedDays} days</strong> of {balanceInfo?.leaveTypeName}, 
-                                          but you only have <strong>{balanceInfo?.availableBalance} days</strong> available.
-                                      </p>
-                                      <p className="mt-1 font-semibold">
-                                          Please change the duration. You can only avail up to {balanceInfo?.availableBalance} days for this leave type.
-                                      </p>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-                  )}
-
-                  {/* Date Selection Notice */}
-                  {selectedType && (
-                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                          <div className="text-sm text-gray-700">
-                              <strong>Date Selection Rules:</strong>
-                              <ul className="mt-1 list-disc list-inside">
-                                  <li>
-                                      {selectedType.code.toUpperCase() === 'SL'
-                                          ? 'Sick Leave: Past and future dates are allowed'
-                                          : `${selectedType.code}: Only current and future dates are allowed`
-                                      }
-                                  </li>
-                                  {selectedType.code.toUpperCase() === 'SL' && (
-                                      <li>Medical certificate is {workingDays > 5 ? 'required' : 'optional'} for {workingDays} days</li>
-                                  )}
-                              </ul>
-                          </div>
-                      </div>
-                  )}
-
-                  {/* Balance Information Display
-                  {balanceInfo && data.date_from && data.date_to && (
-                      <div className={`p-4 border rounded-lg ${
-                          balanceInfo.exceedsLimit 
-                              ? 'bg-rose-50 border-rose-200' 
-                              : 'bg-blue-50 border-blue-200'
-                      }`}>
-                          <div className="text-sm">
-                              <div className="font-semibold">Leave Balance Information</div>
-                              <div className="mt-2 space-y-2">
-                                  <div>
-                                      <span className="font-medium">Leave Type:</span> {balanceInfo.leaveTypeName} ({balanceInfo.leaveTypeCode})
-                                  </div>
-                                  <div>
-                                      <span className="font-medium">Available Balance:</span> {balanceInfo.availableBalance} days
-                                      {balanceInfo.isFixedLeave && balanceInfo.availableBalance === 0 && (
-                                          <span className="ml-2 text-rose-600 font-medium">(No balance available)</span>
-                                      )}
-                                  </div>
-                                  <div>
-                                      <span className="font-medium">Requested Duration:</span> {balanceInfo.requestedDays} working days
-                                  </div>
-                                  
-                                  {balanceInfo.exceedsLimit ? (
-                                      <div className="mt-2 p-2 bg-rose-100 border border-rose-200 rounded text-rose-800">
-                                          <div className="font-medium">❌ Request Exceeds Available Balance</div>
-                                          <div className="mt-1">
-                                              You cannot request more days than your available balance for fixed leave types.
+                          {/* Fixed Leave Balance Warning */}
+                          {showBalanceWarning && (
+                              <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-lg">
+                                  <div className="flex items-start">
+                                      <div className="flex-shrink-0">
+                                          <svg className="h-5 w-5 text-rose-500" fill="currentColor" viewBox="0 0 20 20">
+                                              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                          </svg>
+                                      </div>
+                                      <div className="ml-3">
+                                          <h3 className="text-sm font-medium text-rose-800">
+                                              Leave Balance Exceeded
+                                          </h3>
+                                          <div className="mt-1 text-sm text-rose-700">
+                                              <p>
+                                                  You are requesting <strong>{balanceInfo?.requestedDays} days</strong> of {balanceInfo?.leaveTypeName}, 
+                                                  but you only have <strong>{balanceInfo?.availableBalance} days</strong> available.
+                                              </p>
+                                              <p className="mt-1 font-semibold">
+                                                  Please change the duration. You can only avail up to {balanceInfo?.availableBalance} days for this leave type.
+                                              </p>
                                           </div>
                                       </div>
-                                  ) : balanceInfo.isFixedLeave ? (
-                                      <div className="mt-2 p-2 bg-green-100 border border-green-200 rounded text-green-800">
-                                          <div className="font-medium">✅ Balance Sufficient</div>
-                                          <div className="mt-1">
-                                              Your request is within your available balance.
-                                          </div>
-                                      </div>
-                                  ) : balanceInfo.isInsufficient ? (
-                                      <div className="mt-2 p-2 bg-yellow-100 border border-yellow-200 rounded text-yellow-800">
-                                          <div className="font-medium">⚠️ Partial Leave Notice</div>
-                                          <div className="mt-1">
-                                              Your request will be automatically split between paid and unpaid days.
-                                          </div>
-                                      </div>
-                                  ) : (
-                                      <div className="mt-2 p-2 bg-green-100 border border-green-200 rounded text-green-800">
-                                          <div className="font-medium">✅ Full Pay Leave</div>
-                                          <div className="mt-1">
-                                              Your leave will be fully paid.
-                                          </div>
-                                      </div>
-                                  )}
+                                  </div>
                               </div>
-                          </div>
-                      </div>
-                  )} */}
-
-                  {/* Rest of your form components */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <DateInput
-                          label="Date From"
-                          value={data.date_from}
-                          onChange={(value) => setData('date_from', value)}
-                          disabledDates={existingRequests || []}
-                          error={errors.date_from}
-                          helperText={existingRequests && existingRequests.length > 0 ? "Conflicting dates are disabled" : ""}
-                          allowPastDates={allowPastDates}
-                      />
-
-                      <DateInput
-                          label="Date To"
-                          value={data.date_to}
-                          onChange={(value) => setData('date_to', value)}
-                          disabledDates={existingRequests || []}
-                          error={errors.date_to}
-                          helperText="Must be after or equal to start date"
-                          allowPastDates={allowPastDates}
-                      />
-                  </div>
-
-                  <div>
-                      <label className="block text-sm text-gray-600">Reason</label>
-                      <textarea
-                          className="mt-1 w-full border rounded p-2"
-                          rows="3"
-                          value={data.reason}
-                          onChange={(e) => setData('reason', e.target.value)}
-                          placeholder="Please provide a detailed reason for your leave request"
-                      />
-                      {errors.reason && <div className="text-xs text-rose-600 mt-1">{errors.reason}</div>}
-                  </div>
-
-                  {specificFields.length > 0 && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {specificFields.map((f) => (
-                              <div key={f.name}>
-                                  <label className="block text-sm text-gray-600">{f.label}</label>
-                                  {f.type === 'select' ? (
-                                      <select
-                                          className="mt-1 w-full border rounded p-2"
-                                          value={data[f.name] || ''}
-                                          onChange={(e) => setData(f.name, e.target.value)}
-                                          required={f.required}
-                                      >
-                                          <option value="">Select {f.label}</option>
-                                          {f.options?.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                  {option.label}
-                                              </option>
-                                          ))}
-                                      </select>
-                                  ) : (
-                                      <input
-                                          type={f.type}
-                                          className="mt-1 w-full border rounded p-2"
-                                          value={data[f.name] || ''}
-                                          onChange={(e) => setData(f.name, e.target.value)}
-                                          required={f.required}
-                                          placeholder={f.required ? `Enter ${f.label}` : `${f.label} (Optional)`}
-                                      />
-                                  )}
-                              </div>
-                          ))}
-                      </div>
-                  )}
-
-                  <div>
-                      <label className="block text-sm text-gray-600">
-                          Attachment {isDocumentRequired && <span className="text-rose-600">*</span>}
-                          {!isDocumentRequired && selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 && (
-                              <span className="text-gray-500"> (Optional)</span>
                           )}
-                      </label>
-                      <input
-                          type="file"
-                          className="mt-1 w-full border rounded p-2"
-                          onChange={(e) => setData('attachment', e.target.files[0])}
-                          accept="image/*,application/pdf,.doc,.docx"
-                          required={isDocumentRequired}
-                      />
-                      {isDocumentRequired ? (
-                          <div className="text-xs text-rose-600 mt-1">
-                              📋 Medical certificate is required for sick leaves exceeding 5 days
-                          </div>
-                      ) : selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 ? (
-                          <div className="text-xs text-gray-500 mt-1">
-                              📄 Medical certificate is optional for sick leaves of 1-5 days (JPEG, PNG, PDF, DOC accepted)
-                          </div>
-                      ) : errors.attachment ? (
-                          <div className="text-xs text-rose-600 mt-1">{errors.attachment}</div>
-                      ) : (
-                          <div className="text-xs text-gray-500 mt-1">
-                              Supporting document (JPEG, PNG, PDF, DOC) - Optional
-                          </div>
-                      )}
-                  </div>
 
-                  <div className="pt-2">
-                      <button
-                          type="submit"
-                          disabled={processing || (balanceInfo && balanceInfo.exceedsLimit)}
-                          className={`px-4 py-2 text-white rounded ${
-                              processing || (balanceInfo && balanceInfo.exceedsLimit)
-                                  ? 'bg-gray-400 cursor-not-allowed'
-                                  : 'bg-blue-600 hover:bg-blue-700'
-                          }`}
-                      >
-                          {processing 
-                              ? 'Submitting...' 
-                              : (balanceInfo && balanceInfo.exceedsLimit)
-                                  ? 'Adjust Duration to Submit'
-                                  : 'Submit Request'
-                          }
-                      </button>
-                  </div>
-              </form>
-          )}
+                          {/* Date Selection Notice */}
+                          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-start">
+                                  <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                  </svg>
+                                  <div className="text-sm text-blue-800">
+                                      <strong>Date Selection Rules:</strong>
+                                      <ul className="mt-1 list-disc list-inside">
+                                          <li>
+                                              {selectedType.code.toUpperCase() === 'SL'
+                                                  ? 'Sick Leave: Past and future dates are allowed'
+                                                  : `${selectedType.name}: Only current and future dates are allowed`
+                                              }
+                                          </li>
+                                          {selectedType.code.toUpperCase() === 'SL' && (
+                                              <li>Medical certificate is {workingDays > 5 ? 'required' : 'optional'} for {workingDays} days</li>
+                                          )}
+                                      </ul>
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* Balance Information Display */}
+                          {balanceInfo && data.date_from && data.date_to && (
+                              <div className={`mb-6 p-4 border rounded-lg ${
+                                  balanceInfo.exceedsLimit 
+                                      ? 'bg-rose-50 border-rose-200' 
+                                      : 'bg-blue-50 border-blue-200'
+                              }`}>
+                                  <div className="text-sm">
+                                      <div className="font-semibold text-gray-900 mb-3">Leave Balance Information</div>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <div>
+                                              <span className="font-medium text-gray-700">Leave Type:</span> {balanceInfo.leaveTypeName}
+                                          </div>
+                                          <div>
+                                              <span className="font-medium text-gray-700">Available Balance:</span> {balanceInfo.availableBalance} days
+                                              {balanceInfo.isFixedLeave && balanceInfo.availableBalance === 0 && (
+                                                  <span className="ml-2 text-rose-600 font-medium">(No balance available)</span>
+                                              )}
+                                          </div>
+                                          <div>
+                                              <span className="font-medium text-gray-700">Requested Duration:</span> {balanceInfo.requestedDays} working days
+                                          </div>
+                                          
+                                          {balanceInfo.exceedsLimit ? (
+                                              <div className="md:col-span-2 mt-2 p-3 bg-rose-100 border border-rose-200 rounded text-rose-800">
+                                                  <div className="font-medium">❌ Request Exceeds Available Balance</div>
+                                                  <div className="mt-1">
+                                                      You cannot request more days than your available balance for fixed leave types.
+                                                  </div>
+                                              </div>
+                                          ) : balanceInfo.isFixedLeave ? (
+                                              <div className="md:col-span-2 mt-2 p-3 bg-green-100 border border-green-200 rounded text-green-800">
+                                                  <div className="font-medium">✅ Balance Sufficient</div>
+                                                  <div className="mt-1">
+                                                      Your request is within your available balance.
+                                                  </div>
+                                              </div>
+                                          ) : balanceInfo.isInsufficient ? (
+                                              <div className="md:col-span-2 mt-2 p-3 bg-amber-100 border border-amber-200 rounded text-amber-800">
+                                                  <div className="font-medium">⚠️ Partial Leave Notice</div>
+                                                  <div className="mt-1">
+                                                      {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') ? (
+                                                          <div>
+                                                              <div>Your request will be automatically split between paid and unpaid days:</div>
+                                                              <div className="mt-2 space-y-1">
+                                                                  <div className="flex justify-between">
+                                                                      <span>Days with pay:</span>
+                                                                      <span className="font-semibold text-green-700">{balanceInfo.availableBalance} days</span>
+                                                                  </div>
+                                                                  <div className="flex justify-between">
+                                                                      <span>Days without pay:</span>
+                                                                      <span className="font-semibold text-orange-700">{balanceInfo.requestedDays - balanceInfo.availableBalance} days</span>
+                                                                  </div>
+                                                              </div>
+                                                          </div>
+                                                      ) : (
+                                                          <div>Your request will be automatically split between paid and unpaid days.</div>
+                                                      )}
+                                                  </div>
+                                              </div>
+                                          ) : (
+                                              <div className="md:col-span-2 mt-2 p-3 bg-green-100 border border-green-200 rounded text-green-800">
+                                                  <div className="font-medium">✅ Full Pay Leave</div>
+                                                  <div className="mt-1">
+                                                      Your leave will be fully paid.
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+
+                          {/* Form Fields */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                              <DateInput
+                                  label="Date From"
+                                  value={data.date_from}
+                                  onChange={(value) => setData('date_from', value)}
+                                  disabledDates={existingRequests || []}
+                                  error={errors.date_from}
+                                  helperText={existingRequests && existingRequests.length > 0 ? "Conflicting dates are disabled" : ""}
+                                  allowPastDates={allowPastDates}
+                              />
+
+                              <DateInput
+                                  label="Date To"
+                                  value={data.date_to}
+                                  onChange={(value) => setData('date_to', value)}
+                                  disabledDates={existingRequests || []}
+                                  error={errors.date_to}
+                                  helperText="Must be after or equal to start date"
+                                  allowPastDates={allowPastDates}
+                              />
+                          </div>
+
+                          <div className="mb-6">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Reason</label>
+                              <textarea
+                                  className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                  rows="4"
+                                  value={data.reason}
+                                  onChange={(e) => setData('reason', e.target.value)}
+                                  placeholder="Please provide a detailed reason for your leave request..."
+                              />
+                              {errors.reason && <div className="text-xs text-rose-600 mt-1">{errors.reason}</div>}
+                          </div>
+
+                          {specificFields.length > 0 && (
+                              <div className="mb-6">
+                                  <h3 className="text-lg font-medium text-gray-900 mb-4">Additional Information</h3>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      {specificFields.map((f) => (
+                                          <div key={f.name}>
+                                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                  {f.label}
+                                                  {f.required && <span className="text-rose-500 ml-1">*</span>}
+                                              </label>
+                                              {f.type === 'select' ? (
+                                                  <select
+                                                      className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                                      value={data[f.name] || ''}
+                                                      onChange={(e) => setData(f.name, e.target.value)}
+                                                      required={f.required}
+                                                  >
+                                                      <option value="">Select {f.label}</option>
+                                                      {f.options?.map((option) => (
+                                                          <option key={option.value} value={option.value}>
+                                                              {option.label}
+                                                          </option>
+                                                      ))}
+                                                  </select>
+                                              ) : (
+                                                  <input
+                                                      type={f.type}
+                                                      className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                                      value={data[f.name] || ''}
+                                                      onChange={(e) => setData(f.name, e.target.value)}
+                                                      required={f.required}
+                                                      placeholder={f.required ? `Enter ${f.label}` : `${f.label} (Optional)`}
+                                                  />
+                                              )}
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          )}
+
+                          <div className="mb-6">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                  Attachment {isDocumentRequired && <span className="text-rose-500">*</span>}
+                              </label>
+                              <div className="flex items-center justify-center w-full">
+                                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                          <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                              <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                                          </svg>
+                                          <p className="mb-2 text-sm text-gray-500">
+                                              <span className="font-semibold">Click to upload</span> or drag and drop
+                                          </p>
+                                          <p className="text-xs text-gray-500">JPEG, PNG, PDF, DOC (Max. 10MB)</p>
+                                      </div>
+                                      <input 
+                                          type="file" 
+                                          className="hidden" 
+                                          onChange={(e) => setData('attachment', e.target.files[0])}
+                                          accept="image/*,application/pdf,.doc,.docx"
+                                          required={isDocumentRequired}
+                                      />
+                                  </label>
+                              </div>
+                              {isDocumentRequired ? (
+                                  <div className="mt-2 text-sm text-rose-600 flex items-center">
+                                      <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                      </svg>
+                                      Medical certificate is required for sick leaves exceeding 5 days
+                                  </div>
+                              ) : selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 ? (
+                                  <div className="mt-2 text-sm text-gray-500">
+                                      Medical certificate is optional for sick leaves of 1-5 days
+                                  </div>
+                              ) : errors.attachment ? (
+                                  <div className="mt-2 text-sm text-rose-600">{errors.attachment}</div>
+                              ) : (
+                                  <div className="mt-2 text-sm text-gray-500">
+                                      Supporting document - Optional
+                                  </div>
+                              )}
+                          </div>
+
+                          {/* Submit Button */}
+                          <div className="flex justify-end pt-4 border-t border-gray-200">
+                              <button
+                                  type="submit"
+                                  disabled={processing || (balanceInfo && balanceInfo.exceedsLimit)}
+                                  className={`
+                                      px-6 py-3 rounded-lg font-medium text-white transition-all duration-200
+                                      ${processing || (balanceInfo && balanceInfo.exceedsLimit)
+                                          ? 'bg-gray-400 cursor-not-allowed'
+                                          : 'bg-blue-600 hover:bg-blue-700 shadow-sm hover:shadow-md'
+                                      }
+                                  `}
+                              >
+                                  {processing 
+                                      ? 'Submitting...' 
+                                      : (balanceInfo && balanceInfo.exceedsLimit)
+                                          ? 'Adjust Duration to Submit'
+                                          : 'Submit Leave Request'
+                                  }
+                              </button>
+                          </div>
+                      </div>
+                  </form>
+              )}
+          </div>
       </EmployeeLayout>
   );
 }

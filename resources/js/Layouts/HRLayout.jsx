@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
 import PageTransition from '@/Components/PageTransition';
 import RoleSwitchButton from '@/Components/RoleSwitchButton';
+import HRNotificationDropdown from '@/Components/HRNotificationDropdown';
+import Swal from 'sweetalert2';
 import {
     HomeIcon,
     UserGroupIcon,
@@ -15,7 +17,8 @@ import {
     ChevronRightIcon,
     DocumentTextIcon,
     XMarkIcon,
-    ArrowPathIcon
+    ArrowPathIcon,
+    ClipboardDocumentListIcon // Add this icon for Leave Recordings
 } from '@heroicons/react/24/outline';
 
 export default function HRLayout({ children }) {
@@ -27,12 +30,37 @@ export default function HRLayout({ children }) {
 
     const toggleSidebar = () => setCollapsed(!collapsed);
 
-    // Helper function to check if a link is active
     const isActiveLink = (href) => {
         return url.startsWith(href);
     };
 
-    // Navigation items for HR mode
+    const handleLogout = () => {
+        Swal.fire({
+            title: 'Confirm Logout',
+            text: "Are you sure you want to log out of your HR account?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, Logout',
+            cancelButtonText: 'Cancel',
+            background: '#ffffff',
+            customClass: {
+                popup: 'rounded-xl shadow-2xl',
+                title: 'text-xl font-semibold text-gray-800',
+                htmlContainer: 'text-gray-600',
+                confirmButton: 'px-6 py-2 rounded-lg font-medium',
+                cancelButton: 'px-6 py-2 rounded-lg font-medium border border-gray-300'
+            },
+            buttonsStyling: false,
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.post('/logout');
+            }
+        });
+    };
+
     const hrNavigation = [
         { href: '/hr/dashboard', label: 'Dashboard', icon: HomeIcon },
         { href: '/hr/employees', label: 'Employees', icon: UserGroupIcon },
@@ -40,17 +68,19 @@ export default function HRLayout({ children }) {
         { href: '/hr/leave-types', label: 'Leave Types', icon: DocumentTextIcon },
         { href: '/hr/departments', label: 'Departments', icon: BuildingOfficeIcon },
         { href: '/hr/leave-requests', label: 'Leave Requests', icon: ExclamationTriangleIcon },
-        { href: '/hr/recall-requests', label: 'Recall Requests', icon: ArrowPathIcon },
         { href: '/hr/credit-conversions', label: 'Credit Conversions', icon: CurrencyDollarIcon },
         { href: '/hr/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
+        { href: '/hr/leave-recordings', label: 'Leave Recordings', icon: ClipboardDocumentListIcon }, // Add this line
+        // { href: '/hr/attendance/import', label: 'Attendance Import', icon: DocumentTextIcon },
+        { href: '/hr/attendance/logs', label: 'Attendance Logs', icon: CalendarIcon },
     ];
 
-    // Navigation items for Employee mode
     const employeeNavigation = [
         { href: '/employee/dashboard', label: 'Dashboard', icon: HomeIcon },
         { href: '/employee/my-leave-requests', label: 'My Leave Requests', icon: DocumentTextIcon },
         { href: '/employee/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
         { href: '/employee/credit-conversion', label: 'Credit Conversion', icon: CurrencyDollarIcon },
+        { href: '/employee/attendance-logs', label: 'Attendance Logs', icon: CalendarIcon },
     ];
 
     const currentNavigation = mode === "hr" ? hrNavigation : employeeNavigation;
@@ -62,18 +92,16 @@ export default function HRLayout({ children }) {
                 <div className="flex items-center justify-between p-4 border-b border-blue-800">
                     {!collapsed ? (
                         <div className="flex items-center space-x-3">
-                            {/* Logo */}
                             <img 
                                 src="/assets/hr.png" 
                                 alt="HRMO Logo" 
                                 className="w-9 h-9 object-cover rounded"
                             />
-                            <h1 className="font-bold text-xl">
+                            <h1 className="font-bold text-lg">
                                 {mode === "hr" ? "HR PORTAL" : "EMPLOYEE MODE"}
                             </h1>
                         </div>
                     ) : (
-                        // Show only logo when collapsed
                         <div className="flex justify-center w-full">
                             <img 
                                 src="/assets/hr.png" 
@@ -107,7 +135,7 @@ export default function HRLayout({ children }) {
                             >
                                 <IconComponent className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-gray-900' : ''}`} />
                                 {!collapsed && (
-                                    <span className={`ml-3 font-medium ${isActive ? 'text-gray-900' : ''}`}>
+                                    <span className={`ml-3 font-normal text-sm ${isActive ? 'text-gray-900' : ''}`}>
                                         {item.label}
                                     </span>
                                 )}
@@ -127,20 +155,18 @@ export default function HRLayout({ children }) {
 
                     {/* Logout */}
                     <div className="mt-auto pt-3 border-t border-blue-800">
-                        <Link
-                            href="/logout"
-                            method="post"
-                            as="button"
+                        <button
+                            onClick={handleLogout}
                             className="flex items-center w-full p-3 rounded-lg hover:bg-red-600/20 text-red-100 hover:text-white transition-all duration-200 group relative"
                         >
                             <XMarkIcon className="h-5 w-5 flex-shrink-0" />
                             {!collapsed && <span className="ml-3">Logout</span>}
                             {collapsed && (
-                                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                <div className="absolute left-full ml-2 px-2 py-1 bg-red-600 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
                                     Logout
                                 </div>
                             )}
-                        </Link>
+                        </button>
                     </div>
                 </nav>
             </div>
@@ -150,10 +176,14 @@ export default function HRLayout({ children }) {
                 {/* Header */}
                 <header className="bg-white shadow-sm z-10 sticky top-0">
                     <div className="flex items-center justify-between px-6 py-3">
-                        <h2 className="text-lg font-semibold text-gray-800">
-                            Welcome, {props.auth.user.name}
-                        </h2>
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-800">
+                                Welcome, {props.auth.user.name}
+                            </h2>
+                            <p className="text-sm text-gray-500">HR Dashboard</p>
+                        </div>
                         <div className="flex items-center space-x-4">
+                            <HRNotificationDropdown />
                             <span className="text-xs font-medium px-2 py-1 rounded-full bg-brand-blue text-white">
                                 {mode === "hr" ? "HR Mode" : "Employee Mode"}
                             </span>

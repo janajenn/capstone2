@@ -259,122 +259,122 @@ export default function LeaveTypes() {
                     </div>
                 </div>
 
-                {/* Add/Edit Modal */}
-                {isModalOpen && (
-                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto overflow-hidden">
-                            <div className="px-6 py-4 border-b border-gray-200">
-                                <h2 className="text-xl font-semibold text-gray-800">
-                                    {editing ? 'Edit Leave Type' : 'Add New Leave Type'}
-                                </h2>
-                            </div>
+               {/* Add/Edit Modal */}
+{isModalOpen && (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-start justify-center p-4 z-50 pt-20">
+        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto overflow-hidden transform transition-all">
+            <div className="px-6 py-4 border-b border-gray-200 bg-white">
+                <h2 className="text-xl font-semibold text-gray-800">
+                    {editing ? 'Edit Leave Type' : 'Add New Leave Type'}
+                </h2>
+            </div>
 
-                            <form onSubmit={handleSubmit} className="px-6 py-4">
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                                    <input
-                                        type="text"
-                                        value={form.data.name}
-                                        onChange={(e) => form.setData('name', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="Enter leave type name"
-                                        required
-                                        autoFocus
-                                    />
-                                </div>
+            <form onSubmit={handleSubmit} className="px-6 py-4 max-h-[70vh] overflow-y-auto">
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <input
+                        type="text"
+                        value={form.data.name}
+                        onChange={(e) => form.setData('name', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter leave type name"
+                        required
+                        autoFocus
+                    />
+                </div>
 
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                                    <input
-                                        type="text"
-                                        value={form.data.code}
-                                        onChange={handleCodeChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="e.g., SL, VL, SPL, etc."
-                                        required
-                                    />
-                                    {isSickOrVacation && (
-                                        <p className="text-sm text-blue-600 mt-1">
-                                            Note: Sick Leave (SL) and Vacation Leave (VL) cannot have default days as they are earned through credits.
-                                        </p>
-                                    )}
-                                </div>
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                    <input
+                        type="text"
+                        value={form.data.code}
+                        onChange={handleCodeChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="e.g., SL, VL, SPL, etc."
+                        required
+                    />
+                    {isSickOrVacation && (
+                        <p className="text-sm text-blue-600 mt-1">
+                            Note: Sick Leave (SL) and Vacation Leave (VL) cannot have default days as they are earned through credits.
+                        </p>
+                    )}
+                </div>
 
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Default Days {isSickOrVacation && '(Not allowed for SL/VL)'}
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.data.default_days === null ? '' : form.data.default_days}
-                                        onChange={handleDefaultDaysChange}
-                                        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                                            isSickOrVacation ? 'bg-gray-100 cursor-not-allowed' : ''
-                                        }`}
-                                        placeholder={isSickOrVacation ? 'Not applicable for SL/VL' : 'Leave blank for no default'}
-                                        disabled={isSickOrVacation}
-                                    />
-                                    <p className="text-sm text-gray-500 mt-1">
-                                        {isSickOrVacation 
-                                            ? 'Sick and Vacation leaves are earned through credits and reset annually.'
-                                            : 'Number of days automatically granted and reset every January 1. Leave blank if not applicable.'
-                                        }
-                                    </p>
-                                </div>
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Default Days {isSickOrVacation && '(Not allowed for SL/VL)'}
+                    </label>
+                    <input
+                        type="number"
+                        min="0"
+                        value={form.data.default_days === null ? '' : form.data.default_days}
+                        onChange={handleDefaultDaysChange}
+                        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                            isSickOrVacation ? 'bg-gray-100 cursor-not-allowed' : ''
+                        }`}
+                        placeholder={isSickOrVacation ? 'Not applicable for SL/VL' : 'Leave blank for no default'}
+                        disabled={isSickOrVacation}
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                        {isSickOrVacation 
+                            ? 'Sick and Vacation leaves are earned through credits and reset annually.'
+                            : 'Number of days automatically granted and reset every January 1. Leave blank if not applicable.'
+                        }
+                    </p>
+                </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={form.data.earnable}
-                                            onChange={(e) => form.setData('earnable', e.target.checked)}
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">Earnable</span>
-                                    </label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={form.data.earnable}
+                            onChange={(e) => form.setData('earnable', e.target.checked)}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Earnable</span>
+                    </label>
 
-                                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={form.data.deductible}
-                                            onChange={(e) => form.setData('deductible', e.target.checked)}
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">Deductible</span>
-                                    </label>
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={form.data.deductible}
+                            onChange={(e) => form.setData('deductible', e.target.checked)}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Deductible</span>
+                    </label>
 
-                                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={form.data.document_required}
-                                            onChange={(e) => form.setData('document_required', e.target.checked)}
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                                        />
-                                        <span className="text-sm font-medium text-gray-700">Document Required</span>
-                                    </label>
-                                </div>
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={form.data.document_required}
+                            onChange={(e) => form.setData('document_required', e.target.checked)}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Document Required</span>
+                    </label>
+                </div>
 
-                                <div className="flex justify-end space-x-3 pt-4">
-                                    <button 
-                                        type="button" 
-                                        onClick={closeModal}
-                                        className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button 
-                                        type="submit" 
-                                        disabled={form.processing}
-                                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-75"
-                                    >
-                                        {form.processing ? 'Processing...' : editing ? 'Update Leave Type' : 'Add Leave Type'}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <button 
+                        type="button" 
+                        onClick={closeModal}
+                        className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        type="submit" 
+                        disabled={form.processing}
+                        className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-75 transition-colors"
+                    >
+                        {form.processing ? 'Processing...' : editing ? 'Update Leave Type' : 'Add Leave Type'}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+)}
 
                 {/* Leave Types Table */}
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">

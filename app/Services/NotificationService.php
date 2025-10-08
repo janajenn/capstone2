@@ -158,6 +158,12 @@ class NotificationService
                     'title' => 'Department Head Leave Request Pending',
                     'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} by a Department Head requires your approval."
                 ];
+
+            case 'late_deduction':
+                return [
+                    'title' => 'VL Credits Deducted for Late Arrival',
+                    'message' => $remarks ?: "Your VL credits have been deducted due to late arrival."
+                ];
                 
             default:
                 // For any unknown status, use a generic message
@@ -168,10 +174,6 @@ class NotificationService
         }
     }
 
-    /**
-     * Create notification for admin about department head requests
-     */
-    
     /**
      * Create credit conversion notification
      */
@@ -324,76 +326,389 @@ class NotificationService
     /**
      * Get employee_id from user_id
      */
-    
-    
-   public function getEmployeeIdFromUserId($userId)
-   {
-       // Get the user first
-       $user = User::find($userId);
-       
-       if (!$user) {
-           Log::error('User not found for notification', ['user_id' => $userId]);
-           return null;
-       }
+    public function getEmployeeIdFromUserId($userId)
+    {
+        // Get the user first
+        $user = User::find($userId);
+        
+        if (!$user) {
+            Log::error('User not found for notification', ['user_id' => $userId]);
+            return null;
+        }
 
-       // The employee_id is stored in the users table
-       return $user->employee_id;
-   }
+        // The employee_id is stored in the users table
+        return $user->employee_id;
+    }
 
-   /**
-    * Get user_id from employee_id - FIXED VERSION
-    */
-   public function getUserIdFromEmployeeId($employeeId)
-   {
-       // Find user by employee_id
-       $user = User::where('employee_id', $employeeId)->first();
-       
-       if (!$user) {
-           Log::error('User not found for employee', ['employee_id' => $employeeId]);
-           return null;
-       }
+    /**
+     * Get user_id from employee_id - FIXED VERSION
+     */
+    public function getUserIdFromEmployeeId($employeeId)
+    {
+        // Find user by employee_id
+        $user = User::where('employee_id', $employeeId)->first();
+        
+        if (!$user) {
+            Log::error('User not found for employee', ['employee_id' => $employeeId]);
+            return null;
+        }
 
-       return $user->id;
-   }
+        return $user->id;
+    }
 
-   /**
-    * Create notification for admin about department head requests - FIXED VERSION
-    */
-   public function createAdminNotification($adminUserId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $employeeName, $remarks = null)
-   {
-       // Get employee_id from user_id for admin - using the fixed method
-       $adminEmployeeId = $this->getEmployeeIdFromUserId($adminUserId);
-       
-       if (!$adminEmployeeId) {
-           Log::error('Admin notification failed: admin employee not found', [
-               'user_id' => $adminUserId,
-               'request_id' => $requestId
-           ]);
-           return null;
-       }
+    /**
+     * Create notification for admin about department head requests - RENAMED to avoid conflict
+     */
+    public function createAdminDepartmentHeadNotification($adminUserId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $employeeName, $remarks = null)
+    {
+        // Get employee_id from user_id for admin - using the fixed method
+        $adminEmployeeId = $this->getEmployeeIdFromUserId($adminUserId);
+        
+        if (!$adminEmployeeId) {
+            Log::error('Admin notification failed: admin employee not found', [
+                'user_id' => $adminUserId,
+                'request_id' => $requestId
+            ]);
+            return null;
+        }
 
-       $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
-       $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
+        $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
 
-       $title = "Department Head Leave Request";
-       $message = "{$employeeName} has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires your approval.";
+        $title = "Department Head Leave Request";
+        $message = "{$employeeName} has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires your approval.";
 
-       $data = [
-           'request_id' => $requestId,
-           'status' => $status,
-           'leave_type' => $leaveType,
-           'date_from' => $dateFrom,
-           'date_to' => $dateTo,
-           'employee_name' => $employeeName,
-           'remarks' => $remarks,
-       ];
+        $data = [
+            'request_id' => $requestId,
+            'status' => $status,
+            'leave_type' => $leaveType,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'employee_name' => $employeeName,
+            'remarks' => $remarks,
+        ];
 
-       return $this->createNotification(
-           $adminEmployeeId, 
-           'leave_request', 
-           $title, 
-           $message, 
-           $data
-       );
-   }
+        return $this->createAdminNotification( // Use the role-specific method
+            $adminEmployeeId, 
+            'leave_request', 
+            $title, 
+            $message, 
+            $data
+        );
+    }
+
+    /**
+     * Get notifications filtered by current mode
+     */
+    public function getNotificationsByMode($employeeId, $currentMode, $limit = 20)
+    {
+        if (!$employeeId) {
+            return collect();
+        }
+
+        return Notification::where('employee_id', $employeeId)
+            ->where(function($query) use ($currentMode) {
+                // Include notifications for current mode AND general employee notifications
+                if ($currentMode === 'employee') {
+                    // In employee mode: show only employee-specific notifications
+                    $query->where('type', 'like', '%employee%')
+                          ->orWhere('type', 'leave_request') // General leave notifications
+                          ->orWhere('type', 'credit_conversion') // General credit notifications
+                          ->orWhereNull('data->notification_for'); // Notifications without specific target
+                } else {
+                    // In role mode (hr, dept_head, admin): show role-specific + general notifications
+                    $query->where('data->notification_for', $currentMode)
+                          ->orWhere('type', 'like', "%{$currentMode}%")
+                          ->orWhereNull('data->notification_for'); // General notifications
+                }
+            })
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+    }
+
+    /**
+     * Get unread count filtered by current mode
+     */
+    public function getUnreadCountByMode($employeeId, $currentMode)
+    {
+        if (!$employeeId) {
+            return 0;
+        }
+
+        return Notification::where('employee_id', $employeeId)
+            ->where('is_read', false)
+            ->where(function($query) use ($currentMode) {
+                if ($currentMode === 'employee') {
+                    $query->where('type', 'like', '%employee%')
+                          ->orWhere('type', 'leave_request')
+                          ->orWhere('type', 'credit_conversion')
+                          ->orWhereNull('data->notification_for');
+                } else {
+                    $query->where('data->notification_for', $currentMode)
+                          ->orWhere('type', 'like', "%{$currentMode}%")
+                          ->orWhereNull('data->notification_for');
+                }
+            })
+            ->count();
+    }
+
+    /**
+     * Create employee-specific notifications
+     */
+    public function createEmployeeNotification($employeeId, $type, $title, $message, $data = null)
+    {
+        // Ensure notification is marked for employee
+        if ($data && is_array($data)) {
+            $data['notification_for'] = 'employee';
+        } else {
+            $data = ['notification_for' => 'employee'];
+        }
+
+        return $this->createNotification($employeeId, $type, $title, $message, $data);
+    }
+
+    /**
+     * Create HR-specific notifications
+     */
+    public function createHRNotification($employeeId, $type, $title, $message, $data = null)
+    {
+        if ($data && is_array($data)) {
+            $data['notification_for'] = 'hr';
+        } else {
+            $data = ['notification_for' => 'hr'];
+        }
+
+        return $this->createNotification($employeeId, $type, $title, $message, $data);
+    }
+
+    /**
+     * Create Department Head-specific notifications
+     */
+    public function createDeptHeadNotification($employeeId, $type, $title, $message, $data = null)
+    {
+        if ($data && is_array($data)) {
+            $data['notification_for'] = 'dept_head';
+        } else {
+            $data = ['notification_for' => 'dept_head'];
+        }
+
+        return $this->createNotification($employeeId, $type, $title, $message, $data);
+    }
+
+    /**
+     * Create Admin-specific notifications
+     */
+    public function createAdminNotification($employeeId, $type, $title, $message, $data = null)
+    {
+        if ($data && is_array($data)) {
+            $data['notification_for'] = 'admin';
+        } else {
+            $data = ['notification_for' => 'admin'];
+        }
+
+        return $this->createNotification($employeeId, $type, $title, $message, $data);
+    }
+
+    /**
+     * Create notification for HR when employee submits leave request
+     */
+    public function createHRLeaveSubmissionNotification($employeeId, $requestId, $leaveType, $dateFrom, $dateTo, $employeeName)
+    {
+        $hrUsers = User::where('role', 'hr')->get();
+        
+        $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
+        
+        $title = 'New Leave Request Submitted';
+        $message = "{$employeeName} has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires HR approval.";
+
+        $data = [
+            'request_id' => $requestId,
+            'leave_type' => $leaveType,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'employee_name' => $employeeName,
+            'employee_id' => $employeeId,
+        ];
+
+        $createdCount = 0;
+        foreach ($hrUsers as $hrUser) {
+            $hrEmployeeId = $this->getEmployeeIdFromUserId($hrUser->id);
+            if ($hrEmployeeId) {
+                $this->createHRNotification( // Use HR-specific method
+                    $hrEmployeeId,
+                    'leave_request_submission',
+                    $title,
+                    $message,
+                    $data
+                );
+                $createdCount++;
+            }
+        }
+
+        Log::info("Created {$createdCount} HR notifications for leave request ID: {$requestId}");
+        return $createdCount;
+    }
+
+    /**
+     * Create notification for Department Head when employee submits leave request
+     */
+    public function createDeptHeadLeaveSubmissionNotification($employeeId, $requestId, $leaveType, $dateFrom, $dateTo, $employeeName, $departmentId)
+    {
+        // Get department head for the employee's department
+        $deptHead = User::where('role', 'dept_head')
+            ->whereHas('employee', function($query) use ($departmentId) {
+                $query->where('department_id', $departmentId);
+            })
+            ->first();
+
+        if (!$deptHead) {
+            Log::warning("No department head found for department ID: {$departmentId}");
+            return null;
+        }
+
+        $deptHeadEmployeeId = $this->getEmployeeIdFromUserId($deptHead->id);
+        if (!$deptHeadEmployeeId) {
+            Log::error("Department head employee ID not found for user ID: {$deptHead->id}");
+            return null;
+        }
+
+        $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
+        
+        $title = 'New Leave Request in Your Department';
+        $message = "{$employeeName} from your department has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires your approval.";
+
+        $data = [
+            'request_id' => $requestId,
+            'leave_type' => $leaveType,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'employee_name' => $employeeName,
+            'employee_id' => $employeeId,
+            'department_id' => $departmentId,
+        ];
+
+        $notification = $this->createDeptHeadNotification( // Use Dept Head-specific method
+            $deptHeadEmployeeId,
+            'leave_request_submission',
+            $title,
+            $message,
+            $data
+        );
+
+        Log::info("Created department head notification for leave request ID: {$requestId}");
+        return $notification;
+    }
+
+    /**
+     * Create notification for Admin when department head submits leave request
+     */
+    public function createAdminDeptHeadLeaveSubmissionNotification($employeeId, $requestId, $leaveType, $dateFrom, $dateTo, $employeeName)
+    {
+        $adminUsers = User::where('role', 'admin')->get();
+        
+        $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
+        
+        $title = 'Department Head Leave Request Submitted';
+        $message = "{$employeeName} (Department Head) has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires Admin approval.";
+
+        $data = [
+            'request_id' => $requestId,
+            'leave_type' => $leaveType,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'employee_name' => $employeeName,
+            'employee_id' => $employeeId,
+            'is_dept_head_request' => true,
+        ];
+
+        $createdCount = 0;
+        foreach ($adminUsers as $adminUser) {
+            $adminEmployeeId = $this->getEmployeeIdFromUserId($adminUser->id);
+            if ($adminEmployeeId) {
+                $this->createAdminNotification( // Use Admin-specific method
+                    $adminEmployeeId,
+                    'leave_request_submission',
+                    $title,
+                    $message,
+                    $data
+                );
+                $createdCount++;
+            }
+        }
+
+        Log::info("Created {$createdCount} Admin notifications for department head leave request ID: {$requestId}");
+        return $createdCount;
+    }
+
+    /**
+     * Create comprehensive notifications for all parties when leave request is submitted
+     */
+    public function notifyLeaveRequestSubmission($leaveRequest)
+    {
+        try {
+            // Load relationships
+            $leaveRequest->load(['employee.department', 'employee.user', 'leaveType']);
+            
+            $employee = $leaveRequest->employee;
+            $employeeName = $employee->firstname . ' ' . $employee->lastname;
+            $leaveTypeName = $leaveRequest->leaveType->name;
+            $isDeptHead = $employee->user->role === 'dept_head';
+
+            $results = [];
+
+            if ($isDeptHead) {
+                // Department head submitting leave - notify Admin only
+                $results['admin'] = $this->createAdminDeptHeadLeaveSubmissionNotification(
+                    $employee->employee_id,
+                    $leaveRequest->id,
+                    $leaveTypeName,
+                    $leaveRequest->date_from,
+                    $leaveRequest->date_to,
+                    $employeeName
+                );
+            } else {
+                // Regular employee submitting leave - notify HR and Department Head
+                $results['hr'] = $this->createHRLeaveSubmissionNotification(
+                    $employee->employee_id,
+                    $leaveRequest->id,
+                    $leaveTypeName,
+                    $leaveRequest->date_from,
+                    $leaveRequest->date_to,
+                    $employeeName
+                );
+
+                if ($employee->department_id) {
+                    $results['dept_head'] = $this->createDeptHeadLeaveSubmissionNotification(
+                        $employee->employee_id,
+                        $leaveRequest->id,
+                        $leaveTypeName,
+                        $leaveRequest->date_from,
+                        $leaveRequest->date_to,
+                        $employeeName,
+                        $employee->department_id
+                    );
+                }
+            }
+
+            Log::info("Leave request submission notifications created", [
+                'request_id' => $leaveRequest->id,
+                'employee_id' => $employee->employee_id,
+                'is_dept_head' => $isDeptHead,
+                'results' => $results
+            ]);
+
+            return $results;
+
+        } catch (\Exception $e) {
+            Log::error('Error creating leave request submission notifications: ' . $e->getMessage(), [
+                'leave_request_id' => $leaveRequest->id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
 }

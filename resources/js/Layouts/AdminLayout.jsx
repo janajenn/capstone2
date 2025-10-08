@@ -1,8 +1,10 @@
 // resources/js/Layouts/AdminLayout.jsx
 import { useState } from 'react';
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, router } from '@inertiajs/react';
 import PageTransition from '@/Components/PageTransition';
 import RoleSwitchButton from '@/Components/RoleSwitchButton';
+import AdminNotificationDropdown from '@/Components/AdminNotificationDropdown';
+import Swal from 'sweetalert2';
 import {
     HomeIcon,
     UserGroupIcon,
@@ -26,6 +28,33 @@ export default function AdminLayout({ children }) {
     const [mode, setMode] = useState("admin");
 
     const toggleSidebar = () => setCollapsed(!collapsed);
+
+    const handleLogout = () => {
+        Swal.fire({
+            title: 'Confirm Logout',
+            text: "Are you sure you want to log out of your admin account?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, Logout',
+            cancelButtonText: 'Cancel',
+            background: '#ffffff',
+            customClass: {
+                popup: 'rounded-xl shadow-2xl',
+                title: 'text-xl font-semibold text-gray-800',
+                htmlContainer: 'text-gray-600',
+                confirmButton: 'px-6 py-2 rounded-lg font-medium',
+                cancelButton: 'px-6 py-2 rounded-lg font-medium border border-gray-300'
+            },
+            buttonsStyling: false,
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.post('/logout');
+            }
+        });
+    };
 
     return (
         <div className="flex min-h-screen bg-gray-50">
@@ -161,20 +190,18 @@ export default function AdminLayout({ children }) {
 
                     {/* Logout */}
                     <div className="mt-auto pt-3 border-t border-gray-700">
-                        <Link
-                            href="/logout"
-                            method="post"
-                            as="button"
+                        <button
+                            onClick={handleLogout}
                             className="flex items-center w-full p-3 rounded-lg hover:bg-red-600/20 text-red-100 hover:text-white transition-all duration-200 group"
                         >
                             <XMarkIcon className="h-5 w-5 flex-shrink-0" />
                             {!collapsed && <span className="ml-3">Logout</span>}
                             {collapsed && (
-                                <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                <div className="absolute left-full ml-2 px-2 py-1 bg-red-600 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
                                     Logout
                                 </div>
                             )}
-                        </Link>
+                        </button>
                     </div>
                 </nav>
             </div>
@@ -184,11 +211,15 @@ export default function AdminLayout({ children }) {
                 {/* Header */}
                 <header className="bg-white shadow-sm z-10 sticky top-0">
                     <div className="flex items-center justify-between px-6 py-3">
-                        <h2 className="text-lg font-semibold text-gray-800">
-                            Welcome, {props.auth.user.name}
-                        </h2>
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-800">
+                                Welcome, {props.auth.user.name}
+                            </h2>
+                            <p className="text-sm text-gray-500">Admin Dashboard</p>
+                        </div>
                         <div className="flex items-center space-x-4">
-                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-800">
+                            <AdminNotificationDropdown />
+                            <span className="text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-800">
                                 {mode === "admin" ? "Admin Mode" : "Employee Mode"}
                             </span>
                         </div>

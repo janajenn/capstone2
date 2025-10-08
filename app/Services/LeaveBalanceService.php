@@ -64,9 +64,13 @@ class LeaveBalanceService
 
                 // Check if balance is sufficient
                 if ($leaveBalance->balance < $workingDays) {
-                    Log::error("❌ Insufficient balance: {$leaveBalance->balance} available, {$workingDays} required");
-                    throw new \Exception("Insufficient {$leaveRequest->leaveType->name} balance. " .
-                                       "Available: {$leaveBalance->balance} days, Required: {$workingDays} days");
+                    Log::warning("⚠️ Insufficient balance: {$leaveBalance->balance} available, {$workingDays} required - returning insufficient balance result");
+                    return [
+                        'success' => false,
+                        'message' => "Insufficient {$leaveRequest->leaveType->name} balance",
+                        'available_balance' => $leaveBalance->balance,
+                        'required_days' => $workingDays
+                    ];
                 }
 
                 // Ensure balance doesn't go negative (additional safety check)
@@ -85,7 +89,12 @@ class LeaveBalanceService
                 $this->createBalanceLog($leaveRequest, $leaveTypeCode, $workingDays, $leaveBalance);
 
                 Log::info('🎉 LEAVE BALANCE SERVICE COMPLETED SUCCESSFULLY');
-                return true;
+                return [
+                    'success' => true,
+                    'message' => "Successfully deducted {$workingDays} days from {$leaveRequest->leaveType->name} balance",
+                    'days_deducted' => $workingDays,
+                    'new_balance' => $leaveBalance->balance
+                ];
             });
         } catch (\Exception $e) {
             Log::error('💥 Exception in LeaveBalanceService: ' . $e->getMessage());

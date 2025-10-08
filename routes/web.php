@@ -9,7 +9,7 @@ use App\Models\User;
 use App\Models\LeaveCredit;
 use App\Http\Controllers\Employee\EmployeeController;
 use App\Http\Controllers\DeptHead\DeptHeadController;
-
+use App\Http\Controllers\HR\AttendanceImportController;
 use App\Http\Controllers\Admin\AdminController;
 
 
@@ -50,6 +50,7 @@ Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
 // Group all role-based dashboards under auth middleware
 Route::prefix('admin')->middleware(['role:admin'])->group(function () {
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+    Route::get('/leave-requests/{id}', [AdminController::class, 'showLeaveRequest'])->name('admin.leave-requests.show');
     Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve'])->name('admin.leave-requests.approve');
     Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject'])->name('admin.leave-requests.reject');
     Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests'])->name('admin.updated-requests');
@@ -65,6 +66,12 @@ Route::prefix('admin')->middleware(['role:admin'])->group(function () {
     Route::get('/leave-requests', [AdminController::class, 'leaveRequests'])
     ->name('admin.leave-requests.index');
 
+
+    //notification routes
+    Route::get('/notifications', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'index'])->name('admin.notifications');
+    Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAsRead'])->name('admin.notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAllAsRead'])->name('admin.notifications.mark-all-read');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'getUnreadCount'])->name('admin.notifications.unread-count');
     
 });
 
@@ -139,8 +146,36 @@ Route::get('/hr/credit-conversions/{id}', [HRController::class, 'showCreditConve
 Route::post('/hr/credit-conversions/{id}/approve', [HRController::class, 'approveCreditConversion'])->name('hr.credit-conversions.approve');
 Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectCreditConversion'])->name('hr.credit-conversions.reject');
 
+    // Attendance Import Routes (HR)
+    Route::get('/hr/attendance/import', [AttendanceImportController::class, 'index'])->name('hr.attendance.import');
+    Route::post('/hr/attendance/import', [AttendanceImportController::class, 'import'])->name('hr.attendance.import.process');
+    Route::get('/hr/attendance/template', [AttendanceImportController::class, 'downloadTemplate'])->name('hr.attendance.template');
+    Route::get('/hr/attendance/logs', [AttendanceImportController::class, 'attendanceLogs'])->name('hr.attendance.logs.index');
+    Route::get('/hr/attendance/logs/api', [AttendanceImportController::class, 'getAttendanceLogs'])->name('hr.attendance.logs');
+    Route::get('/hr/attendance/logs/employee/{employeeId}', [AttendanceImportController::class, 'viewEmployeeLogs'])->name('hr.attendance.logs.employee');
+    Route::delete('/hr/attendance/logs/{id}', [AttendanceImportController::class, 'deleteLog'])->name('hr.attendance.logs.delete');
+    Route::post('/hr/attendance/logs/bulk-delete', [AttendanceImportController::class, 'bulkDelete'])->name('hr.attendance.logs.bulk-delete');
 
+
+     //notification routes - FIXED: Add /hr prefix
+     Route::get('/hr/notifications', [\App\Http\Controllers\HR\HRNotificationController::class, 'index'])->name('hr.notifications');
+     Route::post('/hr/notifications/{id}/mark-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAsRead'])->name('hr.notifications.mark-read');
+     Route::post('/hr/notifications/mark-all-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark-all-read');
+     Route::get('/hr/notifications/unread-count', [\App\Http\Controllers\HR\HRNotificationController::class, 'getUnreadCount'])->name('hr.notifications.unread-count');
+
+
+
+     // Leave Recordings Routes
+Route::get('/hr/leave-recordings', [HRController::class, 'leaveRecordings'])->name('hr.leave-recordings');
+Route::get('/hr/leave-recordings/{employee}', [HRController::class, 'showEmployeeRecordings'])->name('hr.leave-recordings.employee');
+Route::put('/hr/leave-recordings/{id}/remarks', [HRController::class, 'updateRemarks'])->name('hr.leave-recordings.update-remarks');
+
+
+
+Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduction']);
 });
+
+
 
 
 
@@ -169,6 +204,14 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
         
         // routes/web.php
     Route::get('/dept-head/chart-data', [DeptHeadController::class, 'getChartDataByYear'])->name('dept_head.chart-data');
+
+    //notification routes
+
+   //notification routes - FIXED: Add /dept-head prefix
+   Route::get('/dept-head/notifications', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'index'])->name('dept-head.notifications');
+   Route::post('/dept-head/notifications/{id}/mark-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAsRead'])->name('dept-head.notifications.mark-read');
+   Route::post('/dept-head/notifications/mark-all-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAllAsRead'])->name('dept-head.notifications.mark-all-read');
+   Route::get('/dept-head/notifications/unread-count', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'getUnreadCount'])->name('dept-head.notifications.unread-count');
         
     });
     //Route::middleware(['auth', 'role:dept_head'])->group(function () {
@@ -234,6 +277,35 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
 
         // Leave Balances Routes
         Route::get('/employee/leave-balances', [EmployeeController::class, 'leaveBalances'])->name('employee.leave-balances');
+        
+        // Attendance Logs Routes
+        Route::get('/employee/attendance-logs', [\App\Http\Controllers\Employee\AttendanceLogsController::class, 'index'])->name('employee.attendance-logs');
+        
+        // Debug route to check attendance logs
+        Route::get('/employee/debug-attendance', function() {
+            $user = auth()->user();
+            $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
+            
+            if (!$employee) {
+                return response()->json(['error' => 'Employee not found']);
+            }
+            
+            $logs = \App\Models\AttendanceLog::where('employee_id', $employee->employee_id)->get();
+            
+            return response()->json([
+                'employee_id' => $employee->employee_id,
+                'total_logs' => $logs->count(),
+                'logs' => $logs->take(5)->map(function($log) {
+                    return [
+                        'id' => $log->id,
+                        'work_date' => $log->work_date,
+                        'time_in' => $log->time_in,
+                        'time_out' => $log->time_out,
+                        'absent' => $log->absent
+                    ];
+                })
+            ]);
+        })->name('employee.debug-attendance');
     });
 });
 

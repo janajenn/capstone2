@@ -175,30 +175,7 @@ export default function LeaveFormAdvanced({ leaveRequest, employee, approvers, l
 
                 <div className="form-title">APPLICATION FOR LEAVE</div>
 
-                {/* Form Header Table - Exact format from image */}
-                <table className="form-header-table">
-                    <tbody>
-                        <tr>
-                            <td className="left-section">
-                                Office/Department:
-                            </td>
-                            <td className="right-section">
-                                Name: (Last) (First) (Middle)
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="left-section">
-                                Date of filing:
-                            </td>
-                            <td className="middle-section">
-                                Position:
-                            </td>
-                            <td className="right-section">
-                                Salary:
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+               
 
                 {/* Basic Information Table - Populated data */}
                 <table className="form-info-table">

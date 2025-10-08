@@ -16,9 +16,11 @@ class LeaveCredit extends Model
         'vl_balance',
         'last_updated',
         'remarks',
+        'imported_at',
     ];
     protected $casts = [
         'last_updated' => 'datetime',
+        'imported_at' => 'date'
     ];
 
 

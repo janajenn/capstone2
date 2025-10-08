@@ -123,23 +123,7 @@ export default function DelegationIndex() {
         <AdminLayout>
             <Head title="Delegation Management" />
             
-            <div className="py-6">
-                <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    {/* Simple Debug Information - Safe version */}
-                    <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="text-sm">
-                            <p><strong>Current Status:</strong></p>
-                            <p>Time: {currentTime.toLocaleString()}</p>
-                            <p>Active: {activeDelegations.length} | Scheduled: {futureDelegations.length} | Ended: {pastDelegations.length}</p>
-                            {delegations.map(d => (
-                                <div key={d.id} className="mt-1 text-xs">
-                                    Delegation {d.id}: {formatDate(d.start_date)} to {formatDate(d.end_date)} - 
-                                    Status: {d.status} | Active: {d.is_active ? 'Yes' : 'No'} | Future: {d.is_future ? 'Yes' : 'No'}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
+          
                     {/* Flash Messages */}
                     {flash.success && (
                         <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -557,8 +541,7 @@ export default function DelegationIndex() {
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
+             
         </AdminLayout>
     );
 }

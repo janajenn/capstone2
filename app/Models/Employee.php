@@ -75,9 +75,9 @@ public function leaveCredits()
     }
 
     public function leaveCreditLogs()
-{
-    return $this->hasMany(LeaveCreditLog::class);
-}
+    {
+        return $this->hasMany(LeaveCreditLog::class, 'employee_id', 'employee_id');
+    }
 
     public function notifications()
     {
@@ -92,5 +92,10 @@ public function leaveCredits()
     public function leaveRecalls()
     {
         return $this->hasMany(LeaveRecall::class, 'employee_id', 'employee_id');
+    }
+
+    public function attendanceLogs()
+    {
+        return $this->hasMany(AttendanceLog::class, 'employee_id', 'employee_id');
     }
 }

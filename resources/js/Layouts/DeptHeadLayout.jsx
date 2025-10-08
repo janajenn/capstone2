@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Link, usePage, router } from '@inertiajs/react';
 import PageTransition from '@/Components/PageTransition';
 import RoleSwitchButton from '@/Components/RoleSwitchButton';
+import DeptHeadNotificationDropdown from '@/Components/DeptHeadNotificationDropdown';
+import Swal from 'sweetalert2';
 import {
     HomeIcon,
     DocumentTextIcon,
@@ -25,22 +27,52 @@ export default function DeptHeadLayout({ children }) {
 
     const toggleSidebar = () => setCollapsed(!collapsed);
 
-    // Helper function to check if a link is active
     const isActiveLink = (href) => {
         return url.startsWith(href);
     };
 
-    // Navigation items for Dept Head mode
+    const handleLogout = () => {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: "You will be logged out of your account.",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, Logout',
+            cancelButtonText: 'Cancel',
+            background: '#ffffff',
+            backdrop: `
+                rgba(0, 0, 0, 0.4)
+                url("/images/nyan-cat.gif")
+                left top
+                no-repeat
+            `,
+            customClass: {
+                popup: 'rounded-xl shadow-2xl',
+                title: 'text-xl font-semibold text-gray-800',
+                htmlContainer: 'text-gray-600',
+                confirmButton: 'px-6 py-2 rounded-lg font-medium',
+                cancelButton: 'px-6 py-2 rounded-lg font-medium'
+            },
+            buttonsStyling: false,
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.post('/logout');
+            }
+        });
+    };
+
     const deptHeadNavigation = [
         { href: '/dept-head/dashboard', label: 'Dashboard', icon: HomeIcon },
         { href: '/dept-head/leave-requests', label: 'Leave Approvals', icon: DocumentTextIcon },
         { href: '/dept-head/employees', label: 'Team Management', icon: UserGroupIcon },
         { href: '/dept-head/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
-        { href: '/dept-head/recall-requests', label: 'Recall Requests', icon: ArrowPathIcon },
-        { href: '/dept-head/chart-data', label: 'Analytics', icon: ChartBarIcon },
-    ];
+        // { href: '/dept-head/recall-requests', label: 'Recall Requests', icon: ArrowPathIcon },
+    //     { href: '/dept-head/chart-data', label: 'Analytics', icon: ChartBarIcon },
+     ];
 
-    // Navigation items for Employee mode
     const employeeNavigation = [
         { href: '/employee/dashboard', label: 'Dashboard', icon: HomeIcon },
         { href: '/employee/my-leave-requests', label: 'My Leave Requests', icon: DocumentTextIcon },
@@ -57,7 +89,6 @@ export default function DeptHeadLayout({ children }) {
                 <div className="flex items-center justify-between p-4 border-b border-dept-green/30">
                     {!collapsed ? (
                         <div className="flex items-center space-x-3">
-                            {/* Logo */}
                             <div className="w-9 h-9 bg-dept-green rounded-lg flex items-center justify-center">
                                 <UserGroupIcon className="h-5 w-5 text-white" />
                             </div>
@@ -66,7 +97,6 @@ export default function DeptHeadLayout({ children }) {
                             </h1>
                         </div>
                     ) : (
-                        // Show only logo when collapsed
                         <div className="flex justify-center w-full">
                             <div className="w-9 h-9 bg-dept-green rounded-lg flex items-center justify-center">
                                 <UserGroupIcon className="h-5 w-5 text-white" />
@@ -130,20 +160,18 @@ export default function DeptHeadLayout({ children }) {
 
                     {/* Logout */}
                     <div className="mt-auto pt-4 border-t border-dept-green/30">
-                        <Link
-                            href="/logout"
-                            method="post"
-                            as="button"
+                        <button
+                            onClick={handleLogout}
                             className="flex items-center w-full p-3 rounded-lg hover:bg-red-600/20 text-red-200 hover:text-white transition-all duration-200 group relative"
                         >
                             <XMarkIcon className="h-5 w-5 flex-shrink-0" />
                             {!collapsed && <span className="ml-3">Logout</span>}
                             {collapsed && (
-                                <div className="absolute left-full ml-2 px-2 py-1 bg-dept-green text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                                <div className="absolute left-full ml-2 px-2 py-1 bg-red-600 text-white rounded-md text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
                                     Logout
                                 </div>
                             )}
-                        </Link>
+                        </button>
                     </div>
                 </nav>
             </div>
@@ -157,9 +185,10 @@ export default function DeptHeadLayout({ children }) {
                             <h2 className="text-lg font-semibold text-gray-800">
                                 Welcome, {props.auth.user.name}
                             </h2>
-                            
+                            <p className="text-sm text-gray-500">Department Head Dashboard</p>
                         </div>
                         <div className="flex items-center space-x-4">
+                            <DeptHeadNotificationDropdown />
                             <span className="text-xs font-medium px-3 py-1 rounded-full bg-dept-green text-white">
                                 {mode === "dept_head" ? "Department Head" : "Employee Mode"}
                             </span>

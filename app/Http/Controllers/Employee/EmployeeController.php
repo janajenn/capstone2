@@ -15,10 +15,24 @@ use Inertia\Inertia;
 use Carbon\Carbon;
 use App\Models\User;
 use Illuminate\Pagination\Paginator;
+use App\Services\NotificationService;
+use App\Models\LeaveApproval;
+
+
 
 
 class EmployeeController extends Controller
 {
+
+
+    protected $notificationService;
+
+    public function __construct(NotificationService $notificationService)
+    {
+        $this->notificationService = $notificationService;
+    }
+
+
  public function dashboard(Request $request)
 {
     $user = $request->user()->load(['employee.department']);
@@ -267,6 +281,36 @@ public function submitLeaveRequest(Request $request)
             'field_value' => $detail['field_value'] ?? null,
         ]);
     }
+
+    // 🔔 Send notifications to HR, Department Head, and Admin
+        try {
+            $this->notificationService->notifyLeaveRequestSubmission($leaveRequest);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send leave request notifications: ' . $e->getMessage());
+        }
+
+        // 🔔 Create employee notification for the requester
+        try {
+            $employeeName = $user->employee->firstname . ' ' . $user->employee->lastname;
+            $leaveTypeName = $leaveRequest->leaveType->name;
+            $dateFromFormatted = \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y');
+            $dateToFormatted = \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y');
+
+            $this->notificationService->createEmployeeNotification(
+                $employeeId,
+                'leave_request_submitted',
+                'Leave Request Submitted',
+                "Your {$leaveTypeName} leave request from {$dateFromFormatted} to {$dateToFormatted} has been submitted successfully and is pending approval.",
+                [
+                    'request_id' => $leaveRequest->id,
+                    'leave_type' => $leaveTypeName,
+                    'date_from' => $leaveRequest->date_from,
+                    'date_to' => $leaveRequest->date_to,
+                ]
+            );
+        } catch (\Exception $e) {
+            \Log::error('Failed to create employee notification: ' . $e->getMessage());
+        }
 
     return redirect()->route('employee.my-leave-requests')->with('success', 'Leave request submitted successfully!');
 }

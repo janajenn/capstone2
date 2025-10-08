@@ -1,9 +1,10 @@
 // resources/js/Layouts/EmployeeLayout.jsx
 import { useState } from 'react';
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, router } from '@inertiajs/react';
 import NotificationDropdown from '@/Components/NotificationDropdown';
 import PageTransition from '@/Components/PageTransition';
 import RoleSwitchButton from '@/Components/RoleSwitchButton';
+import Swal from 'sweetalert2';
 import {
     HomeIcon,
     DocumentTextIcon,
@@ -14,9 +15,10 @@ import {
     ChevronLeftIcon,
     ChevronRightIcon,
     XMarkIcon,
-    ClockIcon
-
+    ClockIcon,
+    ClockIcon as AttendanceIcon
 } from '@heroicons/react/24/outline';
+
 export default function EmployeeLayout({ children }) {
     const [collapsed, setCollapsed] = useState(false);
     const { auth } = usePage().props;
@@ -24,6 +26,33 @@ export default function EmployeeLayout({ children }) {
 
     const toggleSidebar = () => {
         setCollapsed(!collapsed);
+    };
+
+    const handleLogout = () => {
+        Swal.fire({
+            title: 'Confirm Logout',
+            text: "Are you sure you want to log out of your account?",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#3085d6',
+            confirmButtonText: 'Yes, Logout',
+            cancelButtonText: 'Cancel',
+            background: '#ffffff',
+            customClass: {
+                popup: 'rounded-xl shadow-2xl',
+                title: 'text-xl font-semibold text-gray-800',
+                htmlContainer: 'text-gray-600',
+                confirmButton: 'px-6 py-2 rounded-lg font-medium',
+                cancelButton: 'px-6 py-2 rounded-lg font-medium border border-gray-300'
+            },
+            buttonsStyling: false,
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.post('/logout');
+            }
+        });
     };
 
     return (
@@ -77,36 +106,40 @@ export default function EmployeeLayout({ children }) {
                         {!collapsed && <span>Credit Conversion</span>}
                     </Link>
                     <Link 
-    href="/employee/credit-conversions" 
-    className="flex items-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
->
-    <ClockIcon className="h-5 w-5" />
-    {!collapsed && <span>Conversion History</span>}
-</Link>
+                        href="/employee/credit-conversions" 
+                        className="flex items-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
+                    >
+                        <ClockIcon className="h-5 w-5" />
+                        {!collapsed && <span>Conversion History</span>}
+                    </Link>
 
                     <Link 
-    href={route('employee.leave-balances')} 
-    className="flex items-center text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-50"
->
-    <ChartBarIcon className="h-5 w-5 mr-2" />
-    {!collapsed && <span>Leave Balances</span>}
-</Link>
-
+                        href="/employee/attendance-logs" 
+                        className="flex items-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-blue-50 text-gray-700 hover:text-blue-600"
+                    >
+                        <AttendanceIcon className="h-5 w-5" />
+                        {!collapsed && <span>Attendance Logs</span>}
+                    </Link>
+                    <Link 
+                        href={route('employee.leave-balances')} 
+                        className="flex items-center text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium hover:bg-blue-50"
+                    >
+                        <ChartBarIcon className="h-5 w-5 mr-2" />
+                        {!collapsed && <span>Leave Balances</span>}
+                    </Link>
 
                     {/* Role Switch Button - Only show for non-employee users */}
                     <RoleSwitchButton collapsed={collapsed} currentMode="employee" />
 
                     {/* Logout */}
                     <div className="mt-auto pt-3 border-t border-gray-100">
-                        <Link
-                            href="/logout"
-                            method="post"
-                            as="button"
+                        <button
+                            onClick={handleLogout}
                             className="w-full flex items-center space-x-2 p-3 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-red-50 text-red-600 hover:text-red-700"
                         >
                             <XMarkIcon className="h-5 w-5" />
                             {!collapsed && <span>Logout</span>}
-                        </Link>
+                        </button>
                     </div>
                 </nav>
             </div>

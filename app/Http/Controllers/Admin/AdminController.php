@@ -278,23 +278,45 @@ private function canBeRecalled(LeaveRequest $request)
                     // Process SL/VL leave types using LeaveCreditService
                     $leaveCreditService = new LeaveCreditService();
                     $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
-                    \Log::info("✅ Leave credits deducted for SL/VL leave type: {$leaveTypeCode}");
+                    
+                    // Check if deduction was successful
+                    if (is_array($result) && isset($result['success']) && !$result['success']) {
+                        // If insufficient balance, allow approval but mark as days without pay
+                        \Log::info("⚠️ Insufficient SL/VL balance for leave type: {$leaveTypeCode}. Request approved as days without pay.");
+                        \Log::info("📊 Available balance: {$result['available_balance']}, Required: {$result['required_days']}");
+                        
+                        // Update the leave request to reflect days without pay
+                        $leaveRequest->update([
+                            'days_with_pay' => 0,
+                            'days_without_pay' => $this->calculateWorkingDays($leaveRequest->date_from, $leaveRequest->date_to)
+                        ]);
+                    } else if (is_array($result) && isset($result['success']) && $result['success']) {
+                        \Log::info("✅ Leave credits deducted for SL/VL leave type: {$leaveTypeCode}");
+                        \Log::info("📊 Days deducted: {$result['days_deducted']}, New balance: {$result['new_balance']}");
+                    } else {
+                        \Log::info("✅ Leave credits deducted for SL/VL leave type: {$leaveTypeCode} (legacy format)");
+                    }
                 } else {
                     // Process other leave types using LeaveBalanceService
                     $leaveBalanceService = new LeaveBalanceService();
                     $result = $leaveBalanceService->deductLeaveBalance($leaveRequest);
                     
-                    // FIX: Check if result is an array before accessing array keys
+                    // Check if deduction was successful
                     if (is_array($result) && isset($result['success']) && !$result['success']) {
-                        // If balance deduction fails, throw an exception to rollback the transaction
-                        throw new \Exception($result['message'] ?? "Failed to deduct leave balance for {$leaveTypeCode}");
-                    }
-                    
-                    // If result is not an array (e.g., returns true for success), log success
-                    if ($result === true) {
-                        \Log::info("✅ Leave balance deducted successfully for leave type: {$leaveTypeCode}");
-                    } else if (is_array($result) && $result['success']) {
+                        // If insufficient balance, allow approval but mark as days without pay
+                        \Log::info("⚠️ Insufficient balance for leave type: {$leaveTypeCode}. Request approved as days without pay.");
+                        \Log::info("📊 Available balance: {$result['available_balance']}, Required: {$result['required_days']}");
+                        
+                        // Update the leave request to reflect days without pay
+                        $leaveRequest->update([
+                            'days_with_pay' => 0,
+                            'days_without_pay' => $this->calculateWorkingDays($leaveRequest->date_from, $leaveRequest->date_to)
+                        ]);
+                    } else if (is_array($result) && isset($result['success']) && $result['success']) {
                         \Log::info("✅ Leave balance deducted for leave type: {$leaveTypeCode}");
+                        \Log::info("📊 Days deducted: {$result['days_deducted']}, New balance: {$result['new_balance']}");
+                    } else {
+                        \Log::info("✅ Leave balance deducted for leave type: {$leaveTypeCode} (legacy format)");
                     }
                 }
             }
@@ -310,6 +332,52 @@ private function canBeRecalled(LeaveRequest $request)
         return redirect()->back()->with('error', 'Error approving leave: ' . $e->getMessage());
     }
 }
+
+// Helper method to calculate working days
+private function calculateWorkingDays($startDate, $endDate)
+{
+    $start = new \DateTime($startDate);
+    $end = new \DateTime($endDate);
+    $workingDays = 0;
+
+    for ($date = clone $start; $date <= $end; $date->modify('+1 day')) {
+        $dayOfWeek = $date->format('N');
+        if ($dayOfWeek < 6) { // Monday to Friday
+            $workingDays++;
+        }
+    }
+
+    return $workingDays;
+}
+
+// Show leave request details for Admin
+public function showLeaveRequest($id)
+{
+    $leaveRequest = LeaveRequest::with([
+            'leaveType',
+            'employee.department',
+            'employee.user',
+            'details',
+            'approvals.approver',
+            'employee.leaveCreditLogs' => function($query) {
+                $query->orderBy('created_at', 'desc');
+            }
+        ])
+        ->findOrFail($id);
+
+    // Calculate working days (excluding weekends)
+    $workingDays = $this->calculateWorkingDays($leaveRequest->date_from, $leaveRequest->date_to);
+
+    // Get leave balance information if available
+    $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
+
+    return Inertia::render('Admin/ShowLeaveRequest', [
+        'leaveRequest' => $leaveRequest,
+        'workingDays' => $workingDays,
+        'leaveCredit' => $leaveCredit,
+    ]);
+}
+
 /**
  * Check if all required approvals are complete for a leave request
  */

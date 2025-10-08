@@ -20,7 +20,7 @@ class CreditConversionService
         // Validate employee exists
         $employee = Employee::findOrFail($employeeId);
         
-        // Check if employee has sufficient leave credits using LeaveCredit table
+        // Check if employee has at least 10 leave credits
         $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
         
         if (!$leaveCredit) {
@@ -35,9 +35,17 @@ class CreditConversionService
             $availableBalance = $leaveCredit->vl_balance ?? 0;
         }
         
-        // Check if the specific leave type has more than 15 days
-        if ($availableBalance <= 15) {
-            throw new Exception('Employee must have more than 15 days of ' . $leaveType . ' credits to monetize.');
+        // NEW RULE: Minimum 10 credits required
+        if ($availableBalance < 10) {
+            throw new Exception('You need at least 10 leave credits to request monetization.');
+        }
+        
+        // NEW RULE: Minimum conversion is 10 days (even if requesting fewer)
+        $effectiveCredits = max($creditsRequested, 10);
+        
+        // Check if requested credits exceed available balance
+        if ($effectiveCredits > $availableBalance) {
+            throw new Exception('Requested credits exceed available balance for ' . $leaveType . '.');
         }
         
         // Check if employee has already converted maximum days this year
@@ -46,23 +54,18 @@ class CreditConversionService
             ->forYear()
             ->sum('credits_requested');
             
-        if (($totalConvertedThisYear + $creditsRequested) > 10) {
+        if (($totalConvertedThisYear + $effectiveCredits) > 10) {
             throw new Exception('Maximum of 10 days can be monetized per year. Already converted: ' . $totalConvertedThisYear . ' days.');
         }
         
-        // Check if requested credits exceed available balance for this leave type
-        if ($creditsRequested > $availableBalance) {
-            throw new Exception('Requested credits exceed available balance for ' . $leaveType . '.');
-        }
-        
-        // Calculate cash equivalent
-        $equivalentCash = $this->calculateCashEquivalent($employee->monthly_salary, $creditsRequested);
+        // Calculate cash equivalent using new formula
+        $equivalentCash = $this->calculateCashEquivalent($employee->monthly_salary, $effectiveCredits);
         
         // Create conversion request
         $conversion = CreditConversion::create([
             'employee_id' => $employeeId,
             'leave_type' => $leaveType,
-            'credits_requested' => $creditsRequested,
+            'credits_requested' => $effectiveCredits,
             'equivalent_cash' => $equivalentCash,
             'status' => 'pending',
             'submitted_at' => Carbon::now(),
@@ -70,6 +73,20 @@ class CreditConversionService
         ]);
         
         return $conversion;
+    }
+    
+    /**
+     * Calculate cash equivalent for leave credits using new formula
+     * cash_value = monthly_salary × 10 × 0.0481927
+     */
+    private function calculateCashEquivalent($monthlySalary, $creditsRequested)
+    {
+        // NEW FORMULA: monthly_salary × 10 × 0.0481927
+        // For minimum 10 days conversion
+        $cashValue = $monthlySalary * 10 * 0.0481927;
+        
+        // Round to 2 decimal places
+        return round($cashValue, 2);
     }
     
     /**
@@ -132,17 +149,6 @@ class CreditConversionService
     }
     
     /**
-     * Calculate cash equivalent for leave credits
-     */
-    private function calculateCashEquivalent($monthlySalary, $creditsRequested)
-    {
-        // Formula: (monthly_salary / 22) * credits_requested
-        // Assuming 22 working days per month
-        $dailyRate = $monthlySalary / 22;
-        return $dailyRate * $creditsRequested;
-    }
-    
-    /**
      * Get conversion statistics for an employee
      */
     public function getEmployeeConversionStats($employeeId, $year = null)
@@ -196,11 +202,11 @@ class CreditConversionService
             $availableBalance = $leaveCredit->vl_balance ?? 0;
         }
         
-        // Check if the specific leave type has more than 15 days
-        if ($availableBalance <= 15) {
+        // NEW RULE: Minimum 10 credits required
+        if ($availableBalance < 10) {
             return [
                 'eligible' => false,
-                'reason' => 'Insufficient ' . $leaveType . ' credits (more than 15 days required)',
+                'reason' => 'You need at least 10 leave credits to request monetization',
                 'available_balance' => $availableBalance
             ];
         }
@@ -224,5 +230,16 @@ class CreditConversionService
             'available_quota' => 10 - $totalConvertedThisYear,
             'reason' => 'Eligible for conversion'
         ];
+    }
+
+    /**
+     * Calculate potential cash value for display
+     */
+    public function calculatePotentialCash($monthlySalary)
+    {
+        // Calculate using the new formula: monthly_salary × 10 × 0.0481927
+        $cashValue = $monthlySalary * 10 * 0.0481927;
+        
+        return round($cashValue, 2);
     }
 }

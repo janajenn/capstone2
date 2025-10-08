@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Employee;
 use App\Http\Controllers\Controller;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 
 class NotificationController extends Controller
 {
@@ -17,7 +16,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * Get notifications for the logged-in employee
+     * Get notifications for employee mode
      */
     public function index(Request $request)
     {
@@ -25,11 +24,15 @@ class NotificationController extends Controller
         $employeeId = $user->employee?->employee_id;
 
         if (!$employeeId) {
-            abort(400, 'Employee profile not found for user.');
+            return response()->json([
+                'notifications' => [],
+                'unread_count' => 0,
+            ]);
         }
 
-        $notifications = $this->notificationService->getNotifications($employeeId, 20);
-        $unreadCount = $this->notificationService->getUnreadCount($employeeId);
+        // Use 'employee' mode filtering
+        $notifications = $this->notificationService->getNotificationsByMode($employeeId, 'employee', 20);
+        $unreadCount = $this->notificationService->getUnreadCountByMode($employeeId, 'employee');
 
         return response()->json([
             'notifications' => $notifications,
@@ -61,13 +64,13 @@ class NotificationController extends Controller
                 'notification_id' => $id,
                 'employee_id' => $employeeId,
                 'user_id' => $user->id,
-                'session_id' => session()->getId()
             ]);
 
             $success = $this->notificationService->markAsRead($id, $employeeId);
 
             if ($success) {
-                $unreadCount = $this->notificationService->getUnreadCount($employeeId);
+                // Get updated unread count for employee mode
+                $unreadCount = $this->notificationService->getUnreadCountByMode($employeeId, 'employee');
                 \Log::info('Notification marked as read successfully', [
                     'notification_id' => $id,
                     'new_unread_count' => $unreadCount
@@ -90,7 +93,6 @@ class NotificationController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'notification_id' => $id,
                 'user_id' => $request->user()?->id,
-                'session_id' => session()->getId()
             ]);
             
             return response()->json([
@@ -124,7 +126,6 @@ class NotificationController extends Controller
             \Log::info('Marking all notifications as read', [
                 'employee_id' => $employeeId,
                 'user_id' => $user->id,
-                'session_id' => session()->getId()
             ]);
 
             $this->notificationService->markAllAsRead($employeeId);
@@ -138,7 +139,6 @@ class NotificationController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'user_id' => $request->user()?->id,
-                'session_id' => session()->getId()
             ]);
             
             return response()->json([
@@ -161,9 +161,10 @@ class NotificationController extends Controller
             return response()->json(['unread_count' => 0]);
         }
 
-        $unreadCount = $this->notificationService->getUnreadCount($employeeId);
+        // Use 'employee' mode filtering
+        $unreadCount = $this->notificationService->getUnreadCountByMode($employeeId, 'employee');
 
-        \Log::info('Getting unread count', [
+        \Log::info('Getting unread count for employee mode', [
             'employee_id' => $employeeId,
             'user_id' => $user->id,
             'unread_count' => $unreadCount
@@ -184,13 +185,15 @@ class NotificationController extends Controller
             return response()->json(['error' => 'Employee profile not found for user.']);
         }
 
-        $allNotifications = $this->notificationService->getNotifications($employeeId, 50);
-        $unreadCount = $this->notificationService->getUnreadCount($employeeId);
+        // Get notifications for employee mode
+        $allNotifications = $this->notificationService->getNotificationsByMode($employeeId, 'employee', 50);
+        $unreadCount = $this->notificationService->getUnreadCountByMode($employeeId, 'employee');
         $readCount = $allNotifications->where('is_read', true)->count();
 
         return response()->json([
             'employee_id' => $employeeId,
             'user_id' => $user->id,
+            'mode' => 'employee',
             'total_notifications' => $allNotifications->count(),
             'unread_count' => $unreadCount,
             'read_count' => $readCount,
@@ -202,6 +205,7 @@ class NotificationController extends Controller
                     'is_read' => $notif->is_read,
                     'read_at' => $notif->read_at,
                     'created_at' => $notif->created_at,
+                    'data' => $notif->data ? json_decode($notif->data, true) : null,
                 ];
             })
         ]);

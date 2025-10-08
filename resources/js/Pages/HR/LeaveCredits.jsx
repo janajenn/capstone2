@@ -11,9 +11,11 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
     const [searchTerm, setSearchTerm] = useState(filters?.search || '');
     const searchInputRef = useRef(null);
 
-    const { data, setData, put, reset } = useForm({
+    // Use the form hook
+    const { data, setData, put, reset, processing } = useForm({
         sl_balance: '',
         vl_balance: '',
+        imported_at: '',
     });
 
     // Debounced search function
@@ -69,7 +71,9 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
     const clearAllFilters = () => {
         setSearchTerm('');
         setSelectedDepartment('');
-        searchInputRef.current.value = '';
+        if (searchInputRef.current) {
+            searchInputRef.current.value = '';
+        }
         router.get(route('hr.leave-credits'), {}, {
             preserveState: true,
             replace: true,
@@ -78,11 +82,40 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
     };
 
     const openModal = (employee) => {
-        setSelectedEmployee(employee);
-        setData({
-            sl_balance: employee.leave_credit?.sl_balance ?? 0,
-            vl_balance: employee.leave_credit?.vl_balance ?? 0,
+        console.log('Opening modal for employee:', {
+            employeeId: employee.employee_id,
+            employeeName: getFullName(employee),
+            leave_credit: employee.leave_credit,
+            imported_at: employee.leave_credit?.imported_at
         });
+        
+        setSelectedEmployee(employee);
+        
+        const leaveCredit = employee.leave_credit || {};
+        
+        // Convert the ISO date to YYYY-MM-DD format for the date input
+        const formatDateForInput = (dateString) => {
+            if (!dateString) return '';
+            
+            // If it's already in YYYY-MM-DD format, return as is
+            if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                return dateString;
+            }
+            
+            // If it's an ISO string like "2025-08-01T00:00:00.000000Z"
+            if (typeof dateString === 'string') {
+                return dateString.split('T')[0]; // Takes "2025-08-01" from "2025-08-01T00:00:00.000000Z"
+            }
+            
+            return '';
+        };
+        
+        setData({
+            sl_balance: leaveCredit.sl_balance ?? 0,
+            vl_balance: leaveCredit.vl_balance ?? 0,
+            imported_at: formatDateForInput(leaveCredit.imported_at),
+        });
+        
         setIsModalOpen(true);
     };
 
@@ -98,6 +131,14 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
         put(route('hr.leave-credits.update', selectedEmployee.employee_id), {
             onSuccess: () => {
                 closeModal();
+                
+                // Refresh the page data to get updated employee information
+                router.reload({ 
+                    only: ['employees'],
+                    preserveScroll: true,
+                    preserveState: true
+                });
+                
                 Swal.fire({
                     icon: 'success',
                     title: 'Success',
@@ -106,6 +147,14 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                     showConfirmButton: false
                 });
             },
+            onError: (errors) => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to update leave credits. Please try again.',
+                    confirmButtonText: 'OK'
+                });
+            }
         });
     };
 
@@ -233,9 +282,6 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                     </div>
                 )}
 
-
-                
-
                 {/* Filters Section */}
                 <div className="mb-6 bg-white rounded-xl shadow-sm p-4">
                     <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
@@ -323,65 +369,63 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                            
-
-{employees.data && employees.data.map((employee) => (
-    <tr 
-        key={employee.employee_id} 
-        className="hover:bg-gray-50 cursor-pointer"
-        onClick={() => router.visit(route('hr.leave-credits.show', employee.employee_id))}
-    >
-        <td className="px-6 py-4 whitespace-nowrap">
-            <div className="flex items-center">
-                <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="font-medium text-blue-800">
-                        {getInitials(employee)}
-                    </span>
-                </div>
-                <div className="ml-4">
-                    <div className="text-sm font-medium text-gray-900">
-                        {getFullName(employee)}
-                    </div>
-                    <div className="text-sm text-gray-500">{employee.position}</div>
-                </div>
-            </div>
-        </td>
-        <td className="px-6 py-4 whitespace-nowrap">
-            <div className="text-sm text-gray-900">
-                {employee.department?.name || 'No Department'}
-            </div>
-        </td>
-        <td className="px-6 py-4 whitespace-nowrap">
-            <div className="text-sm text-gray-900 font-medium">
-                {employee.leave_credit ? (
-                    employee.leave_credit.sl_balance
-                ) : (
-                    <span className="text-gray-400 italic">To be updated by HR</span>
-                )}
-            </div>
-        </td>
-        <td className="px-6 py-4 whitespace-nowrap">
-            <div className="text-sm text-gray-900 font-medium">
-                {employee.leave_credit ? (
-                    employee.leave_credit.vl_balance
-                ) : (
-                    <span className="text-gray-400 italic">To be updated by HR</span>
-                )}
-            </div>
-        </td>
-        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-            <button
-                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                onClick={(e) => {
-                    e.stopPropagation(); // Prevent row click when clicking button
-                    openModal(employee);
-                }}
-            >
-                Override
-            </button>
-        </td>
-    </tr>
-))}
+                                {employees.data && employees.data.map((employee) => (
+                                    <tr 
+                                        key={employee.employee_id} 
+                                        className="hover:bg-gray-50 cursor-pointer"
+                                        onClick={() => router.visit(route('hr.leave-credits.show', employee.employee_id))}
+                                    >
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex items-center">
+                                                <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                                    <span className="font-medium text-blue-800">
+                                                        {getInitials(employee)}
+                                                    </span>
+                                                </div>
+                                                <div className="ml-4">
+                                                    <div className="text-sm font-medium text-gray-900">
+                                                        {getFullName(employee)}
+                                                    </div>
+                                                    <div className="text-sm text-gray-500">{employee.position}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900">
+                                                {employee.department?.name || 'No Department'}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900 font-medium">
+                                                {employee.leave_credit ? (
+                                                    employee.leave_credit.sl_balance
+                                                ) : (
+                                                    <span className="text-gray-400 italic">To be updated by HR</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="text-sm text-gray-900 font-medium">
+                                                {employee.leave_credit ? (
+                                                    employee.leave_credit.vl_balance
+                                                ) : (
+                                                    <span className="text-gray-400 italic">To be updated by HR</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <button
+                                                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
+                                                onClick={(e) => {
+                                                    e.stopPropagation(); // Prevent row click when clicking button
+                                                    openModal(employee);
+                                                }}
+                                            >
+                                                Override
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
                                 
                                 {(!employees.data || employees.data.length === 0) && (
                                     <tr>
@@ -399,86 +443,105 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                     {/* Pagination */}
                     {renderPagination()}
                 </div>
-            </div>
 
-            {/* Modal */}
-            {isModalOpen && selectedEmployee && (
-                <div className="fixed inset-0 overflow-y-auto z-50">
-                    <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                        <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-                            <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={closeModal}></div>
-                        </div>
+                {/* Modal */}
+                {isModalOpen && selectedEmployee && (
+                    <div className="fixed inset-0 overflow-y-auto z-50">
+                        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+                                <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={closeModal}></div>
+                            </div>
 
-                        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+                            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-                        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                                <div className="sm:flex sm:items-start">
-                                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                                        <svg className="h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                    </div>
-                                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                                        <h3 className="text-lg leading-6 font-medium text-gray-900">
-                                            Edit Leave Credits
-                                        </h3>
-                                        <div className="mt-2">
-                                            <p className="text-sm text-gray-500">
-                                                Update leave credits for {getFullName(selectedEmployee)}
-                                            </p>
+                            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                    <div className="sm:flex sm:items-start">
+                                        <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                                            <svg className="h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
                                         </div>
-                                        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-                                            <div>
-                                                <label htmlFor="sl_balance" className="block text-sm font-medium text-gray-700">
-                                                    Sick Leave Balance
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    id="sl_balance"
-                                                    value={data.sl_balance}
-                                                    onChange={(e) => setData('sl_balance', e.target.value)}
-                                                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                />
+                                        <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                            <h3 className="text-lg leading-6 font-medium text-gray-900">
+                                                Edit Leave Credits
+                                            </h3>
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-500">
+                                                    Update leave credits for {getFullName(selectedEmployee)}
+                                                </p>
                                             </div>
-                                            <div>
-                                                <label htmlFor="vl_balance" className="block text-sm font-medium text-gray-700">
-                                                    Vacation Leave Balance
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    id="vl_balance"
-                                                    value={data.vl_balance}
-                                                    onChange={(e) => setData('vl_balance', e.target.value)}
-                                                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                />
-                                            </div>
-                                        </form>
+                                            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+                                                <div>
+                                                    <label htmlFor="sl_balance" className="block text-sm font-medium text-gray-700">
+                                                        Sick Leave Balance
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        id="sl_balance"
+                                                        value={data.sl_balance}
+                                                        onChange={(e) => setData('sl_balance', e.target.value)}
+                                                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        disabled={processing}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label htmlFor="vl_balance" className="block text-sm font-medium text-gray-700">
+                                                        Vacation Leave Balance
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        id="vl_balance"
+                                                        value={data.vl_balance}
+                                                        onChange={(e) => setData('vl_balance', e.target.value)}
+                                                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        disabled={processing}
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label htmlFor="imported_at" className="block text-sm font-medium text-gray-700">
+                                                        Imported At (if migrated from old record)
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        id="imported_at"
+                                                        value={data.imported_at || ''}
+                                                        onChange={(e) => setData('imported_at', e.target.value)}
+                                                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 
+                                                                focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                        disabled={processing}
+                                                    />
+                                                </div>
+                                            </form>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                                <button
-                                    type="button"
-                                    onClick={handleSubmit}
-                                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                                >
-                                    Save Changes
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={closeModal}
-                                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                                >
-                                    Cancel
-                                </button>
+                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                    <button
+                                        type="button"
+                                        onClick={handleSubmit}
+                                        disabled={processing}
+                                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 sm:ml-3 sm:w-auto sm:text-sm"
+                                    >
+                                        {processing ? 'Saving...' : 'Save Changes'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={closeModal}
+                                        disabled={processing}
+                                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </HRLayout>
     );
 }
