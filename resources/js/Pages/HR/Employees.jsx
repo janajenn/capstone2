@@ -31,14 +31,19 @@ export default function Employees({ employees, departments, filters }) {
         is_primary: false
     });
 
-    // Debounced search function
     const debouncedSearch = useCallback(
         debounce((term, department) => {
-            router.get(route('hr.employees'), {
-                search: term || null,
-                department: department || null,
-                page: 1 // Reset to first page when searching
-            }, {
+            const params = {};
+            
+            if (term && term.trim() !== '') {
+                params.search = term;
+            }
+            
+            if (department && department !== '') {
+                params.department = department;
+            }
+    
+            router.get(route('hr.employees'), params, {
                 preserveState: true,
                 replace: true,
                 preserveScroll: true
@@ -46,27 +51,32 @@ export default function Employees({ employees, departments, filters }) {
         }, 300),
         []
     );
-
+    
     // Handle search input change
     const handleSearchChange = (term) => {
         setSearchTerm(term);
         debouncedSearch(term, selectedDepartment);
     };
-
-    // Handle department filter change
+    
+    // Handle department filter change  
     const handleFilterChange = (departmentId) => {
         setSelectedDepartment(departmentId);
-        router.get(route('hr.employees'), {
-            search: searchTerm || null,
-            department: departmentId || null,
-            page: 1 // Reset to first page when filtering
-        }, {
+        const params = {};
+        
+        if (searchTerm && searchTerm.trim() !== '') {
+            params.search = searchTerm;
+        }
+        
+        if (departmentId && departmentId !== '') {
+            params.department = departmentId;
+        }
+    
+        router.get(route('hr.employees'), params, {
             preserveState: true,
             replace: true,
             preserveScroll: true
         });
     };
-
     // Handle pagination
     const handlePageChange = (page) => {
         router.get(route('hr.employees'), {
@@ -241,7 +251,7 @@ export default function Employees({ employees, departments, filters }) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                     </svg>
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">Add Team Member</h3>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">Add Employee</h3>
                 <p className="text-gray-600">Fill in the details to create a new employee account</p>
             </div>
             
@@ -390,7 +400,7 @@ export default function Employees({ employees, departments, filters }) {
 
                     {/* Employment Information Section */}
                     <div className="mb-8">
-                        <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-200">
                             Employment Information
                         </h3>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -598,7 +608,7 @@ export default function Employees({ employees, departments, filters }) {
                 {/* Employees Table */}
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                        <h2 className="text-xl font-semibold text-gray-800">Employee List</h2>
+                        <h2 className="text-sm font-semibold text-gray-800">Employee List</h2>
                         <span className="text-sm text-gray-500">
                             {employees.total} employee{employees.total !== 1 ? 's' : ''} found
                             {selectedDepartment && ` in ${departments.find(d => d.id == selectedDepartment)?.name}`}
@@ -608,7 +618,7 @@ export default function Employees({ employees, departments, filters }) {
                     <div className="overflow-x-auto">
                         <table className="w-full table-auto bg-white shadow rounded-lg">
                             <thead>
-                                <tr className="bg-gray-50 text-left">
+                                <tr className="bg-gray-50 text-left text-sm">
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Name</th>
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Position</th>
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Department</th>

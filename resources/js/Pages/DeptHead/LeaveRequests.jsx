@@ -30,20 +30,16 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
     const [rejectRemarks, setRejectRemarks] = useState('');
     const { post } = useForm();
 
-    const filteredRequests = selectedStatus === 'all' 
-        ? leaveRequests 
-        : leaveRequests.filter(req => {
-            if (selectedStatus === 'pending') {
-                return req.status === 'pending' && !req.dept_head_approval;
-            } else if (selectedStatus === 'approved_by_dept_head') {
-                return req.dept_head_approval?.status === 'approved' && req.status === 'pending';
-            } else if (selectedStatus === 'fully_approved') {
-                return req.status === 'approved' && req.admin_approval?.status === 'approved';
-            } else if (selectedStatus === 'rejected') {
-                return req.status === 'rejected';
-            }
-            return false;
+    // Handle status filter change
+    const handleStatusChange = (status) => {
+        setSelectedStatus(status);
+        router.get(route('dept_head.leave-requests'), {
+            status: status === 'all' ? '' : status
+        }, {
+            preserveState: true,
+            preserveScroll: true
         });
+    };
 
     const handleApprove = (id) => {
         if (confirm('Are you sure you want to approve this leave request?')) {
@@ -71,11 +67,19 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
     };
 
     const getRequestStatus = (request) => {
+        // Use the display_status from backend if available, otherwise fall back to calculation
+        if (request.display_status) {
+            return request.display_status;
+        }
+        
+        // Fallback logic
         if (request.status === 'rejected') return 'rejected';
         if (request.status === 'approved' && request.admin_approval?.status === 'approved') return 'fully_approved';
         if (request.dept_head_approval?.status === 'approved') return 'approved_by_dept_head';
         return 'pending';
     };
+    // Filter requests client-side for the current page (optional)
+    const currentPageRequests = leaveRequests.data || [];
 
     return (
         <DeptHeadLayout>
@@ -88,6 +92,11 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                         <div>
                             <h1 className="text-3xl font-bold text-gray-800">Leave Requests Management</h1>
                             <p className="text-gray-600 mt-1">Manage leave requests for {departmentName} department</p>
+                        </div>
+                        <div className="mt-4 md:mt-0">
+                            <p className="text-sm text-gray-500">
+                                Showing {leaveRequests.from || 0} to {leaveRequests.to || 0} of {leaveRequests.total || 0} results
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -127,7 +136,7 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
                     <div className="flex flex-wrap gap-2">
                         <button
-                            onClick={() => setSelectedStatus('all')}
+                            onClick={() => handleStatusChange('all')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'all'
                                     ? 'bg-blue-600 text-white'
@@ -137,7 +146,7 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                             All Requests
                         </button>
                         <button
-                            onClick={() => setSelectedStatus('pending')}
+                            onClick={() => handleStatusChange('pending')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'pending'
                                     ? 'bg-yellow-600 text-white'
@@ -147,7 +156,7 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                             Pending
                         </button>
                         <button
-                            onClick={() => setSelectedStatus('approved_by_dept_head')}
+                            onClick={() => handleStatusChange('approved_by_dept_head')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'approved_by_dept_head'
                                     ? 'bg-blue-600 text-white'
@@ -156,8 +165,8 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                         >
                             Approved by Dept Head
                         </button>
-                        <button
-                            onClick={() => setSelectedStatus('fully_approved')}
+                        {/* <button
+                            onClick={() => handleStatusChange('fully_approved')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'fully_approved'
                                     ? 'bg-green-600 text-white'
@@ -165,9 +174,9 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                             }`}
                         >
                             Fully Approved
-                        </button>
+                        </button> */}
                         <button
-                            onClick={() => setSelectedStatus('rejected')}
+                            onClick={() => handleStatusChange('rejected')}
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                                 selectedStatus === 'rejected'
                                     ? 'bg-red-600 text-white'
@@ -206,8 +215,8 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredRequests.length > 0 ? (
-                                    filteredRequests.map((request) => {
+                                {currentPageRequests.length > 0 ? (
+                                    currentPageRequests.map((request) => {
                                         const status = getRequestStatus(request);
                                         return (
                                             <tr key={request.id} className="hover:bg-gray-50 transition-colors">
@@ -269,28 +278,28 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                                                         </div>
                                                     ) : (
                                                         <div className="flex items-center justify-end space-x-3">
-                                                            {status === 'pending' && (
-                                                                <>
-                                                                    <button
-                                                                        onClick={() => handleApprove(request.id)}
-                                                                        className="text-green-600 hover:text-green-900 transition-colors flex items-center"
-                                                                    >
-                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                                        </svg>
-                                                                        Approve
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => setRejectingId(request.id)}
-                                                                        className="text-red-600 hover:text-red-900 transition-colors flex items-center"
-                                                                    >
-                                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                                        </svg>
-                                                                        Reject
-                                                                    </button>
-                                                                </>
-                                                            )}
+                                                         {status === 'pending' && (
+    <>
+        <button
+            onClick={() => handleApprove(request.id)}
+            className="text-green-600 hover:text-green-900 transition-colors flex items-center"
+        >
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Approve
+        </button>
+        <button
+            onClick={() => setRejectingId(request.id)}
+            className="text-red-600 hover:text-red-900 transition-colors flex items-center"
+        >
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Reject
+        </button>
+    </>
+)}
                                                             <button
                                                                 onClick={() => router.visit(route('dept_head.leave-requests.show', request.id))}
                                                                 className="text-blue-600 hover:text-blue-900 transition-colors flex items-center"
@@ -325,6 +334,53 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {leaveRequests.data && leaveRequests.data.length > 0 && (
+                        <div className="bg-white px-6 py-4 border-t border-gray-200">
+                            <div className="flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
+                                <div className="text-sm text-gray-700">
+                                    Showing <span className="font-semibold">{leaveRequests.from}</span> to <span className="font-semibold">{leaveRequests.to}</span> of{' '}
+                                    <span className="font-semibold">{leaveRequests.total}</span> results
+                                </div>
+                                <div className="flex space-x-1">
+                                    {/* Previous Button */}
+                                    {leaveRequests.prev_page_url && (
+                                        <button
+                                            onClick={() => router.visit(leaveRequests.prev_page_url, { preserveState: true, preserveScroll: true })}
+                                            className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                                        >
+                                            Previous
+                                        </button>
+                                    )}
+
+                                    {/* Page Numbers */}
+                                    {leaveRequests.links.slice(1, -1).map((link, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => link.url && router.visit(link.url, { preserveState: true, preserveScroll: true })}
+                                            className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                                                link.active
+                                                    ? 'bg-blue-600 text-white border border-blue-600'
+                                                    : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50 hover:text-gray-700'
+                                            }`}
+                                            dangerouslySetInnerHTML={{ __html: link.label }}
+                                        />
+                                    ))}
+
+                                    {/* Next Button */}
+                                    {leaveRequests.next_page_url && (
+                                        <button
+                                            onClick={() => router.visit(leaveRequests.next_page_url, { preserveState: true, preserveScroll: true })}
+                                            className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                                        >
+                                            Next
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </DeptHeadLayout>

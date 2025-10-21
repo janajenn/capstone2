@@ -1,48 +1,74 @@
-// resources/js/Pages/Admin/Unauthorized.jsx
-import AdminLayout from "@/Layouts/AdminLayout";
-import { Head, Link } from "@inertiajs/react";
+import { Head, usePage } from '@inertiajs/react';
+import AdminLayout from '@/Layouts/AdminLayout';
 
 export default function Unauthorized({ message, currentApprover }) {
+    const { auth } = usePage().props;
+
     return (
         <AdminLayout>
-            <Head title="Access Unauthorized" />
+            <Head title="Unauthorized Access" />
             
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-                <div className="max-w-md w-full bg-white rounded-lg shadow-md p-6 text-center">
-                    <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100">
-                        <svg className="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                        </svg>
-                    </div>
-                    
-                    <h2 className="mt-4 text-xl font-bold text-gray-900">Access Restricted</h2>
-                    
-                    <p className="mt-2 text-gray-600">
-                        {message}
-                    </p>
-                    
-                    {currentApprover && (
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                            <p className="text-sm text-blue-700">
-                                <strong>Current Approver:</strong> {currentApprover}
-                            </p>
+            <div className="min-h-screen bg-white flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+                <div className="max-w-lg w-full space-y-8">
+                    <div className="text-center">
+                        {/* Warning Icon */}
+                        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-50">
+                            <svg className="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                            </svg>
                         </div>
-                    )}
-                    
-                    <div className="mt-6 space-y-3">
-                        <Link
-                            href={route('admin.dashboard')}
-                            className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                            Go to Dashboard
-                        </Link>
                         
-                        <Link
-                            href={route('admin.delegation')}
-                            className="w-full inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        <h2 className="mt-4 text-2xl font-semibold text-gray-800">
+                            Unauthorized Access
+                        </h2>
+                        
+                        <p className="mt-2 text-sm text-gray-500">
+                            {message}
+                        </p>
+                    </div>
+
+                    {/* Information Cards */}
+                    <div className="space-y-6">
+                        {/* Current Approver Information */}
+                        {currentApprover && (
+                            <div className="bg-white p-6 rounded-lg shadow-sm border border-green-100 transition-transform duration-200 hover:scale-[1.02]">
+                                <h3 className="text-sm font-medium text-green-800 mb-3">
+                                    Current Active Approver
+                                </h3>
+                                <div className="text-sm text-gray-600 space-y-1">
+                                    <p><span className="font-medium text-green-900">Name:</span> {currentApprover.name}</p>
+                                    <p><span className="font-medium text-green-900">Status:</span> {currentApprover.is_primary ? 'Primary Admin' : 'Delegated Approver'}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* User Information */}
+                        <div className="bg-white p-6 rounded-lg shadow-sm border border-green-100 transition-transform duration-200 hover:scale-[1.02]">
+                            <h3 className="text-sm font-medium text-green-800 mb-3">
+                                Your Information
+                            </h3>
+                            <div className="text-sm text-gray-600 space-y-1">
+                                <p><span className="font-medium text-green-900">Name:</span> {auth.user.name}</p>
+                                <p><span className="font-medium text-green-900">Role:</span> {auth.user.role}</p>
+                                <p><span className="font-medium text-green-900">Status:</span> {auth.user.is_primary ? 'Primary Admin' : 'Regular Admin'}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-center gap-4 mt-8">
+                        <a
+                            href={route('admin.dashboard')}
+                            className="inline-flex items-center px-6 py-3 bg-green-500 text-white rounded-lg font-medium text-sm hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400 transition ease-in-out duration-150"
                         >
-                            Manage Delegation
-                        </Link>
+                            Back to Dashboard
+                        </a>
+                        <a
+                            href={route('admin.delegation')}
+                            className="inline-flex items-center px-6 py-3 bg-gray-500 text-white rounded-lg font-medium text-sm hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition ease-in-out duration-150"
+                        >
+                            Manage Delegations
+                        </a>
                     </div>
                 </div>
             </div>

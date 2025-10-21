@@ -1,5 +1,5 @@
 import DeptHeadLayout from '@/Layouts/DeptHeadLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, useForm, router, Link } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function Employees({ employees, departmentName, flash }) {
@@ -8,11 +8,12 @@ export default function Employees({ employees, departmentName, flash }) {
     const { delete: destroy } = useForm();
 
     // Filter employees based on search term
-    const filteredEmployees = employees.filter(employee => 
+    const filteredEmployees = employees.data.filter(employee => 
         employee.firstname.toLowerCase().includes(searchTerm.toLowerCase()) ||
         employee.lastname.toLowerCase().includes(searchTerm.toLowerCase()) ||
         employee.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        employee.email.toLowerCase().includes(searchTerm.toLowerCase())
+        employee.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (employee.department?.name && employee.department.name.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     const handleRemoveFromDepartment = (employeeId) => {
@@ -82,7 +83,7 @@ export default function Employees({ employees, departmentName, flash }) {
                                 </svg>
                             </div>
                             <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{employees.length}</h2>
+                                <h2 className="text-2xl font-bold text-gray-800">{employees.total}</h2>
                                 <p className="text-sm text-gray-600">Total Employees</p>
                             </div>
                         </div>
@@ -97,7 +98,7 @@ export default function Employees({ employees, departmentName, flash }) {
                             </div>
                             <div className="ml-4">
                                 <h2 className="text-2xl font-bold text-gray-800">
-                                    {employees.filter(emp => emp.status === 'active').length}
+                                    {employees.data.filter(emp => emp.status === 'active').length}
                                 </h2>
                                 <p className="text-sm text-gray-600">Active Employees</p>
                             </div>
@@ -113,7 +114,7 @@ export default function Employees({ employees, departmentName, flash }) {
                             </div>
                             <div className="ml-4">
                                 <h2 className="text-2xl font-bold text-gray-800">
-                                    {employees.filter(emp => emp.status === 'inactive').length}
+                                    {employees.data.filter(emp => emp.status === 'inactive').length}
                                 </h2>
                                 <p className="text-sm text-gray-600">Inactive Employees</p>
                             </div>
@@ -133,7 +134,7 @@ export default function Employees({ employees, departmentName, flash }) {
                                 </div>
                                 <input
                                     type="text"
-                                    placeholder="Search employees by name, position, or email..."
+                                    placeholder="Search employees by name, position, email, or department..."
                                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -142,7 +143,7 @@ export default function Employees({ employees, departmentName, flash }) {
                         </div>
                         <div className="flex items-center space-x-2">
                             <span className="text-sm text-gray-600">
-                                {filteredEmployees.length} of {employees.length} employees
+                                {searchTerm ? filteredEmployees.length : employees.data.length} of {employees.total} employees
                             </span>
                         </div>
                     </div>
@@ -158,7 +159,7 @@ export default function Employees({ employees, departmentName, flash }) {
                                         Employee
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Position
+                                        Position & Department
                                     </th>
                                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Contact
@@ -172,8 +173,8 @@ export default function Employees({ employees, departmentName, flash }) {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredEmployees.length > 0 ? (
-                                    filteredEmployees.map((employee) => (
+                                {(searchTerm ? filteredEmployees : employees.data).length > 0 ? (
+                                    (searchTerm ? filteredEmployees : employees.data).map((employee) => (
                                         <tr key={employee.employee_id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center">
@@ -192,6 +193,9 @@ export default function Employees({ employees, departmentName, flash }) {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm text-gray-900">{employee.position}</div>
+                                                <div className="text-sm text-gray-500">
+                                                    {employee.department?.name || 'No Department'}
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm text-gray-500">{employee.contact_number}</div>
@@ -209,23 +213,15 @@ export default function Employees({ employees, departmentName, flash }) {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                 <div className="flex items-center justify-end space-x-3">
-                                                    <button
-                                                        onClick={() => handleRemoveFromDepartment(employee.employee_id)}
-                                                        className="text-red-600 hover:text-red-900 transition-colors flex items-center"
-                                                        disabled={removingEmployee === employee.employee_id}
+                                                    <Link
+                                                        href={route('employees.leave-credits', employee.employee_id)}
+                                                        className="text-blue-600 hover:text-blue-900 transition-colors flex items-center"
                                                     >
-                                                        {removingEmployee === employee.employee_id ? (
-                                                            <svg className="animate-spin -ml-1 mr-1 h-4 w-4 text-red-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                            </svg>
-                                                        ) : (
-                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                            </svg>
-                                                        )}
-                                                        Remove from Department
-                                                    </button>
+                                                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        View Leave Credits
+                                                    </Link>
                                                 </div>
                                             </td>
                                         </tr>
@@ -238,7 +234,7 @@ export default function Employees({ employees, departmentName, flash }) {
                                             </svg>
                                             <h3 className="mt-2 text-sm font-medium text-gray-900">No employees found</h3>
                                             <p className="mt-1 text-sm text-gray-500">
-                                                {employees.length === 0 
+                                                {employees.total === 0 
                                                     ? `There are no employees in the ${departmentName} department.` 
                                                     : "Try adjusting your search to find what you're looking for."}
                                             </p>
@@ -248,6 +244,32 @@ export default function Employees({ employees, departmentName, flash }) {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Pagination */}
+                    {employees.links.length > 3 && (
+                        <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                                <div className="text-sm text-gray-700 mb-2 sm:mb-0">
+                                    Showing <span className="font-medium">{employees.from}</span> to <span className="font-medium">{employees.to}</span> of{' '}
+                                    <span className="font-medium">{employees.total}</span> results
+                                </div>
+                                <div className="flex space-x-1">
+                                    {employees.links.map((link, index) => (
+                                        <Link
+                                            key={index}
+                                            href={link.url || '#'}
+                                            className={`px-3 py-1 rounded-md text-sm font-medium ${
+                                                link.active
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                            } ${!link.url ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                            dangerouslySetInnerHTML={{ __html: link.label }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </DeptHeadLayout>

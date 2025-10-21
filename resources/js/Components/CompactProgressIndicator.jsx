@@ -1,7 +1,12 @@
-// resources/js/Components/CompactProgressIndicator.jsx
 import React from 'react';
 
-const CompactProgressIndicator = ({ approvals, isDeptHead = false, isRecalled = false, onClick }) => {
+const CompactProgressIndicator = ({ 
+    approvals, 
+    isDeptHead = false, 
+    isAdmin = false, 
+    isRecalled = false, 
+    onClick 
+}) => {
     if (isRecalled) {
         return (
             <button
@@ -16,9 +21,9 @@ const CompactProgressIndicator = ({ approvals, isDeptHead = false, isRecalled = 
         );
     }
 
-    // Define steps based on user type
-    const steps = isDeptHead 
-        ? ['hr', 'admin'] // Dept heads skip dept_head approval
+    // Define steps based on user type - both dept heads and admins skip dept_head approval
+    const steps = (isDeptHead || isAdmin)
+        ? ['hr', 'admin'] // Dept heads and admins skip dept_head approval
         : ['hr', 'dept_head', 'admin']; // Regular employees
 
     const getStatus = (role) => {

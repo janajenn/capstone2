@@ -326,7 +326,8 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
 
 
 // Leave Type Card Component
-const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBalances }) => {
+// Leave Type Card Component
+const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBalances, isDisabled }) => {
   const getLeaveBalance = (type) => {
     const code = type.code.toUpperCase();
     
@@ -346,13 +347,18 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={!isDisabled ? onClick : undefined}
+      disabled={isDisabled}
       className={`
         w-full p-6 text-left transition-all duration-200 ease-in-out
-        rounded-xl border-2 bg-white
-        ${isSelected 
+        rounded-xl border-2
+        ${isDisabled 
+          ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-60' 
+          : 'bg-white border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 hover:scale-[1.01] cursor-pointer'
+        }
+        ${isSelected && !isDisabled
           ? 'border-blue-500 shadow-lg shadow-blue-100 transform scale-[1.02]' 
-          : 'border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 hover:scale-[1.01]'
+          : ''
         }
       `}
     >
@@ -364,15 +370,21 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
           </span>
           <h3 className="text-lg font-semibold text-gray-900">{leaveType.name}</h3>
         </div>
-        {isSelected && (
+        {isSelected && !isDisabled && (
           <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+        )}
+        {isDisabled && (
+          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
         )}
       </div>
 
       {/* Balance Information */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-gray-600">Available Balance</span>
-        <span className={`text-lg font-bold ${isLowBalance ? 'text-amber-600' : 'text-green-600'}`}>
+        <span className={`text-lg font-bold ${
+          isDisabled ? 'text-gray-500' : 
+          isLowBalance ? 'text-amber-600' : 'text-green-600'
+        }`}>
           {balance} days
         </span>
       </div>
@@ -381,6 +393,7 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
       <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
         <div 
           className={`h-2 rounded-full transition-all duration-300 ${
+            isDisabled ? 'bg-gray-400' :
             isLowBalance ? 'bg-amber-500' : 'bg-green-500'
           }`}
           style={{ 
@@ -389,34 +402,44 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
         ></div>
       </div>
 
-      {/* Footer Info */}
-      <div className="flex justify-between items-center text-xs text-gray-500">
-        <div className="flex items-center space-x-2">
-          {leaveType.document_required && (
-            <span className="flex items-center">
-              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-              </svg>
-              Document Required
-            </span>
-          )}
-        </div>
-        {!leaveType.earnable && leaveType.default_days && (
-          <span>Fixed: {leaveType.default_days} days</span>
-        )}
-      </div>
+  {/* Footer Info */}
+<div className="flex justify-between items-center text-xs text-gray-500">
+  <div className="flex items-center space-x-2">
+    {!!leaveType.document_required && (
+      <span className="flex items-center">
+        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+        </svg>
+        Document Required
+      </span>
+    )}
+    {!!isDisabled && (
+      <span className="flex items-center text-amber-600 font-medium">
+        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+        </svg>
+        Not Available
+      </span>
+    )}
+  </div>
+  {!!(!leaveType.earnable && leaveType.default_days) && (
+    <span>Fixed: {leaveType.default_days} days</span>
+  )}
+</div>
     </button>
   );
 };
 
 export default function RequestLeave() {
   const { props } = usePage();
-  const { leaveTypes, flash, existingRequests, leaveCredits, leaveBalances, errors } = props;
+  const { leaveTypes, flash, existingRequests, leaveCredits, leaveBalances, errors,auth  } = props;
 
   const [selectedTypeId, setSelectedTypeId] = useState(null);
   const [showBalanceWarning, setShowBalanceWarning] = useState(false);
 
-  // Sort leave types by priority
+  // Get employee gender from auth or props
+  const employeeGender = auth?.user?.employee?.gender || props.employeeGender;
+
   const sortedLeaveTypes = useMemo(() => 
     sortLeaveTypesByPriority(leaveTypes), 
     [leaveTypes]
@@ -554,11 +577,37 @@ export default function RequestLeave() {
       });
   };
 
-  const handleSelectType = (lt) => {
-      setSelectedTypeId(lt.id);
-      setData('leave_type_id', lt.id);
-      setShowBalanceWarning(false); // Reset warning when changing leave type
-  };
+  // Function to check if leave type should be disabled based on gender
+const isLeaveTypeDisabled = (leaveType) => {
+  if (!employeeGender) return false;
+  
+  const leaveTypeCode = leaveType.code.toUpperCase();
+  const gender = employeeGender.toLowerCase();
+  
+  // Disable for male employees
+  if (gender === 'male') {
+    return leaveTypeCode === 'SLBW' || // Special Leave Benefits for Women
+           leaveTypeCode === 'ML';    // Maternity Leave
+  }
+  
+  // Disable for female employees
+  if (gender === 'female') {
+    return leaveTypeCode === 'PL';     // Paternity Leave
+  }
+  
+  return false;
+};
+
+const handleSelectType = (lt) => {
+  // Check if this leave type is disabled
+  if (isLeaveTypeDisabled(lt)) {
+    return; // Don't select disabled types
+  }
+  
+  setSelectedTypeId(lt.id);
+  setData('leave_type_id', lt.id);
+  setShowBalanceWarning(false); // Reset warning when changing leave type
+};
 
   return (
       <EmployeeLayout>
@@ -578,21 +627,33 @@ export default function RequestLeave() {
               )}
 
               {/* Leave Type Cards Grid */}
-              <div className="mb-8">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Select Leave Type</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {sortedLeaveTypes?.map((lt) => (
-                          <LeaveTypeCard
-                              key={lt.id}
-                              leaveType={lt}
-                              isSelected={selectedTypeId === lt.id}
-                              onClick={() => handleSelectType(lt)}
-                              leaveCredits={leaveCredits}
-                              leaveBalances={leaveBalances}
-                          />
-                      ))}
-                  </div>
-              </div>
+<div className="mb-8">
+    <h2 className="text-lg font-semibold text-gray-900 mb-4">Select Leave Type</h2>
+    {employeeGender && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Some leave types are restricted based on your gender ({employeeGender}).
+                Restricted types are shown but cannot be selected.
+            </p>
+        </div>
+    )}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {sortedLeaveTypes?.map((lt) => {
+            const isDisabled = isLeaveTypeDisabled(lt);
+            return (
+                <LeaveTypeCard
+                    key={lt.id}
+                    leaveType={lt}
+                    isSelected={selectedTypeId === lt.id}
+                    onClick={() => handleSelectType(lt)}
+                    leaveCredits={leaveCredits}
+                    leaveBalances={leaveBalances}
+                    isDisabled={isDisabled}
+                />
+            );
+        })}
+    </div>
+</div>
 
               {/* Dynamic Form */}
               {selectedType && (
@@ -875,3 +936,5 @@ export default function RequestLeave() {
       </EmployeeLayout>
   );
 }
+
+

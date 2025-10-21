@@ -48,32 +48,68 @@ Route::middleware('auth')->group(function () {
 Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
 
 // Group all role-based dashboards under auth middleware
-Route::prefix('admin')->middleware(['role:admin'])->group(function () {
-    Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
-    Route::get('/leave-requests/{id}', [AdminController::class, 'showLeaveRequest'])->name('admin.leave-requests.show');
-    Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve'])->name('admin.leave-requests.approve');
-    Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject'])->name('admin.leave-requests.reject');
-    Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests'])->name('admin.updated-requests');
-    
-    Route::get('/delegation', [AdminController::class, 'delegationIndex'])->name('admin.delegation');
-    Route::post('/delegate-approval', [AdminController::class, 'delegateApproval'])->name('admin.delegate-approval');
-    Route::post('/end-delegation/{id}', [AdminController::class, 'endDelegation'])->name('admin.end-delegation');
-    Route::post('/cancel-delegation/{id}', [AdminController::class, 'cancelDelegation'])->name('admin.cancel-delegation');
-    Route::get('/leave-calendar', [AdminController::class, 'leaveCalendar'])->name('admin.leave-calendar');
+    Route::prefix('admin')->middleware(['role:admin'])->group(function () {
+         Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
+        
+    // Leave Requests Management
+        Route::get('/leave-requests', [AdminController::class, 'leaveRequests'])->name('admin.leave-requests.index');
+        Route::get('/leave-requests/{id}', [AdminController::class, 'showLeaveRequest'])->name('admin.leave-requests.show');
+        Route::post('/leave-requests/{id}/approve', [AdminController::class, 'approve'])->name('admin.leave-requests.approve');
+        Route::post('/leave-requests/{id}/reject', [AdminController::class, 'reject'])->name('admin.leave-requests.reject');
+        Route::post('/leave-requests/{id}/recall', [AdminController::class, 'recallLeaveRequest'])->name('admin.recall-leave');
+        
+        // Filtered Leave Requests (Clickable Cards)
+        Route::get('/leave-requests/fully-approved', [AdminController::class, 'fullyApprovedRequests'])->name('admin.leave-requests.fully-approved');
+        Route::get('/leave-requests/rejected', [AdminController::class, 'rejectedRequests'])->name('admin.leave-requests.rejected');
+        
+        // Employees Management (Clickable Cards)
+        Route::get('/employees', [AdminController::class, 'employeesIndex'])->name('admin.employees.index');
+        Route::get('/employees/active', [AdminController::class, 'activeEmployees'])->name('admin.employees.active');
+        Route::get('/employees/inactive', [AdminController::class, 'inactiveEmployees'])->name('admin.employees.inactive');
+        
+        // Users Management (Clickable Cards)
+        Route::get('/users', [AdminController::class, 'usersIndex'])->name('admin.users.index');
+        Route::get('/users/hr', [AdminController::class, 'hrUsers'])->name('admin.users.hr');
+        
+        // Departments Management (Clickable Cards)
+        Route::get('/departments', [AdminController::class, 'departmentsIndex'])->name('admin.departments.index');
+        
+        // Delegation Management
+        Route::get('/delegation', [AdminController::class, 'delegationIndex'])->name('admin.delegation');
+        Route::post('/delegate-approval', [AdminController::class, 'delegateApproval'])->name('admin.delegate-approval');
+        Route::post('/end-delegation/{id}', [AdminController::class, 'endDelegation'])->name('admin.end-delegation');
+        Route::post('/cancel-delegation/{id}', [AdminController::class, 'cancelDelegation'])->name('admin.cancel-delegation');
+        
+        // Calendar
+        Route::get('/leave-calendar', [AdminController::class, 'leaveCalendar'])->name('admin.leave-calendar');
+        
+        // Real-time Updates
+        Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests'])->name('admin.updated-requests');
+        
+        // Notification Routes
+        Route::get('/notifications', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'index'])->name('admin.notifications');
+        Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAsRead'])->name('admin.notifications.mark-read');
+        Route::post('/notifications/mark-all-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAllAsRead'])->name('admin.notifications.mark-all-read');
+        Route::get('/notifications/unread-count', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'getUnreadCount'])->name('admin.notifications.unread-count');
 
-    Route::post('/admin/leave-requests/{id}/recall', [AdminController::class, 'recallLeaveRequest'])->name('admin.recall-leave');
-
-    Route::get('/leave-requests', [AdminController::class, 'leaveRequests'])
-    ->name('admin.leave-requests.index');
 
 
-    //notification routes
-    Route::get('/notifications', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'index'])->name('admin.notifications');
-    Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAsRead'])->name('admin.notifications.mark-read');
-    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAllAsRead'])->name('admin.notifications.mark-all-read');
-    Route::get('/notifications/unread-count', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'getUnreadCount'])->name('admin.notifications.unread-count');
-    
+        Route::get('/debug-routes', function() {
+            $routes = collect(Route::getRoutes())->map(function ($route) {
+                return [
+                    'method' => implode('|', $route->methods()),
+                    'uri' => $route->uri(),
+                    'name' => $route->getName(),
+                    'action' => $route->getActionName(),
+                ];
+            })->filter(function ($route) {
+                return str_contains($route['uri'], 'admin');
+            });
+            
+            return $routes;
+        });
 });
+    
 
 
 
@@ -171,6 +207,16 @@ Route::get('/hr/leave-recordings/{employee}', [HRController::class, 'showEmploye
 Route::put('/hr/leave-recordings/{id}/remarks', [HRController::class, 'updateRemarks'])->name('hr.leave-recordings.update-remarks');
 
 
+Route::get('/hr/leave-recordings/export/department', [HRController::class, 'exportDepartmentRecordings'])
+    ->name('hr.leave-recordings.export.department');
+    
+Route::get('/hr/leave-recordings/export/all', [HRController::class, 'exportAllRecordings'])
+    ->name('hr.leave-recordings.export.all');
+
+        Route::post('/leave-requests/generate-pdf', [HRController::class, 'generatePDF'])
+        ->name('leave-requests.generate-pdf');
+
+        
 
 Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduction']);
 });
@@ -212,7 +258,7 @@ Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduc
    Route::post('/dept-head/notifications/{id}/mark-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAsRead'])->name('dept-head.notifications.mark-read');
    Route::post('/dept-head/notifications/mark-all-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAllAsRead'])->name('dept-head.notifications.mark-all-read');
    Route::get('/dept-head/notifications/unread-count', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'getUnreadCount'])->name('dept-head.notifications.unread-count');
-        
+   Route::get('/employees/{employee_id}/leave-credits', [DeptHeadController::class, 'showEmployeeLeaveCredits'])->name('employees.leave-credits');
     });
     //Route::middleware(['auth', 'role:dept_head'])->group(function () {
     //    Route::get('/dept-head/dashboard', [App\Http\Controllers\DeptHead\DeptHeadController::class, 'dashboard']);
@@ -274,7 +320,7 @@ Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduc
         // Route::post('/employee/leave-recalls', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'store'])->name('employee.leave-recalls.store');
         // Route::get('/employee/leave-recalls/{leaveRecall}', [\App\Http\Controllers\Employee\LeaveRecallController::class, 'show'])->name('employee.leave-recalls.show');
 
-
+        Route::get('/leave-history', [EmployeeController::class, 'leaveHistory'])->name('employee.leave-history');
         // Leave Balances Routes
         Route::get('/employee/leave-balances', [EmployeeController::class, 'leaveBalances'])->name('employee.leave-balances');
         

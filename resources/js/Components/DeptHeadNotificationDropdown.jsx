@@ -13,7 +13,7 @@ export default function DeptHeadNotificationDropdown() {
     const fetchNotifications = async () => {
         try {
             const response = await fetch('/dept-head/notifications', {
-                credentials: 'same-origin',
+                credentials: 'include', // Changed from 'same-origin'
             });
             
             if (!response.ok) {
@@ -32,7 +32,7 @@ export default function DeptHeadNotificationDropdown() {
     const fetchUnreadCount = async () => {
         try {
             const response = await fetch('/dept-head/notifications/unread-count', {
-                credentials: 'same-origin',
+                credentials: 'include', // Changed from 'same-origin'
             });
             
             if (!response.ok) {
@@ -52,14 +52,26 @@ export default function DeptHeadNotificationDropdown() {
     const markAsRead = async (notificationId) => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            if (!csrfToken) {
+                console.error('CSRF token not found');
+                return;
+            }
+
             const response = await fetch(`/dept-head/notifications/${notificationId}/mark-read`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest', // Added this
                 },
-                credentials: 'same-origin',
+                credentials: 'include', // Changed from 'same-origin'
             });
+            
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
             
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -79,23 +91,44 @@ export default function DeptHeadNotificationDropdown() {
             }
         } catch (error) {
             console.error('Error marking Dept Head notification as read:', error);
+            if (error.message.includes('419')) {
+                window.location.reload();
+            }
         }
     };
 
     const markAllAsRead = async () => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            if (!csrfToken) {
+                console.error('CSRF token not found');
+                return;
+            }
+
             const response = await fetch('/dept-head/notifications/mark-all-read', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest', // Added this
+                    'Accept': 'application/json', // Added this
                 },
-                credentials: 'same-origin',
+                credentials: 'include', // Changed from 'same-origin'
             });
             
+            console.log('Mark all read response status:', response.status);
+            
+            if (response.status === 419) {
+                console.log('Session expired, reloading page...');
+                window.location.reload();
+                return;
+            }
+            
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+                const errorText = await response.text();
+                console.error('Response error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
             
             const data = await response.json();
@@ -108,6 +141,10 @@ export default function DeptHeadNotificationDropdown() {
             }
         } catch (error) {
             console.error('Error marking all Dept Head notifications as read:', error);
+            
+            if (error.message.includes('419')) {
+                window.location.reload();
+            }
         }
     };
 
@@ -209,6 +246,24 @@ export default function DeptHeadNotificationDropdown() {
                                     Mark all as read
                                 </button>
                             )}
+                            {/* Add debug buttons like the employee version */}
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        const response = await fetch('/dept-head/test-csrf', {
+                                            credentials: 'include'
+                                        });
+                                        const data = await response.json();
+                                        console.log('CSRF Test:', data);
+                                    } catch (error) {
+                                        console.error('CSRF Test Error:', error);
+                                    }
+                                }}
+                                className="text-xs text-gray-500 hover:text-gray-700"
+                                title="Test CSRF"
+                            >
+                                🔒
+                            </button>
                         </div>
                     </div>
 

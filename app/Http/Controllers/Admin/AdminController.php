@@ -27,139 +27,181 @@ class AdminController extends Controller
 
     // In AdminController.php - leaveRequests method
     public function leaveRequests(Request $request)
-{
-    $status = $request->get('status', 'pending_to_admin');
-    $perPage = 10;
+    {
+        $status = $request->get('status', 'pending_to_admin');
+        $search = $request->get('search');
+        $department = $request->get('department');
+        $perPage = 10;
     
-    $currentApprover = User::getCurrentApprover();
+        $currentApprover = User::getCurrentApprover();
     
-    if (!$currentApprover || $currentApprover->id !== auth()->id()) {
-        return Inertia::render('Admin/Unauthorized', [
-            'message' => 'You are not currently authorized to approve leave requests.',
-            'currentApprover' => $currentApprover ? $currentApprover->name : 'No active approver'
-        ]);
-    }
-
-    $query = LeaveRequest::with([
+        if (!$currentApprover || $currentApprover->id !== auth()->id()) {
+            return Inertia::render('Admin/Unauthorized', [
+                'message' => 'You are not currently authorized to approve leave requests.',
+                'currentApprover' => $currentApprover ? [
+                    'name' => $currentApprover->name,
+                    'is_primary' => $currentApprover->is_primary
+                ] : null
+            ]);
+        }
+    
+        $query = LeaveRequest::with([
             'employee.user',
             'employee.department:id,name',
             'leaveType:id,name,code',
-            'approvals' => function($q) {
+            'approvals' => function ($q) {
                 $q->whereIn('role', ['hr', 'dept_head', 'admin'])
                   ->orderBy('created_at', 'desc');
             },
             'recalls'
         ]);
-
-    switch ($status) {
-        case 'pending_to_admin':
-            // FIXED: Properly query for requests that need admin approval
-            $query->where(function($q) {
-                $q->where(function($q2) {
-                    // Regular employees: Approved by HR and Dept Head, waiting for Admin
-                    $q2->where('status', 'pending_admin')
-                       ->whereHas('approvals', function($q3) {
-                           $q3->where('role', 'hr')->where('status', 'approved');
-                       })
-                       ->whereHas('approvals', function($q3) {
-                           $q3->where('role', 'dept_head')->where('status', 'approved');
-                       })
-                       ->whereHas('employee.user', function($q3) {
-                           $q3->where('role', '!=', 'dept_head');
-                       });
-                })->orWhere(function($q2) {
-                    // Dept heads: Approved by HR only (bypassed dept head), waiting for Admin
-                    $q2->where('status', 'pending_admin')
-                       ->whereHas('approvals', function($q3) {
-                           $q3->where('role', 'hr')->where('status', 'approved');
-                       })
-                       ->whereHas('employee.user', function($q3) {
-                           $q3->where('role', 'dept_head');
-                       });
+    
+        // Apply search filter
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('employee', function ($q2) use ($search) {
+                    $q2->where('firstname', 'like', "%{$search}%")
+                       ->orWhere('lastname', 'like', "%{$search}%")
+                       ->orWhere('position', 'like', "%{$search}%");
+                })->orWhereHas('leaveType', function ($q2) use ($search) {
+                    $q2->where('name', 'like', "%{$search}%")
+                       ->orWhere('code', 'like', "%{$search}%");
                 });
-            })->whereDoesntHave('approvals', function($q) {
-                $q->where('role', 'admin');
             });
-            break;
-
-        case 'dept_head_requests':
-            $query->where('status', 'pending_admin')
-                  ->whereHas('employee.user', function($q) {
-                      $q->where('role', 'dept_head');
-                  })
-                  ->whereHas('approvals', function($q) {
-                      $q->where('role', 'hr')->where('status', 'approved');
-                  });
-            break;
-
-            case 'fully_approved':
+        }
+    
+        // Apply department filter
+        if ($department) {
+            $query->whereHas('employee', function ($q) use ($department) {
+                $q->where('department_id', $department);
+            });
+        }
+    
+        // Apply status filter
+        switch ($status) {
+            case 'pending_to_admin':
+                $query->where(function ($q) {
+                    $q->where(function ($q2) {
+                        // Regular employees: Approved by HR and Dept Head, waiting for Admin
+                        $q2->where('status', 'pending_admin')
+                           ->whereHas('approvals', function ($q3) {
+                               $q3->where('role', 'hr')->where('status', 'approved');
+                           })
+                           ->whereHas('approvals', function ($q3) {
+                               $q3->where('role', 'dept_head')->where('status', 'approved');
+                           })
+                           ->whereHas('employee.user', function ($q3) {
+                               $q3->where('role', 'employee');
+                           });
+                    })->orWhere(function ($q2) {
+                        // Department heads: Approved by HR only, waiting for Admin
+                        $q2->where('status', 'pending_admin')
+                           ->whereHas('approvals', function ($q3) {
+                               $q3->where('role', 'hr')->where('status', 'approved');
+                           })
+                           ->whereHas('employee.user', function ($q3) {
+                               $q3->where('role', 'dept_head');
+                           });
+                    })->orWhere(function ($q2) {
+                        // Admins: Approved by HR only, waiting for Admin
+                        $q2->where('status', 'pending_admin')
+                           ->whereHas('approvals', function ($q3) {
+                               $q3->where('role', 'hr')->where('status', 'approved');
+                           })
+                           ->whereHas('employee.user', function ($q3) {
+                               $q3->where('role', 'admin');
+                           });
+                    });
+                })->whereDoesntHave('approvals', function ($q) {
+                    $q->where('role', 'admin');
+                });
+                break;
+    
+            case 'dept_head_requests':
+                $query->where('status', 'pending_admin')
+                      ->whereHas('employee.user', function ($q) {
+                          $q->where('role', 'dept_head');
+                      })
+                      ->whereHas('approvals', function ($q) {
+                          $q->where('role', 'hr')->where('status', 'approved');
+                      });
+                break;
+    
+            case 'approved':
                 $query->where('status', 'approved')
-                      ->whereHas('approvals', function($q) {
+                      ->whereHas('approvals', function ($q) {
                           $q->where('role', 'admin')->where('status', 'approved');
                       });
                 break;
     
             case 'rejected':
                 $query->where('status', 'rejected')
-                      ->whereHas('approvals', function($q) {
+                      ->whereHas('approvals', function ($q) {
                           $q->where('role', 'admin')->where('status', 'rejected');
                       });
                 break;
+    
+            case 'recalled':
+                $query->where('status', 'recalled')
+                      ->whereHas('recalls');
+                break;
+        }
+    
+        $paginatedRequests = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage)
+            ->through(function ($request) {
+                $isDeptHead = $request->employee->user->role === 'dept_head';
+                $canBeRecalled = $this->canBeRecalled($request);
+                $hasRecall = $request->recalls->isNotEmpty();
+                $recallData = $request->recalls->first();
+    
+                return [
+                    'id' => $request->id,
+                    'date_from' => $request->date_from,
+                    'date_to' => $request->date_to,
+                    'status' => $request->status,
+                    'total_days' => $request->total_days,
+                    'created_at' => $request->created_at,
+                    'is_dept_head_request' => $isDeptHead,
+                    'employee' => [
+                        'id' => $request->employee->id,
+                        'firstname' => $request->employee->firstname,
+                        'lastname' => $request->employee->lastname,
+                        'department' => $request->employee->department?->name,
+                        'position' => $request->employee->position,
+                        'role' => $request->employee->user->role,
+                    ],
+                    'leaveType' => [
+                        'id' => $request->leaveType?->id,
+                        'name' => $request->leaveType?->name,
+                        'code' => $request->leaveType?->code,
+                    ],
+                    'hr_approval' => $request->approvals->firstWhere('role', 'hr'),
+                    'dept_head_approval' => $request->approvals->firstWhere('role', 'dept_head'),
+                    'admin_approval' => $request->approvals->firstWhere('role', 'admin'),
+                    'can_be_recalled' => $canBeRecalled,
+                    'is_recalled' => $request->status === 'recalled',
+                    'recall_data' => $recallData ? [
+                        'reason' => $recallData->reason_for_change,
+                        'new_date_from' => $recallData->new_leave_date_from,
+                        'new_date_to' => $recallData->new_leave_date_to,
+                        'recalled_at' => $recallData->created_at,
+                        'recalled_by' => $recallData->approved_by_admin
+                    ] : null
+                ];
+            });
+    
+        return Inertia::render('Admin/LeaveRequests', [
+            'leaveRequests' => $paginatedRequests,
+            'filters' => $request->only(['status', 'search', 'department']),
+            'currentApprover' => [
+                'name' => $currentApprover->name,
+                'is_primary' => $currentApprover->is_primary
+            ],
+            'isActiveApprover' => auth()->user()->isActiveApprover(),
+            'departments' => Department::select('id', 'name')->get(),
+        ]);
     }
-
-    $paginatedRequests = $query->orderBy('created_at', 'desc')
-                      ->paginate($perPage)
-                      ->through(function ($request) {
-                          $isDeptHead = $request->employee->user->role === 'dept_head';
-
-                           // ADD RECALL ELIGIBILITY CHECK
-                           $canBeRecalled = $this->canBeRecalled($request);
-                           $hasRecall = $request->recalls->isNotEmpty();
-                           $recallData = $request->recalls->first();
-                          
-                          return [
-                              'id' => $request->id,
-                              'date_from' => $request->date_from,
-                              'date_to' => $request->date_to,
-                              'status' => $request->status,
-                              'total_days' => $request->total_days,
-                              'created_at' => $request->created_at,
-                              'is_dept_head_request' => $isDeptHead,
-                              'employee' => [
-                                  'id' => $request->employee->id,
-                                  'firstname' => $request->employee->firstname,
-                                  'lastname' => $request->employee->lastname,
-                                  'department' => $request->employee->department?->name,
-                                  'position' => $request->employee->position,
-                                  'role' => $request->employee->user->role,
-                              ],
-                              'leaveType' => [
-                                  'id' => $request->leaveType?->id,
-                                  'name' => $request->leaveType?->name,
-                                  'code' => $request->leaveType?->code,
-                              ],
-                              'hr_approval' => $request->approvals->firstWhere('role', 'hr'),
-                              'dept_head_approval' => $request->approvals->firstWhere('role', 'dept_head'),
-                              'admin_approval' => $request->approvals->firstWhere('role', 'admin'),
-                              'can_be_recalled' => $canBeRecalled,
-                              'is_recalled' => $request->status === 'recalled',
-                              'recall_data' => $request->recalls->first() ? [
-                                  'reason' => $request->recalls->first()->reason_for_change,
-                                  'new_date_from' => $request->recalls->first()->new_leave_date_from,
-                                  'new_date_to' => $request->recalls->first()->new_leave_date_to,
-                                  'recalled_at' => $request->recalls->first()->created_at,
-                                  'recalled_by' => $request->recalls->first()->approved_by_admin
-                              ] : null
-                          ];
-                      });
-
-    return Inertia::render('Admin/LeaveRequests', [
-        'leaveRequests' => $paginatedRequests,
-        'filters' => ['status' => $status],
-        'currentApprover' => $currentApprover,
-        'isActiveApprover' => auth()->user()->isActiveApprover(),
-    ]);
-}
 
 
 private function canBeRecalled(LeaveRequest $request)
@@ -384,15 +426,19 @@ public function showLeaveRequest($id)
 /**
  * Check if all required approvals are complete for a leave request
  */
+// In AdminController - update the isFullyApproved method:
+
 private function isFullyApproved(LeaveRequest $leaveRequest)
 {
     $isDeptHeadRequest = $leaveRequest->employee->user->role === 'dept_head' || 
                         $leaveRequest->is_dept_head_request;
+    $isAdminRequest = $leaveRequest->employee->user->role === 'admin';
 
-    if ($isDeptHeadRequest) {
-        // Department heads only need HR and Admin approval
+    if ($isDeptHeadRequest || $isAdminRequest) {
+        // Department heads AND Admins only need HR and Admin approval
         $requiredRoles = ['hr', 'admin'];
-        \Log::info("👨‍💼 Department head request detected for leave ID {$leaveRequest->id}. Required roles: " . implode(', ', $requiredRoles));
+        $requestType = $isDeptHeadRequest ? 'Department head' : 'Admin';
+        \Log::info("👨‍💼 {$requestType} request detected for leave ID {$leaveRequest->id}. Required roles: " . implode(', ', $requiredRoles));
     } else {
         // Regular employees need HR, Dept Head, and Admin approval
         $requiredRoles = ['hr', 'dept_head', 'admin'];
@@ -504,52 +550,116 @@ private function isFullyApproved(LeaveRequest $leaveRequest)
 }
 
 
-    public function dashboard(Request $request)
-    {
-        // Get pending leave requests count
-        $pendingCount = LeaveRequest::where('status', 'pending')->count();
+public function dashboard(Request $request)
+{
+    // Get filter values from request
+    $year = $request->year ?? now()->year;
+    $month = $request->month ?? null;
     
-        // Get recent leave requests
-        $recentRequests = LeaveRequest::with(['leaveType', 'employee.department'])
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get();
+    // Get available years for filter dropdown
+    $availableYears = $this->getAvailableYears();
+
+    // Get pending leave requests count with filters
+    $pendingQuery = LeaveRequest::where('status', 'pending');
+    if ($month) {
+        $pendingQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $pendingQuery->whereYear('created_at', $year);
+    }
+    $pendingCount = $pendingQuery->count();
+
+    // Get recent leave requests with filters
+    $recentQuery = LeaveRequest::with(['leaveType', 'employee.department'])
+        ->orderBy('created_at', 'desc')
+        ->limit(5);
     
-        // Get leave requests by status
-        $requestsByStatus = [
-            'pending' => LeaveRequest::where('status', 'pending')->count(),
-            'approved' => LeaveRequest::where('status', 'approved')->count(),
-            'rejected' => LeaveRequest::where('status', 'rejected')->count(),
-        ];
+    if ($month) {
+        $recentQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $recentQuery->whereYear('created_at', $year);
+    }
+    $recentRequests = $recentQuery->get();
+
+    // Get leave requests by status with filters
+    $statusQuery = LeaveRequest::selectRaw('status, count(*) as count');
+    if ($month) {
+        $statusQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $statusQuery->whereYear('created_at', $year);
+    }
+    $statusResults = $statusQuery->groupBy('status')->get();
     
-        // Analytics data for the dashboard
-        $totalEmployees = Employee::count();
-        $totalDepartments = Department::count();
-        $totalUsers = User::count();
-        $totalHRUsers = User::where('role', 'hr')->count();
-        $fullyApprovedRequests = LeaveRequest::where('status', 'approved')->count();
-        $rejectedRequests = LeaveRequest::where('status', 'rejected')->count();
+    $requestsByStatus = [
+        'pending' => $statusResults->where('status', 'pending')->first()->count ?? 0,
+        'approved' => $statusResults->where('status', 'approved')->first()->count ?? 0,
+        'rejected' => $statusResults->where('status', 'rejected')->first()->count ?? 0,
+    ];
+
+    // Analytics data for the dashboard
+    $totalEmployees = Employee::count();
+    $totalDepartments = Department::count();
+    $totalUsers = User::count();
+    $totalHRUsers = User::where('role', 'hr')->count();
+
+    // Fully approved and rejected requests with filters
+    $approvedQuery = LeaveRequest::where('status', 'approved');
+    $rejectedQuery = LeaveRequest::where('status', 'rejected');
     
-        // Employee status counts
-        $activeEmployees = Employee::where('status', 'active')->count();
-        $inactiveEmployees = Employee::where('status', 'inactive')->count();
+    if ($month) {
+        $approvedQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+        $rejectedQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $approvedQuery->whereYear('created_at', $year);
+        $rejectedQuery->whereYear('created_at', $year);
+    }
     
-        // Leave type statistics
-        $leaveTypeStats = LeaveRequest::with('leaveType')
-            ->selectRaw('leave_type_id, count(*) as count')
-            ->groupBy('leave_type_id')
+    $fullyApprovedRequests = $approvedQuery->count();
+    $rejectedRequests = $rejectedQuery->count();
+
+    // Employee status counts (no date filter needed)
+    $activeEmployees = Employee::where('status', 'active')->count();
+    $inactiveEmployees = Employee::where('status', 'inactive')->count();
+
+    // Leave type statistics with filters
+    $leaveTypeQuery = LeaveRequest::with('leaveType')
+        ->selectRaw('leave_type_id, count(*) as count');
+    
+    if ($month) {
+        $leaveTypeQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $leaveTypeQuery->whereYear('created_at', $year);
+    }
+    
+    $leaveTypeStats = $leaveTypeQuery->groupBy('leave_type_id')
+        ->get()
+        ->map(function ($item) {
+            return [
+                'name' => $item->leaveType->name ?? 'Unknown',
+                'count' => $item->count
+            ];
+        });
+
+    // Monthly statistics (for the selected year)
+    $monthlyQuery = LeaveRequest::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, count(*) as count')
+        ->whereYear('created_at', $year);
+    
+    if ($month) {
+        // If specific month is selected, show daily data instead
+        $monthlyStats = LeaveRequest::selectRaw('DATE(created_at) as day, count(*) as count')
+            ->whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->groupBy('day')
+            ->orderBy('day')
             ->get()
             ->map(function ($item) {
                 return [
-                    'name' => $item->leaveType->name ?? 'Unknown',
+                    'month' => date('M d', strtotime($item->day)),
                     'count' => $item->count
                 ];
             });
-    
-        // Monthly statistics (last 12 months)
-        $monthlyStats = LeaveRequest::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, count(*) as count')
-            ->where('created_at', '>=', now()->subMonths(12))
-            ->groupBy('month')
+    } else {
+        // Show monthly data for the year
+        $monthlyStats = $monthlyQuery->groupBy('month')
             ->orderBy('month')
             ->get()
             ->map(function ($item) {
@@ -558,38 +668,69 @@ private function isFullyApproved(LeaveRequest $leaveRequest)
                     'count' => $item->count
                 ];
             });
-    
-        // Department statistics
-        $departmentStats = LeaveRequest::with('employee.department')
-            ->selectRaw('employees.department_id, count(*) as count')
-            ->join('employees', 'leave_requests.employee_id', '=', 'employees.employee_id')
-            ->groupBy('employees.department_id')
-            ->get()
-            ->map(function ($item) {
-                $department = Department::find($item->department_id);
-                return [
-                    'name' => $department->name ?? 'Unknown',
-                    'count' => $item->count
-                ];
-            });
-    
-        return Inertia::render('Admin/Dashboard', [
-            'pendingCount' => $pendingCount,
-            'recentRequests' => $recentRequests,
-            'requestsByStatus' => $requestsByStatus,
-            'totalEmployees' => $totalEmployees,
-            'totalDepartments' => $totalDepartments,
-            'totalUsers' => $totalUsers,
-            'totalHRUsers' => $totalHRUsers,
-            'fullyApprovedRequests' => $fullyApprovedRequests,
-            'rejectedRequests' => $rejectedRequests,
-            'activeEmployees' => $activeEmployees,
-            'inactiveEmployees' => $inactiveEmployees,
-            'leaveTypeStats' => $leaveTypeStats,
-            'monthlyStats' => $monthlyStats,
-            'departmentStats' => $departmentStats,
-        ]);
     }
+
+    // Department statistics with filters
+    $departmentQuery = LeaveRequest::with('employee.department')
+        ->selectRaw('employees.department_id, count(*) as count')
+        ->join('employees', 'leave_requests.employee_id', '=', 'employees.employee_id');
+    
+    if ($month) {
+        $departmentQuery->whereMonth('leave_requests.created_at', $month)->whereYear('leave_requests.created_at', $year);
+    } else {
+        $departmentQuery->whereYear('leave_requests.created_at', $year);
+    }
+    
+    $departmentStats = $departmentQuery->groupBy('employees.department_id')
+        ->get()
+        ->map(function ($item) {
+            $department = Department::find($item->department_id);
+            return [
+                'name' => $department->name ?? 'Unknown',
+                'count' => $item->count
+            ];
+        });
+
+    return Inertia::render('Admin/Dashboard', [
+        'pendingCount' => $pendingCount,
+        'recentRequests' => $recentRequests,
+        'requestsByStatus' => $requestsByStatus,
+        'totalEmployees' => $totalEmployees,
+        'totalDepartments' => $totalDepartments,
+        'totalUsers' => $totalUsers,
+        'totalHRUsers' => $totalHRUsers,
+        'fullyApprovedRequests' => $fullyApprovedRequests,
+        'rejectedRequests' => $rejectedRequests,
+        'activeEmployees' => $activeEmployees,
+        'inactiveEmployees' => $inactiveEmployees,
+        'leaveTypeStats' => $leaveTypeStats,
+        'monthlyStats' => $monthlyStats,
+        'departmentStats' => $departmentStats,
+        'availableYears' => $availableYears,
+        'currentYear' => $year,
+        'currentMonth' => $month,
+        'filters' => $request->only(['year', 'month']),
+    ]);
+}
+
+/**
+ * Get available years for filtering
+ */
+private function getAvailableYears()
+{
+    $currentYear = now()->year;
+    $years = [];
+    
+    // Get the earliest leave request year
+    $earliestRequest = LeaveRequest::orderBy('created_at')->first();
+    $startYear = $earliestRequest ? $earliestRequest->created_at->year : $currentYear - 2;
+    
+    for ($i = $startYear; $i <= $currentYear + 1; $i++) {
+        $years[] = $i;
+    }
+    
+    return $years;
+}
     
         /**
          * Calculate average processing time for leave requests
@@ -775,20 +916,32 @@ private function isFullyApproved(LeaveRequest $leaveRequest)
     public function leaveCalendar(Request $request)
 {
     // Get the current year or use the year from request
-    $currentYear = $request->year ?? now()->year;
-    
-    // Get fully approved leave requests for the specified year
+    $year = $request->input('year', now()->year);
+    $month = $request->input('month');
+    $day = $request->input('day');
+
+    // Define the filter period for overlapping leaves
+    $startDate = Carbon::createFromDate($year, $month ?: 1, $day ?: 1)->startOfDay();
+    if (!$month) {
+        $startDate->startOfYear();
+    } elseif (!$day) {
+        $startDate->startOfMonth();
+    }
+
+    $endDate = $startDate->copy()->endOfDay();
+    if (!$month) {
+        $endDate->endOfYear();
+    } elseif (!$day) {
+        $endDate->endOfMonth();
+    }
+
+    // Get fully approved leave requests for the specified period
     $query = LeaveRequest::where('status', 'approved')
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'hr')->where('status', 'approved');
-        })
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'dept_head')->where('status', 'approved');
-        })
         ->whereHas('approvals', function ($query) {
             $query->where('role', 'admin')->where('status', 'approved');
         })
-        ->whereYear('date_from', $currentYear) // Filter by year
+        ->where('date_to', '>=', $startDate)
+        ->where('date_from', '<=', $endDate)
         ->with(['employee', 'leaveType', 'approvals' => function ($query) {
             $query->with('approver');
         }]);
@@ -880,8 +1033,8 @@ private function isFullyApproved(LeaveRequest $leaveRequest)
         'leavesByMonth' => $leavesByMonth,
         'departments' => Department::all(),
         'leaveTypes' => LeaveType::all(),
-        'filters' => $request->only(['year', 'department', 'leave_type']),
-        'currentYear' => $currentYear,
+        'filters' => $request->only(['year', 'month', 'day', 'department', 'leave_type']),
+        'currentYear' => $year,
     ]);
 }
 
@@ -1074,5 +1227,277 @@ private function updateLeaveRequestStatus($leaveRequestId)
     $leaveRequest->save();
 }
 
+
+//clickable stats card
+
+// Employees Management
+public function employeesIndex(Request $request)
+{
+    $perPage = 10;
+    
+    $employees = Employee::with(['department', 'user'])
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->where('firstname', 'like', "%{$search}%")
+                  ->orWhere('lastname', 'like', "%{$search}%")
+                  ->orWhere('position', 'like', "%{$search}%")
+                  ->orWhereHas('department', function ($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%");
+                  });
+            });
+        })
+        ->orderBy('firstname')
+        ->orderBy('lastname')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('Admin/Employees/Index', [
+        'employees' => $employees,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'All Employees',
+        'totalCount' => Employee::count(),
+        'activeCount' => Employee::where('status', 'active')->count(),
+        'inactiveCount' => Employee::where('status', 'inactive')->count(),
+    ]);
+}
+
+public function activeEmployees(Request $request)
+{
+    $perPage = 10;
+    
+    $employees = Employee::with(['department', 'user'])
+        ->where('status', 'active')
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->where('firstname', 'like', "%{$search}%")
+                  ->orWhere('lastname', 'like', "%{$search}%")
+                  ->orWhere('position', 'like', "%{$search}%")
+                  ->orWhereHas('department', function ($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%");
+                  });
+            });
+        })
+        ->orderBy('firstname')
+        ->orderBy('lastname')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('Admin/Employees/Index', [
+        'employees' => $employees,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'Active Employees',
+        'totalCount' => Employee::where('status', 'active')->count(),
+        'activeCount' => Employee::where('status', 'active')->count(),
+        'inactiveCount' => Employee::where('status', 'inactive')->count(),
+    ]);
+}
+
+public function inactiveEmployees(Request $request)
+{
+    $perPage = 10;
+    
+    $employees = Employee::with(['department', 'user'])
+        ->where('status', 'inactive')
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->where('firstname', 'like', "%{$search}%")
+                  ->orWhere('lastname', 'like', "%{$search}%")
+                  ->orWhere('position', 'like', "%{$search}%")
+                  ->orWhereHas('department', function ($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%");
+                  });
+            });
+        })
+        ->orderBy('firstname')
+        ->orderBy('lastname')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('Admin/Employees/Index', [
+        'employees' => $employees,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'Inactive Employees',
+        'totalCount' => Employee::where('status', 'inactive')->count(),
+        'activeCount' => Employee::where('status', 'active')->count(),
+        'inactiveCount' => Employee::where('status', 'inactive')->count(),
+    ]);
+}
+
+// Users Management
+public function usersIndex(Request $request)
+{
+    $perPage = 10;
+    
+    $users = User::with(['employee.department'])
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhereHas('employee', function ($q) use ($search) {
+                      $q->where('firstname', 'like', "%{$search}%")
+                        ->orWhere('lastname', 'like', "%{$search}%")
+                        ->orWhere('biometric_id', 'like', "%{$search}%");
+                  });
+            });
+        })
+        ->orderBy('name')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('Admin/Users/Index', [
+        'users' => $users,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'All System Users',
+        'totalCount' => User::count(),
+    ]);
+}
+
+public function hrUsers(Request $request)
+{
+    $perPage = 10;
+    
+    $users = User::with(['employee.department'])
+        ->where('role', 'hr')
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhereHas('employee', function ($q) use ($search) {
+                      $q->where('firstname', 'like', "%{$search}%")
+                        ->orWhere('lastname', 'like', "%{$search}%")
+                        ->orWhere('biometric_id', 'like', "%{$search}%");
+                  });
+            });
+        })
+        ->orderBy('name')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('Admin/Users/Index', [
+        'users' => $users,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'HR Users',
+        'totalCount' => User::where('role', 'hr')->count(),
+    ]);
+}
+
+// Leave Requests
+public function fullyApprovedRequests(Request $request)
+{
+    \Log::info('fullyApprovedRequests method called');
+    
+    // Temporary: Check what's being returned
+    try {
+        $perPage = 10;
+        
+        $leaveRequests = LeaveRequest::with([
+                'employee.department',
+                'leaveType',
+                'approvals' => function($q) {
+                    $q->whereIn('role', ['hr', 'dept_head', 'admin'])
+                      ->orderBy('created_at', 'desc');
+                }
+            ])
+            ->where('status', 'approved')
+            ->whereHas('approvals', function($q) {
+                $q->where('role', 'admin')->where('status', 'approved');
+            })
+            ->orderBy('created_at', 'desc')
+            ->paginate($perPage);
+
+        \Log::info('Query successful', ['count' => $leaveRequests->count()]);
+
+        $response = Inertia::render('Admin/LeaveRequests/Approved', [
+            'leaveRequests' => $leaveRequests,
+            'filters' => $request->only(['search']),
+            'pageTitle' => 'Fully Approved Leave Requests',
+            'totalCount' => $leaveRequests->total(),
+        ]);
+
+        \Log::info('Inertia response created successfully');
+        return $response;
+
+    } catch (\Exception $e) {
+        \Log::error('Error in fullyApprovedRequests: ' . $e->getMessage());
+        \Log::error('Stack trace: ' . $e->getTraceAsString());
+        
+        // Return a simple error page
+        return Inertia::render('Admin/Error', [
+            'error' => $e->getMessage()
+        ]);
+    }
+}
+
+public function rejectedRequests(Request $request)
+{
+    $perPage = 10;
+    
+    $leaveRequests = LeaveRequest::with([
+            'employee.department',
+            'leaveType',
+            'approvals' => function($q) {
+                $q->whereIn('role', ['hr', 'dept_head', 'admin'])
+                  ->orderBy('created_at', 'desc');
+            }
+        ])
+        ->where('status', 'rejected')
+        ->whereHas('approvals', function($q) {
+            $q->where('role', 'admin')->where('status', 'rejected');
+        })
+        ->when($request->search, function ($query, $search) {
+            return $query->where(function ($q) use ($search) {
+                $q->whereHas('employee', function ($q) use ($search) {
+                    $q->where('firstname', 'like', "%{$search}%")
+                      ->orWhere('lastname', 'like', "%{$search}%");
+                })
+                ->orWhereHas('leaveType', function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%");
+                });
+            });
+        })
+        ->orderBy('created_at', 'desc')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    return Inertia::render('Admin/LeaveRequests/Rejected', [
+        'leaveRequests' => $leaveRequests,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'Rejected Leave Requests',
+        'totalCount' => LeaveRequest::where('status', 'rejected')
+            ->whereHas('approvals', function($q) {
+                $q->where('role', 'admin')->where('status', 'rejected');
+            })->count(),
+    ]);
+}
+
+// Departments
+public function departmentsIndex(Request $request)
+{
+    $perPage = 10;
+    
+    $departments = Department::with(['employees.user'])
+        ->when($request->search, function ($query, $search) {
+            return $query->where('name', 'like', "%{$search}%");
+        })
+        ->orderBy('name')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    // Get department heads
+    $departmentHeads = User::where('role', 'dept_head')
+        ->with('employee.department')
+        ->get()
+        ->mapWithKeys(function ($user) {
+            return [$user->employee->department_id => $user->name];
+        });
+
+    return Inertia::render('Admin/Departments/Index', [
+        'departments' => $departments,
+        'departmentHeads' => $departmentHeads,
+        'filters' => $request->only(['search']),
+        'pageTitle' => 'All Departments',
+        'totalCount' => Department::count(),
+    ]);
+}
 
 }

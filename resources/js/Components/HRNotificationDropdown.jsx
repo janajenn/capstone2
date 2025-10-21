@@ -82,42 +82,62 @@ export default function HRNotificationDropdown() {
         }
     };
 
-    const markAllAsRead = async () => {
-        try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch('/hr/notifications/mark-all-read', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                },
-                credentials: 'same-origin',
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const data = await response.json();
-            if (data.success) {
-                setUnreadCount(0);
-                setNotifications(prev => 
-                    prev.map(notif => ({ ...notif, is_read: true, read_at: new Date().toISOString() }))
-                );
-                setPreviousUnreadCount(0);
-            }
-        } catch (error) {
-            console.error('Error marking all HR notifications as read:', error);
+    // In HRNotificationDropdown.jsx - FIXED VERSION
+const markAllAsRead = async () => {
+    try {
+        // Get CSRF token properly
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        
+        if (!csrfToken) {
+            console.error('CSRF token not found');
+            return;
         }
-    };
 
-    const playNotificationSound = () => {
-        if (audioRef.current) {
-            audioRef.current.play().catch(e => {
-                console.log('Audio play failed:', e);
-            });
+        console.log('Making mark all as read request with CSRF token:', csrfToken ? 'Found' : 'Missing');
+
+        const response = await fetch('/hr/notifications/mark-all-read', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'include', // Important: use 'include' not 'same-origin'
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (response.status === 419) {
+            console.log('CSRF token invalid - reloading page');
+            window.location.reload();
+            return;
         }
-    };
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Response error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log('Mark all as read response:', data);
+        
+        if (data.success) {
+            setUnreadCount(0);
+            setNotifications(prev => 
+                prev.map(notif => ({ ...notif, is_read: true, read_at: new Date().toISOString() }))
+            );
+            setPreviousUnreadCount(0);
+        }
+    } catch (error) {
+        console.error('Error marking all HR notifications as read:', error);
+        
+        // If it's a 419 error, reload the page
+        if (error.message.includes('419')) {
+            window.location.reload();
+        }
+    }
+};
 
     useEffect(() => {
         fetchUnreadCount();

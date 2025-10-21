@@ -20,33 +20,48 @@ use App\Services\CreditConversionService;
 use App\Services\NotificationService;
 use App\Models\LeaveRecall;
 use App\Models\LeaveCreditLog;
+use App\Exports\EmployeeRecordingsExport;
+use Maatwebsite\Excel\Facades\Excel;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 
 class HRController extends Controller
 {
 
+
+
+    protected $creditConversionService;
+    protected $notificationService;
+
+    // ADD THIS CONSTRUCTOR
+    public function __construct(CreditConversionService $creditConversionService, NotificationService $notificationService)
+    {
+        $this->creditConversionService = $creditConversionService;
+        $this->notificationService = $notificationService;
+    }
+
     //EMPLOYEE MANAGEMENT
     public function employees(Request $request)
     {
-        $perPage = 10; // Number of records per page
+        $perPage = 10;
         
         $employees = Employee::with('department')
-            ->when($request->search, function ($query, $search) {
-                return $query->where(function ($q) use ($search) {
-                    $q->where('firstname', 'like', "%{$search}%")
-                      ->orWhere('lastname', 'like', "%{$search}%")
-                      ->orWhere('position', 'like', "%{$search}%")
-                      ->orWhereHas('department', function ($q) use ($search) {
-                          $q->where('name', 'like', "%{$search}%");
+            ->when($request->filled('search'), function ($query) use ($request) {
+                return $query->where(function ($q) use ($request) {
+                    $q->where('firstname', 'like', "%{$request->search}%")
+                      ->orWhere('lastname', 'like', "%{$request->search}%")
+                      ->orWhere('position', 'like', "%{$request->search}%")
+                      ->orWhereHas('department', function ($q) use ($request) {
+                          $q->where('name', 'like', "%{$request->search}%");
                       });
                 });
             })
-            ->when($request->department, function ($query, $department) {
-                return $query->where('department_id', $department);
+            ->when($request->filled('department'), function ($query) use ($request) {
+                return $query->where('department_id', $request->department);
             })
             ->latest()
             ->paginate($perPage)
-            ->withQueryString(); // Preserve all query parameters
+            ->withQueryString();
     
         return Inertia::render('HR/Employees', [
             'employees' => $employees,
@@ -54,6 +69,7 @@ class HRController extends Controller
             'filters' => $request->only(['search', 'department']),
         ]);
     }
+
     public function storeEmployee(Request $request)
     {
         $validated = $request->validate([
@@ -342,6 +358,11 @@ public function leaveCredits(Request $request)
         ->where('month', $month)
         ->exists();
 
+    // Check if we should show warning modal
+    $showWarning = session('show_credit_warning', false);
+    $warningMonth = session('warning_month');
+    $warningYear = session('warning_year');
+
     return Inertia::render('HR/LeaveCredits', [
         'employees' => $employees,
         'alreadyCredited' => $alreadyCredited,
@@ -349,28 +370,61 @@ public function leaveCredits(Request $request)
         'creditedYear' => $year,
         'departments' => Department::all(),
         'filters' => $request->only(['search', 'department']),
+        'showCreditWarning' => $showWarning,
+        'warningMonth' => $warningMonth,
+        'warningYear' => $warningYear,
     ]);
 }
 
-public function update(Request $request, User $employee)
+
+
+public function update(Request $request, $employee_id)
 {
     $request->validate([
         'sl_balance' => 'required|numeric|min:0',
         'vl_balance' => 'required|numeric|min:0',
+        'imported_at' => 'nullable|date',
     ]);
 
-    $leaveCredit = LeaveCredit::firstOrCreate(
-        ['employee_id' => $employee->id],
-        ['sl_balance' => 0, 'vl_balance' => 0]
-    );
+    try {
+        // Find or create leave credit record for the employee
+        $leaveCredit = LeaveCredit::firstOrCreate(
+            ['employee_id' => $employee_id],
+            [
+                'sl_balance' => 0, 
+                'vl_balance' => 0,
+                'last_updated' => now()
+            ]
+        );
 
-    $leaveCredit->update([
-        'sl_balance' => $request->sl_balance,
-        'vl_balance' => $request->vl_balance,
-        'imported_at' => $request->imported_at,
-    ]);
+        $leaveCredit->update([
+            'sl_balance' => $request->sl_balance,
+            'vl_balance' => $request->vl_balance,
+            'imported_at' => $request->imported_at ?: $leaveCredit->imported_at,
+            'last_updated' => now(),
+        ]);
 
-    return redirect()->back()->with('success', 'Leave credits updated successfully.');
+        // Optional: Create a log entry for the override
+        \App\Models\LeaveCreditLog::create([
+            'employee_id' => $employee_id,
+            'type' => 'MANUAL_OVERRIDE',
+            'date' => now(),
+            'year' => now()->year,
+            'month' => now()->month,
+            'points_deducted' => 0,
+            'balance_before_sl' => $leaveCredit->getOriginal('sl_balance'),
+            'balance_after_sl' => $request->sl_balance,
+            'balance_before_vl' => $leaveCredit->getOriginal('vl_balance'),
+            'balance_after_vl' => $request->vl_balance,
+            'remarks' => 'Manual override by HR',
+        ]);
+
+        return redirect()->back()->with('success', 'Leave credits updated successfully.');
+
+    } catch (\Exception $e) {
+        \Log::error('Error updating leave credits: ' . $e->getMessage());
+        return redirect()->back()->withErrors(['error' => 'Failed to update leave credits: ' . $e->getMessage()]);
+    }
 }
 
 
@@ -394,13 +448,19 @@ public function addMonthlyCredits()
         ]);
     }
 
-    // Get all roles that should receive leave credits
-    $employees = User::whereIn('role', ['employee', 'admin', 'hr', 'dept_head'])->get();
+    // Get all employees with their associated users for roles that should receive leave credits
+    $employees = Employee::whereHas('user', function ($query) {
+        $query->whereIn('role', ['employee', 'admin', 'hr', 'dept_head']);
+    })->get();
 
     foreach ($employees as $employee) {
         $credit = LeaveCredit::firstOrCreate(
-            ['employee_id' => $employee->id],
-            ['sl_balance' => 0, 'vl_balance' => 0]
+            ['employee_id' => $employee->employee_id],
+            [
+                'sl_balance' => 0,
+                'vl_balance' => 0,
+                'last_updated' => now()
+            ]
         );
     
         // Only start auto-adding credits AFTER import date
@@ -412,7 +472,6 @@ public function addMonthlyCredits()
         $credit->increment('vl_balance', 1.25);
     }
     
-
     MonthlyCreditLog::create([
         'year' => $year,
         'month' => $month,
@@ -629,32 +688,79 @@ public function deleteDepartment($id)
 // LEAVE REQUEST APPROVAL METHODS
 public function dashboard(Request $request)
 {
-    // Get pending leave requests count
-    $pendingCount = LeaveRequest::where('status', 'pending')->count();
+    // Get filter values
+    $year = $request->year ?? now()->year;
+    $month = $request->month ?? null;
+    
+    // Get available years for filter dropdown
+    $availableYears = $this->getAvailableYears();
 
-    // Get recent leave requests
-    $recentRequests = LeaveRequest::with(['leaveType', 'employee.department'])
+    // Get pending leave requests count with filters
+    $pendingQuery = LeaveRequest::where('status', 'pending');
+    if ($month) {
+        $pendingQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $pendingQuery->whereYear('created_at', $year);
+    }
+    $pendingCount = $pendingQuery->count();
+
+    // Get recent leave requests with filters
+    $recentQuery = LeaveRequest::with(['leaveType', 'employee.department'])
         ->orderBy('created_at', 'desc')
-        ->limit(5)
-        ->get();
+        ->limit(5);
+    
+    if ($month) {
+        $recentQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $recentQuery->whereYear('created_at', $year);
+    }
+    $recentRequests = $recentQuery->get();
 
-    // Get leave requests by status
+    // Get leave requests by status with filters
+    $statusQuery = LeaveRequest::selectRaw('status, count(*) as count');
+    if ($month) {
+        $statusQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $statusQuery->whereYear('created_at', $year);
+    }
+    $statusResults = $statusQuery->groupBy('status')->get();
+    
     $requestsByStatus = [
-        'pending' => LeaveRequest::where('status', 'pending')->count(),
-        'approved' => LeaveRequest::where('status', 'approved')->count(),
-        'rejected' => LeaveRequest::where('status', 'rejected')->count(),
+        'pending' => $statusResults->where('status', 'pending')->first()->count ?? 0,
+        'approved' => $statusResults->where('status', 'approved')->first()->count ?? 0,
+        'rejected' => $statusResults->where('status', 'rejected')->first()->count ?? 0,
     ];
 
     // Analytics data for the dashboard
     $totalEmployees = Employee::count();
     $totalDepartments = Department::count();
-    $fullyApprovedRequests = LeaveRequest::where('status', 'approved')->count();
-    $rejectedRequests = LeaveRequest::where('status', 'rejected')->count();
 
-    // Leave type statistics
-    $leaveTypeStats = LeaveRequest::with('leaveType')
-        ->selectRaw('leave_type_id, count(*) as count')
-        ->groupBy('leave_type_id')
+    // Fully approved and rejected requests with filters
+    $approvedQuery = LeaveRequest::where('status', 'approved');
+    $rejectedQuery = LeaveRequest::where('status', 'rejected');
+    
+    if ($month) {
+        $approvedQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+        $rejectedQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $approvedQuery->whereYear('created_at', $year);
+        $rejectedQuery->whereYear('created_at', $year);
+    }
+    
+    $fullyApprovedRequests = $approvedQuery->count();
+    $rejectedRequests = $rejectedQuery->count();
+
+    // Leave type statistics with filters
+    $leaveTypeQuery = LeaveRequest::with('leaveType')
+        ->selectRaw('leave_type_id, count(*) as count');
+    
+    if ($month) {
+        $leaveTypeQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
+    } else {
+        $leaveTypeQuery->whereYear('created_at', $year);
+    }
+    
+    $leaveTypeStats = $leaveTypeQuery->groupBy('leave_type_id')
         ->get()
         ->map(function ($item) {
             return [
@@ -663,24 +769,49 @@ public function dashboard(Request $request)
             ];
         });
 
-    // Monthly statistics (last 12 months)
-    $monthlyStats = LeaveRequest::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, count(*) as count')
-        ->where('created_at', '>=', now()->subMonths(12))
-        ->groupBy('month')
-        ->orderBy('month')
-        ->get()
-        ->map(function ($item) {
-            return [
-                'month' => date('M Y', strtotime($item->month . '-01')),
-                'count' => $item->count
-            ];
-        });
+    // Monthly statistics (for the selected year)
+    $monthlyQuery = LeaveRequest::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, count(*) as count')
+        ->whereYear('created_at', $year);
+    
+    if ($month) {
+        // If specific month is selected, show daily data instead
+        $monthlyStats = LeaveRequest::selectRaw('DATE(created_at) as day, count(*) as count')
+            ->whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->groupBy('day')
+            ->orderBy('day')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'month' => date('M d', strtotime($item->day)),
+                    'count' => $item->count
+                ];
+            });
+    } else {
+        // Show monthly data for the year
+        $monthlyStats = $monthlyQuery->groupBy('month')
+            ->orderBy('month')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'month' => date('M Y', strtotime($item->month . '-01')),
+                    'count' => $item->count
+                ];
+            });
+    }
 
-    // Department statistics
-    $departmentStats = LeaveRequest::with('employee.department')
+    // Department statistics with filters
+    $departmentQuery = LeaveRequest::with('employee.department')
         ->selectRaw('employees.department_id, count(*) as count')
-        ->join('employees', 'leave_requests.employee_id', '=', 'employees.employee_id')
-        ->groupBy('employees.department_id')
+        ->join('employees', 'leave_requests.employee_id', '=', 'employees.employee_id');
+    
+    if ($month) {
+        $departmentQuery->whereMonth('leave_requests.created_at', $month)->whereYear('leave_requests.created_at', $year);
+    } else {
+        $departmentQuery->whereYear('leave_requests.created_at', $year);
+    }
+    
+    $departmentStats = $departmentQuery->groupBy('employees.department_id')
         ->get()
         ->map(function ($item) {
             $department = Department::find($item->department_id);
@@ -701,12 +832,35 @@ public function dashboard(Request $request)
         'leaveTypeStats' => $leaveTypeStats,
         'monthlyStats' => $monthlyStats,
         'departmentStats' => $departmentStats,
+        'availableYears' => $availableYears,
+        'currentYear' => $year,
+        'currentMonth' => $month,
+        'filters' => $request->only(['year', 'month']),
     ]);
+}
+
+/**
+ * Get available years for filtering
+ */
+private function getAvailableYears()
+{
+    $currentYear = now()->year;
+    $years = [];
+    
+    // Get the earliest leave request year
+    $earliestRequest = LeaveRequest::orderBy('created_at')->first();
+    $startYear = $earliestRequest ? $earliestRequest->created_at->year : $currentYear - 2;
+    
+    for ($i = $startYear; $i <= $currentYear + 1; $i++) {
+        $years[] = $i;
+    }
+    
+    return $years;
 }
 
 public function leaveRequests(Request $request)
 {
-    $perPage = 15; // This should be 15, but frontend filtering breaks it
+    $perPage = 15;
     
     $query = LeaveRequest::with([
             'leaveType',
@@ -721,7 +875,7 @@ public function leaveRequests(Request $request)
         ->orderBy('created_at', 'desc');
 
     // Filter by status using database status and approval relationships
-    if ($request->has('status') && $request->status !== 'all') {
+    if ($request->filled('status') && $request->status !== 'all') {
         switch ($request->status) {
             case 'hr_pending':
                 // All requests pending HR approval (status = 'pending')
@@ -741,22 +895,11 @@ public function leaveRequests(Request $request)
                       });
                 break;
 
-                case 'approved_by_hr':
-                    // Show ALL requests that have HR approval, regardless of final status
-                    $query->whereHas('approvals', function($q) {
-                        $q->where('role', 'hr')->where('status', 'approved');
-                    });
-                    break;
-
-            case 'dept_head_pending':
-                // Requests approved by HR and waiting for dept head
-                $query->where('status', 'pending_dept_head')
-                      ->whereHas('approvals', function($q) {
-                          $q->where('role', 'hr')->where('status', 'approved');
-                      })
-                      ->whereHas('employee.user', function($q) {
-                          $q->where('role', '!=', 'dept_head');
-                      });
+            case 'approved_by_hr':
+                // Show ALL requests that have HR approval, regardless of final status
+                $query->whereHas('approvals', function($q) {
+                    $q->where('role', 'hr')->where('status', 'approved');
+                });
                 break;
 
             case 'dept_head_to_admin':
@@ -774,72 +917,83 @@ public function leaveRequests(Request $request)
                 $query->where('status', 'rejected');
                 break;
 
-                case 'fully_approved':
-                    // Show all fully approved requests - both regular employees and department heads
-                    $query->where('status', 'approved')
-                          ->where(function($q) {
-                              $q->where(function($q2) {
-                                  // Regular employees: Need HR, Dept Head, and Admin approval
-                                  $q2->whereHas('approvals', function($q3) {
-                                          $q3->where('role', 'hr')->where('status', 'approved');
-                                      })
-                                      ->whereHas('approvals', function($q3) {
-                                          $q3->where('role', 'dept_head')->where('status', 'approved');
-                                      })
-                                      ->whereHas('approvals', function($q3) {
-                                          $q3->where('role', 'admin')->where('status', 'approved');
-                                      })
-                                      ->whereHas('employee.user', function($q3) {
-                                          $q3->where('role', '!=', 'dept_head');
-                                      });
-                              })->orWhere(function($q2) {
-                                  // Department heads: Only need HR and Admin approval (bypass dept head)
-                                  $q2->whereHas('approvals', function($q3) {
-                                          $q3->where('role', 'hr')->where('status', 'approved');
-                                      })
-                                      ->whereHas('approvals', function($q3) {
-                                          $q3->where('role', 'admin')->where('status', 'approved');
-                                      })
-                                      ->whereHas('employee.user', function($q3) {
-                                          $q3->where('role', 'dept_head');
-                                      });
-                              });
+            case 'fully_approved':
+                // Show all fully approved requests - both regular employees and department heads
+                $query->where('status', 'approved')
+                      ->where(function($q) {
+                          $q->where(function($q2) {
+                              // Regular employees: Need HR, Dept Head, and Admin approval
+                              $q2->whereHas('approvals', function($q3) {
+                                      $q3->where('role', 'hr')->where('status', 'approved');
+                                  })
+                                  ->whereHas('approvals', function($q3) {
+                                      $q3->where('role', 'dept_head')->where('status', 'approved');
+                                  })
+                                  ->whereHas('approvals', function($q3) {
+                                      $q3->where('role', 'admin')->where('status', 'approved');
+                                  })
+                                  ->whereHas('employee.user', function($q3) {
+                                      $q3->where('role', '!=', 'dept_head');
+                                  });
+                          })->orWhere(function($q2) {
+                              // Department heads: Only need HR and Admin approval (bypass dept head)
+                              $q2->whereHas('approvals', function($q3) {
+                                      $q3->where('role', 'hr')->where('status', 'approved');
+                                  })
+                                  ->whereHas('approvals', function($q3) {
+                                      $q3->where('role', 'admin')->where('status', 'approved');
+                                  })
+                                  ->whereHas('employee.user', function($q3) {
+                                      $q3->where('role', 'dept_head');
+                                  });
                           });
-                    break;
+                      });
+                break;
             default:
                 break;
         }
     }
 
-    // Filter by date range
-    if ($request->has('date_from')) {
+    // Filter by date range - use filled() to check if values exist and are not empty
+    if ($request->filled('date_from')) {
         $query->where('date_from', '>=', $request->date_from);
     }
-    if ($request->has('date_to')) {
+    if ($request->filled('date_to')) {
         $query->where('date_to', '<=', $request->date_to);
     }
 
     // Search by employee name
-    if ($request->has('search')) {
+    if ($request->filled('search')) {
         $search = $request->search;
         $query->whereHas('employee', function ($q) use ($search) {
             $q->where('firstname', 'like', "%{$search}%")
               ->orWhere('lastname', 'like', "%{$search}%");
         });
+
+        // ADD DEPARTMENT FILTER
+    if ($request->filled('department')) {
+        $query->whereHas('employee', function ($q) use ($request) {
+            $q->where('department_id', $request->department);
+        });
+    }
     }
 
     $leaveRequests = $query->paginate($perPage)->withQueryString();
 
     return Inertia::render('HR/LeaveRequests', [
         'leaveRequests' => $leaveRequests,
-        'filters' => $request->only(['status', 'date_from', 'date_to', 'search']),
+        'departments' => Department::all(), // ADD THIS LINE - Pass departments to the view
+        'filters' => $request->only(['status', 'date_from', 'date_to', 'search','department']),
     ]);
 }
+
+
 public function showLeaveRequest($id)
 {
     $leaveRequest = LeaveRequest::with([
             'leaveType',
             'employee.department',
+            'employee.leaveCredits',
             'details',
             'approvals.approver'
         ])
@@ -868,7 +1022,6 @@ public function showLeaveRequest($id)
 }
 
 
-// In HRController - modify the approveLeaveRequest method
 public function approveLeaveRequest(Request $request, $id)
 {
     try {
@@ -879,9 +1032,9 @@ public function approveLeaveRequest(Request $request, $id)
             return back()->withErrors(['message' => 'This request has already been processed.']);
         }
 
-        // Check if this is a department head's request
         $isDeptHeadRequest = $leaveRequest->employee->user->role === 'dept_head' || 
                             $leaveRequest->is_dept_head_request;
+        $isAdminRequest = $leaveRequest->employee->user->role === 'admin';
 
         // Create HR approval record
         \App\Models\LeaveApproval::create([
@@ -893,82 +1046,14 @@ public function approveLeaveRequest(Request $request, $id)
             'approved_at' => now(),
         ]);
 
-        $notificationService = new NotificationService();
-
         // Update status correctly based on employee type
-        if ($isDeptHeadRequest) {
-            // For dept heads, go directly to admin after HR approval
+        if ($isDeptHeadRequest || $isAdminRequest) {
             $leaveRequest->update(['status' => 'pending_admin']);
-            
-            // Send notification to admin using admin-specific method
-            $adminUsers = User::where('role', 'admin')->get();
-            foreach ($adminUsers as $admin) {
-                $adminEmployeeId = $notificationService->getEmployeeIdFromUserId($admin->id);
-                if ($adminEmployeeId) {
-                    $notificationService->createAdminNotification(
-                        $adminEmployeeId,
-                        'leave_request_approval',
-                        'Department Head Leave Request - Requires Admin Approval',
-                        "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname} (Department Head) has a leave request that requires your approval after HR review.",
-                        [
-                            'request_id' => $id,
-                            'employee_name' => "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname}",
-                            'leave_type' => $leaveRequest->leaveType->name,
-                            'date_from' => $leaveRequest->date_from,
-                            'date_to' => $leaveRequest->date_to,
-                            'is_dept_head_request' => true
-                        ]
-                    );
-                }
-            }
         } else {
-            // For regular employees, go to department head
             $leaveRequest->update(['status' => 'pending_dept_head']);
-            
-            // Get department head user for notification using dept-head specific method
-            $deptHeadUser = User::where('role', 'dept_head')
-                ->whereHas('employee', function($query) use ($leaveRequest) {
-                    $query->where('department_id', $leaveRequest->employee->department_id);
-                })->first();
-                
-            if ($deptHeadUser) {
-                $deptHeadEmployeeId = $notificationService->getEmployeeIdFromUserId($deptHeadUser->id);
-                if ($deptHeadEmployeeId) {
-                    $notificationService->createDeptHeadNotification(
-                        $deptHeadEmployeeId,
-                        'leave_request_approval',
-                        'Leave Request Requires Department Head Approval',
-                        "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname} from your department has a leave request that requires your approval after HR review.",
-                        [
-                            'request_id' => $id,
-                            'employee_name' => "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname}",
-                            'leave_type' => $leaveRequest->leaveType->name,
-                            'date_from' => $leaveRequest->date_from,
-                            'date_to' => $leaveRequest->date_to,
-                            'department_id' => $leaveRequest->employee->department_id
-                        ]
-                    );
-                }
-            }
         }
 
-        // Notify the employee who made the request using employee-specific method
-        $notificationService->createEmployeeNotification(
-            $leaveRequest->employee_id,
-            'leave_request',
-            $isDeptHeadRequest ? 'Leave Request Approved by HR - Pending Admin' : 'Leave Request Approved by HR - Pending Department Head',
-            $isDeptHeadRequest ? 
-                "Your {$leaveRequest->leaveType->name} leave request has been approved by HR and is pending Admin approval." :
-                "Your {$leaveRequest->leaveType->name} leave request has been approved by HR and is pending Department Head approval.",
-            [
-                'request_id' => $id,
-                'status' => $isDeptHeadRequest ? 'hr_approved_pending_admin' : 'hr_approved_pending_dept_head',
-                'leave_type' => $leaveRequest->leaveType->name,
-                'date_from' => $leaveRequest->date_from,
-                'date_to' => $leaveRequest->date_to,
-                'remarks' => $request->remarks ?? ''
-            ]
-        );
+        $this->handleHRNotificationsManually($leaveRequest, $request->remarks);
 
         return redirect()->route('hr.leave-requests')->with('success', 'Leave request approved successfully.');
 
@@ -982,6 +1067,99 @@ public function approveLeaveRequest(Request $request, $id)
         return back()->withErrors(['error' => 'Failed to approve leave request: ' . $e->getMessage()]);
     }
 }
+
+
+private function handleHRNotificationsManually($leaveRequest, $remarks)
+{
+    $employee = $leaveRequest->employee;
+    $userRole = $employee->user->role;
+    
+    $isAdminRequest = $userRole === 'admin';
+    $isDeptHeadRequest = $userRole === 'dept_head';
+
+    if ($isAdminRequest || $isDeptHeadRequest) {
+        // For Admin/Dept Head requests - notify Admin and Employee
+        $adminUsers = User::where('role', 'admin')->get();
+        foreach ($adminUsers as $admin) {
+            $adminEmployeeId = $this->notificationService->getEmployeeIdFromUserId($admin->id);
+            if ($adminEmployeeId) {
+                // Fix the grammar and make it more professional
+                $roleText = $isAdminRequest ? 'Admin' : 'Department Head';
+                $article = $isAdminRequest ? 'An' : 'A';
+                
+                $this->notificationService->createNotification(
+                    $adminEmployeeId,
+                    'leave_request',
+                    'Special Leave Request Requires Approval',
+                    "{$article} {$roleText} has submitted a {$leaveRequest->leaveType->name} leave request from " . 
+                    \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y') . " to " . 
+                    \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y') . " that requires your approval.",
+                    [
+                        'request_id' => $leaveRequest->id,
+                        'notification_for' => 'admin'
+                    ]
+                );
+            }
+        }
+        
+    //     // Notify the employee (admin/dept head) - BUT ONLY IF THEY ARE NOT THE CURRENT USER
+    //     // This prevents admins from getting notifications about their own requests
+    //     $currentUserEmployeeId = $this->notificationService->getEmployeeIdFromUserId(auth()->id());
+    //     if ($leaveRequest->employee_id !== $currentUserEmployeeId) {
+    //         $this->notificationService->createNotification(
+    //             $leaveRequest->employee_id,
+    //             'leave_request',
+    //             'Leave Request Approved by HR',
+    //             "Your {$leaveRequest->leaveType->name} leave request from " . 
+    //             \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y') . " to " . 
+    //             \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y') . " has been approved by HR and is pending Admin approval.",
+    //             [
+    //                 'request_id' => $leaveRequest->id,
+    //                 'notification_for' => 'employee'
+    //             ]
+    //         );
+    //     }
+    } else {
+        // For regular employees - notify Dept Head and Employee
+        $deptHeadUser = User::where('role', 'dept_head')
+            ->whereHas('employee', function($query) use ($employee) {
+                $query->where('department_id', $employee->department_id);
+            })->first();
+
+        if ($deptHeadUser) {
+            $deptHeadEmployeeId = $this->notificationService->getEmployeeIdFromUserId($deptHeadUser->id);
+            if ($deptHeadEmployeeId) {
+                $this->notificationService->createNotification(
+                    $deptHeadEmployeeId,
+                    'leave_request',
+                    'Leave Request Requires Your Approval',
+                    "A {$leaveRequest->leaveType->name} leave request from " . 
+                    \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y') . " to " . 
+                    \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y') . " has been approved by HR and requires your department head approval.",
+                    [
+                        'request_id' => $leaveRequest->id,
+                        'notification_for' => 'dept_head'
+                    ]
+                );
+            }
+        }
+        
+        // Notify the employee
+        $this->notificationService->createNotification(
+            $leaveRequest->employee_id,
+            'leave_request',
+            'Leave Request Approved by HR',
+            "Your {$leaveRequest->leaveType->name} leave request from " . 
+            \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y') . " to " . 
+            \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y') . " has been approved by HR and is pending Department Head approval.",
+            [
+                'request_id' => $leaveRequest->id,
+                'notification_for' => 'employee'
+            ]
+        );
+    }
+}
+
 // In HRController - modify the bulkAction method
 public function bulkAction(Request $request)
 {
@@ -1122,28 +1300,41 @@ public function show($id)
 
 //Calendar View
 // Add this method to your HRController
+/// In HRController.php - update leaveCalendar method to match admin
 public function leaveCalendar(Request $request)
 {
     // Get the current year or use the year from request
-    $currentYear = $request->year ?? now()->year;
-    
-    // Get fully approved leave requests for the specified year
+    $year = $request->input('year', now()->year);
+    $month = $request->input('month');
+    $day = $request->input('day');
+
+    // Define the filter period for overlapping leaves - SAME AS ADMIN
+    $startDate = Carbon::createFromDate($year, $month ?: 1, $day ?: 1)->startOfDay();
+    if (!$month) {
+        $startDate->startOfYear();
+    } elseif (!$day) {
+        $startDate->startOfMonth();
+    }
+
+    $endDate = $startDate->copy()->endOfDay();
+    if (!$month) {
+        $endDate->endOfYear();
+    } elseif (!$day) {
+        $endDate->endOfMonth();
+    }
+
+    // Get fully approved leave requests for the specified period - SAME AS ADMIN
     $query = LeaveRequest::where('status', 'approved')
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'hr')->where('status', 'approved');
-        })
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'dept_head')->where('status', 'approved');
-        })
         ->whereHas('approvals', function ($query) {
             $query->where('role', 'admin')->where('status', 'approved');
         })
-        ->whereYear('date_from', $currentYear) // Filter by year
+        ->where('date_to', '>=', $startDate)
+        ->where('date_from', '<=', $endDate)
         ->with(['employee', 'leaveType', 'approvals' => function ($query) {
             $query->with('approver');
         }]);
 
-    // Apply additional filters if provided
+    // Apply additional filters if provided - SAME AS ADMIN
     if ($request->has('department') && $request->department) {
         $query->whereHas('employee', function ($q) use ($request) {
             $q->where('department_id', $request->department);
@@ -1158,7 +1349,7 @@ public function leaveCalendar(Request $request)
 
     $approvedLeaveRequests = $query->get();
 
-    // Group leaves by month for list view
+    // Group leaves by month for list view - SAME AS ADMIN
     $leavesByMonth = [];
     foreach ($approvedLeaveRequests as $leaveRequest) {
         $month = Carbon::parse($leaveRequest->date_from)->format('F Y');
@@ -1189,12 +1380,12 @@ public function leaveCalendar(Request $request)
         ];
     }
 
-    // Sort months chronologically
+    // Sort months chronologically - SAME AS ADMIN
     uksort($leavesByMonth, function ($a, $b) {
         return strtotime($a) - strtotime($b);
     });
 
-    // Format for calendar view (existing functionality)
+    // Format for calendar view - SAME AS ADMIN
     $calendarEvents = $approvedLeaveRequests->map(function ($leaveRequest) {
         return [
             'id' => $leaveRequest->id,
@@ -1230,8 +1421,8 @@ public function leaveCalendar(Request $request)
         'leavesByMonth' => $leavesByMonth,
         'departments' => Department::all(),
         'leaveTypes' => LeaveType::all(),
-        'filters' => $request->only(['year', 'department', 'leave_type']),
-        'currentYear' => $currentYear,
+        'filters' => $request->only(['year', 'month', 'day', 'department', 'leave_type']),
+        'currentYear' => $year,
     ]);
 }
 
@@ -1267,79 +1458,60 @@ private function getLeaveTypeColor($leaveTypeCode)
    /**
  * Show credit conversion requests for HR approval
  */
-public function creditConversions(Request $request)
-{
-    $perPage = 10; // Number of records per page
-    
-    $query = CreditConversion::with(['employee.department'])
-        ->when($request->status, function ($query, $status) {
-            return $query->where('status', $status);
-        })
-        ->when($request->employee, function ($query, $employee) {
-            return $query->whereHas('employee', function ($q) use ($employee) {
-                $q->where('firstname', 'like', "%{$employee}%")
-                  ->orWhere('lastname', 'like', "%{$employee}%");
-            });
-        })
-        ->orderBy('created_at', 'desc');
 
-    $conversions = $query->paginate($perPage)->withQueryString();
 
-    // Get statistics for dashboard cards
-    $totalRequests = CreditConversion::count();
-    $pendingRequests = CreditConversion::where('status', 'pending')->count();
-    $approvedRequests = CreditConversion::where('status', 'approved')->count();
-    $rejectedRequests = CreditConversion::where('status', 'rejected')->count();
-
-    // Transform the data for the frontend
-    $transformedConversions = $conversions->getCollection()->map(function ($conversion) {
-        // Map leave type codes to readable names
-        $leaveTypeNames = [
-            'SL' => 'Sick Leave',
-            'VL' => 'Vacation Leave'
-        ];
+    /**
+     * Transform conversion data with consistent cash calculation
+     */
+   
+    /**
+     * Show credit conversion requests for HR approval
+     */
+    public function creditConversions(Request $request)
+    {
+        $perPage = 10;
         
-        return [
-            'conversion_id' => $conversion->conversion_id,
-            'employee_id' => $conversion->employee_id,
-            'leave_type_code' => $conversion->leave_type,
-            'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
-            'credits_requested' => $conversion->credits_requested,
-            'equivalent_cash' => $conversion->equivalent_cash,
-            'status' => $conversion->status,
-            'submitted_at' => $conversion->submitted_at,
-            'approved_at' => $conversion->approved_at,
-            'approved_by' => $conversion->approved_by,
-            'remarks' => $conversion->remarks,
-            'created_at' => $conversion->created_at,
-            'updated_at' => $conversion->updated_at,
-            'employee' => $conversion->employee ? [
-                'employee_id' => $conversion->employee->employee_id,
-                'firstname' => $conversion->employee->firstname,
-                'lastname' => $conversion->employee->lastname,
-                'position' => $conversion->employee->position,
-                'department' => $conversion->employee->department ? [
-                    'id' => $conversion->employee->department->id,
-                    'name' => $conversion->employee->department->name,
-                ] : null,
-            ] : null,
-        ];
-    });
-
-    // Replace the collection with transformed data
-    $conversions->setCollection($transformedConversions);
-
-    return Inertia::render('HR/CreditConversions', [
-        'conversions' => $conversions,
-        'stats' => [
-            'total' => $totalRequests,
-            'pending' => $pendingRequests,
-            'approved' => $approvedRequests,
-            'rejected' => $rejectedRequests,
-        ],
-        'filters' => $request->only(['status', 'employee']),
-    ]);
-}
+        $query = CreditConversion::with(['employee.department', 'approver'])
+            ->when($request->status, function ($query, $status) {
+                return $query->where('status', $status);
+            })
+            ->when($request->employee, function ($query, $employee) {
+                return $query->whereHas('employee', function ($q) use ($employee) {
+                    $q->where('firstname', 'like', "%{$employee}%")
+                      ->orWhere('lastname', 'like', "%{$employee}%");
+                });
+            })
+            ->orderBy('created_at', 'desc');
+    
+        $conversions = $query->paginate($perPage)->withQueryString();
+    
+        // Transform conversions with consistent data structure
+        $transformedConversions = $conversions->getCollection()->map(function ($conversion) {
+            return $this->transformConversionData($conversion);
+        });
+    
+        $conversions->setCollection($transformedConversions);
+    
+        // Get statistics
+        $currentYear = now()->year;
+        $totalRequests = CreditConversion::count();
+        $pendingRequests = CreditConversion::where('status', 'pending')->count();
+        $approvedRequests = CreditConversion::where('status', 'approved')
+            ->whereYear('created_at', $currentYear)
+            ->count();
+        $rejectedRequests = CreditConversion::where('status', 'rejected')->count();
+    
+        return Inertia::render('HR/CreditConversions', [
+            'conversions' => $conversions,
+            'stats' => [
+                'total' => $totalRequests,
+                'pending' => $pendingRequests,
+                'approved' => $approvedRequests,
+                'rejected' => $rejectedRequests,
+            ],
+            'filters' => $request->only(['status', 'employee']),
+        ]);
+    }
 
     /**
      * Show specific credit conversion request
@@ -1349,47 +1521,83 @@ public function creditConversions(Request $request)
         $conversion = CreditConversion::with(['employee.department', 'approver'])
             ->findOrFail($id);
 
-        // Map leave type codes to readable names
-        $leaveTypeNames = [
-            'SL' => 'Sick Leave',
-            'VL' => 'Vacation Leave'
-        ];
-
-        // Flatten the conversion data
-        $flattenedConversion = [
-            'conversion_id' => $conversion->conversion_id,
-            'employee_id' => $conversion->employee_id,
-            'leave_type_code' => $conversion->leave_type,
-            'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
-            'credits_requested' => $conversion->credits_requested,
-            'equivalent_cash' => $conversion->equivalent_cash,
-            'status' => $conversion->status,
-            'submitted_at' => $conversion->submitted_at,
-            'approved_at' => $conversion->approved_at,
-            'approved_by' => $conversion->approved_by,
-            'remarks' => $conversion->remarks,
-            'created_at' => $conversion->created_at,
-            'updated_at' => $conversion->updated_at,
-            'employee' => $conversion->employee ? [
-                'employee_id' => $conversion->employee->employee_id,
-                'firstname' => $conversion->employee->firstname,
-                'lastname' => $conversion->employee->lastname,
-                'position' => $conversion->employee->position,
-                'department' => $conversion->employee->department ? [
-                    'id' => $conversion->employee->department->id,
-                    'name' => $conversion->employee->department->name,
-                ] : null,
-            ] : null,
-            'approver' => $conversion->approver ? [
-                'id' => $conversion->approver->id,
-                'name' => $conversion->approver->name,
-            ] : null,
-        ];
+        $flattenedConversion = $this->transformConversionData($conversion);
 
         return Inertia::render('HR/ShowCreditConversion', [
             'conversion' => $flattenedConversion,
         ]);
     }
+
+    /**
+     * Transform conversion data with consistent structure
+     */
+   /**
+ * Transform conversion data with consistent structure
+ */
+private function transformConversionData($conversion)
+{
+    $leaveTypeNames = [
+        'SL' => 'Sick Leave',
+        'VL' => 'Vacation Leave'
+    ];
+
+    // Update status mapping to use existing ENUM values
+    $statusDisplay = [
+        'pending' => 'Pending HR Review',
+        'approved' => 'Approved - Forwarded to Accounting', // Updated display text
+        'rejected' => 'Rejected'
+    ];
+
+    // Use the same formula as employee side for consistency
+    $monthlySalary = $conversion->employee->monthly_salary ?? 0;
+    $calculatedCash = $this->calculateCashEquivalent($monthlySalary);
+
+    return [
+        'conversion_id' => $conversion->conversion_id,
+        'employee_id' => $conversion->employee_id,
+        'leave_type_code' => $conversion->leave_type,
+        'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+        'credits_requested' => $conversion->credits_requested,
+        'equivalent_cash' => $calculatedCash,
+        'status' => $conversion->status,
+        'status_display' => $statusDisplay[$conversion->status] ?? $conversion->status,
+        'submitted_at' => $conversion->submitted_at,
+        'approved_at' => $conversion->approved_at,
+        'approved_by' => $conversion->approved_by,
+        'remarks' => $conversion->remarks,
+        'created_at' => $conversion->created_at,
+        'updated_at' => $conversion->updated_at,
+        'employee' => $conversion->employee ? [
+            'employee_id' => $conversion->employee->employee_id,
+            'firstname' => $conversion->employee->firstname,
+            'lastname' => $conversion->employee->lastname,
+            'position' => $conversion->employee->position,
+            'monthly_salary' => $conversion->employee->monthly_salary,
+            'department' => $conversion->employee->department ? [
+                'id' => $conversion->employee->department->id,
+                'name' => $conversion->employee->department->name,
+            ] : null,
+        ] : null,
+        'approver' => $conversion->approver ? [
+            'id' => $conversion->approver->id,
+            'name' => $conversion->approver->name,
+        ] : null,
+    ];
+}
+
+/**
+ * Calculate cash equivalent using the same formula as employee side
+ */
+private function calculateCashEquivalent($monthlySalary)
+{
+    // Same formula as used in CreditConversionService
+    $cashValue = $monthlySalary * 10 * 0.0481927;
+    return round($cashValue, 2);
+}
+    /**
+     * Calculate cash equivalent using the same formula as employee side
+     */
+
 
     /**
      * Approve credit conversion request
@@ -1399,27 +1607,16 @@ public function creditConversions(Request $request)
         $validated = $request->validate([
             'remarks' => ['nullable', 'string', 'max:500'],
         ]);
-
+    
         try {
-            $creditConversionService = new CreditConversionService();
-            $conversion = $creditConversionService->approveConversion(
+            // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
+            $conversion = $this->creditConversionService->approveConversion(
                 $id,
                 $request->user()->id,
                 $validated['remarks']
             );
-
-            // Send notification to employee
-            $notificationService = new NotificationService();
-            $notificationService->createCreditConversionNotification(
-                $conversion->employee_id,
-                'approved',
-                $id,
-                $conversion->leave_type,
-                $conversion->credits_requested,
-                $conversion->equivalent_cash
-            );
-
-            return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request approved successfully!');
+    
+            return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request approved and forwarded to Accounting Office!');
         } catch (\Exception $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
@@ -1429,36 +1626,24 @@ public function creditConversions(Request $request)
      * Reject credit conversion request
      */
     public function rejectCreditConversion(Request $request, $id)
-    {
-        $validated = $request->validate([
-            'remarks' => ['required', 'string', 'max:500'],
-        ]);
+{
+    $validated = $request->validate([
+        'remarks' => ['required', 'string', 'max:500'],
+    ]);
 
-        try {
-            $creditConversionService = new CreditConversionService();
-            $conversion = $creditConversionService->rejectConversion(
-                $id,
-                $request->user()->id,
-                $validated['remarks']
-            );
+    try {
+        // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
+        $conversion = $this->creditConversionService->rejectConversion(
+            $id,
+            $request->user()->id,
+            $validated['remarks']
+        );
 
-            // Send notification to employee
-            $notificationService = new NotificationService();
-            $notificationService->createCreditConversionNotification(
-                $conversion->employee_id,
-                'rejected',
-                $id,
-                $conversion->leave_type,
-                $conversion->credits_requested,
-                $conversion->equivalent_cash
-            );
-
-            return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request rejected successfully!');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
-        }
+        return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request rejected successfully!');
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
     }
-
+}
     // LEAVE RECALL REQUESTS MANAGEMENT
     
     /**
@@ -1845,17 +2030,7 @@ public function showEmployeeRecordings($employeeId, Request $request)
 /**
  * Get available years for filtering
  */
-private function getAvailableYears()
-{
-    $currentYear = now()->year;
-    $years = [];
-    
-    for ($i = $currentYear - 5; $i <= $currentYear + 1; $i++) {
-        $years[] = $i;
-    }
-    
-    return $years;
-}
+
 
 /**
  * Calculate the imported balance for a leave type
@@ -1888,22 +2063,17 @@ private function calculateImportedBalance($employeeId, $type, $importedAt)
 /**
  * Get monthly used leaves from logs (excluding late deductions)
  */
+/**
+ * Get monthly used leaves from logs (INCLUDING all deductions)
+ */
 private function getMonthlyUsed($employeeId, $type, $year, $month)
 {
-    $query = LeaveCreditLog::where('employee_id', $employeeId) // Fixed typo: was 'employeeId'
+    return LeaveCreditLog::where('employee_id', $employeeId)
         ->where('type', $type)
         ->where('year', $year)
-        ->where('month', $month);
-
-    // For VL type, exclude late deductions from the "used" calculation
-    if ($type === 'VL') {
-        $query->where(function($q) {
-            $q->whereNull('remarks')
-              ->orWhere('remarks', 'not like', '%Late%');
-        });
-    }
-
-    return $query->sum('points_deducted');
+        ->where('month', $month)
+        ->where('points_deducted', '>', 0) // Only positive deductions
+        ->sum('points_deducted');
 }
 
 /**
@@ -1911,23 +2081,45 @@ private function getMonthlyUsed($employeeId, $type, $year, $month)
  */
 private function getLeaveEarned($employeeId, $type, $year, $month)
 {
-    $employee = Employee::find($employeeId);
+    $currentDate = Carbon::now();
+    $targetDate = Carbon::create($year, $month, 1);
     
-    if ($employee && $employee->status === 'active') {
-        return 1.25;
+    // If target month is in the future, return null
+    if ($targetDate->gt($currentDate->endOfMonth())) {
+        return null;
     }
     
-    return 0;
+    // Check if monthly credits were actually added for this period
+    $creditsAdded = MonthlyCreditLog::where('year', $year)
+        ->where('month', $month)
+        ->exists();
+    
+    if (!$creditsAdded) {
+        return null;
+    }
+    
+    // Check employee status and import date
+    $employee = Employee::find($employeeId);
+    if (!$employee || $employee->status !== 'active') {
+        return 0;
+    }
+    
+    $importedAt = $employee->leaveCredit->imported_at ?? null;
+    
+    if ($importedAt && $targetDate->lt($importedAt->startOfMonth())) {
+        return null;
+    }
+    
+    return 1.25;
 }
 
-/**
- * Get employee leave recordings with running balance calculation
- */
+
 private function getEmployeeLeaveRecordings($employeeId, $year)
 {
     $recordings = [];
     
     $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
+    $currentDate = Carbon::now();
 
     if (!$leaveCredit || !$leaveCredit->imported_at) {
         $importedAt = Carbon::create($year, 1, 1);
@@ -1941,59 +2133,107 @@ private function getEmployeeLeaveRecordings($employeeId, $year)
     $previous_vl = null;
     $previous_sl = null;
     
+    // Log start of calculation
+    \Log::info("=== START LEAVE RECORDING CALCULATION ===");
+    \Log::info("Employee ID: {$employeeId}, Year: {$year}");
+    \Log::info("Current VL Balance: " . ($leaveCredit->vl_balance ?? 0));
+    \Log::info("Current SL Balance: " . ($leaveCredit->sl_balance ?? 0));
+    \Log::info("Imported At: " . ($leaveCredit->imported_at ?? 'Not set'));
+    
     for ($month = 1; $month <= 12; $month++) {
         $monthStart = Carbon::create($year, $month, 1);
+        $monthEnd = $monthStart->copy()->endOfMonth();
         
         $isManual = $year < $importedYear || ($year === $importedYear && $month < $importedMonth);
-        $isFuture = $year > now()->year || ($year === now()->year && $month > now()->month);
+        $isFuture = $monthStart->gt($currentDate->endOfMonth());
         
         $remarks = $this->getRemarks($employeeId, $year, $month);
         
         $earned = null;
         $vl_balance = null;
         $sl_balance = null;
+        $vl_used = 0;
+        $sl_used = 0;
+        $lates = 0; // Initialize lates here
         
         if ($isManual) {
             $remarks = 'Imported data';
         } elseif ($isFuture) {
-            $remarks = 'Pending month';
+            $remarks = 'Future month';
+            $earned = null;
         } else {
             $earned = $this->getLeaveEarned($employeeId, 'VL', $year, $month);
+            
             if ($previous_vl === null) {
                 $previous_vl = $this->calculateImportedBalance($employeeId, 'VL', $importedAt);
                 $previous_sl = $this->calculateImportedBalance($employeeId, 'SL', $importedAt);
             }
             
-            // Get regular usage (excluding lates)
+            // Get usage values
             $vl_used = $this->getMonthlyUsed($employeeId, 'VL', $year, $month);
             $sl_used = $this->getMonthlyUsed($employeeId, 'SL', $year, $month);
+            $lates = $this->getLateDeductions($employeeId, $year, $month);
+            $vl_used_regular = $this->getRegularMonthlyUsed($employeeId, 'VL', $year, $month);
             
-            // Get late deductions (these are separate and only affect VL)
-            $lates = $this->getTotalLates($employeeId, $year, $month);
+            // Log detailed calculation for this month
+            \Log::info("--- Month {$month} ({$this->formatMonthYear($month, $year)}) ---");
+            \Log::info("Earned: " . ($earned ?? 'null'));
+            \Log::info("VL Used (all): {$vl_used}");
+            \Log::info("VL Used (regular): {$vl_used_regular}");
+            \Log::info("SL Used: {$sl_used}");
+            \Log::info("Lates: {$lates}");
+            \Log::info("Previous VL: {$previous_vl}");
+            \Log::info("Previous SL: {$previous_sl}");
             
-            // Calculate balances including both regular usage and late deductions for VL
-            $vl_balance = round($previous_vl + $earned - $vl_used - $lates, 3);
-            $sl_balance = round($previous_sl + $earned - $sl_used, 3);
-            
-            $previous_vl = $vl_balance;
-            $previous_sl = $sl_balance;
+            // Only calculate balances if earned is not null
+            if ($earned !== null) {
+                $vl_balance = round($previous_vl + $earned - $vl_used, 3);
+                $sl_balance = round($previous_sl + $earned - $sl_used, 3);
+                
+                \Log::info("New VL Balance: {$vl_balance}");
+                \Log::info("New SL Balance: {$sl_balance}");
+                
+                $previous_vl = $vl_balance;
+                $previous_sl = $sl_balance;
+            } else {
+                $vl_balance = $previous_vl;
+                $sl_balance = $previous_sl;
+                \Log::info("No credits added - keeping previous balances");
+            }
         }
         
-        // Get values for display
-        $vl_used = $this->getMonthlyUsed($employeeId, 'VL', $year, $month);
-        $sl_used = $this->getMonthlyUsed($employeeId, 'SL', $year, $month);
-        $lates = $this->getTotalLates($employeeId, $year, $month);
+        // Get inclusive dates and log them
+        $inclusiveDates = $this->getInclusiveDates($employeeId, $year, $month);
+        $workingDaysFromLeaves = $this->calculateWorkingDaysFromInclusiveDates($inclusiveDates);
+        
+        \Log::info("Inclusive Dates Count: " . $inclusiveDates->count());
+        \Log::info("Working Days from Leaves: {$workingDaysFromLeaves}");
+        foreach ($inclusiveDates as $date) {
+            \Log::info("  - {$date['from']} to {$date['to']} ({$date['type']}) - Status: {$date['status']}");
+        }
+        
+        // Get credit logs for this month and log them
+        $creditLogs = LeaveCreditLog::where('employee_id', $employeeId)
+            ->where('year', $year)
+            ->where('month', $month)
+            ->get();
+            
+        \Log::info("Credit Logs Count: " . $creditLogs->count());
+        foreach ($creditLogs as $log) {
+            $isLate = stripos($log->remarks ?? '', 'late') !== false;
+            \Log::info("  - {$log->type}: {$log->points_deducted} points - '{$log->remarks}' - Late: " . ($isLate ? 'YES' : 'NO'));
+        }
         
         $recordings[] = [
             'month' => $month,
             'year' => $year,
             'date_month' => $this->formatMonthYear($month, $year),
-            'inclusive_dates' => $this->getInclusiveDates($employeeId, $year, $month),
-            'total_lates' => round($lates, 3), // Late deductions in days
-            'vl_earned' => $earned !== null ? round($earned, 3) : null,
-            'vl_used' => round($vl_used, 3), // Only regular VL usage, not including lates
+            'inclusive_dates' => $inclusiveDates,
+            'total_lates' => round($lates, 3), // Now $lates is always defined
+            'vl_earned' => $earned,
+            'vl_used' => round($vl_used, 3),
             'vl_balance' => $vl_balance,
-            'sl_earned' => $earned !== null ? round($earned, 3) : null,
+            'sl_earned' => $earned,
             'sl_used' => round($sl_used, 3),
             'sl_balance' => $sl_balance,
             'remarks' => $remarks,
@@ -2001,11 +2241,114 @@ private function getEmployeeLeaveRecordings($employeeId, $year)
         ];
     }
     
+    \Log::info("=== END LEAVE RECORDING CALCULATION ===");
+    
     return $recordings;
 }
 
 /**
+ * Calculate working days from inclusive dates
+ */
+private function calculateWorkingDaysFromInclusiveDates($inclusiveDates)
+{
+    $totalWorkingDays = 0;
+    
+    foreach ($inclusiveDates as $dateRange) {
+        try {
+            $start = new \DateTime($dateRange['from']);
+            $end = new \DateTime($dateRange['to']);
+            
+            for ($date = clone $start; $date <= $end; $date->modify('+1 day')) {
+                $dayOfWeek = $date->format('N');
+                if ($dayOfWeek < 6) { // Monday to Friday
+                    $totalWorkingDays++;
+                }
+            }
+        } catch (\Exception $e) {
+            \Log::warning("Error calculating working days for date range: {$dateRange['from']} to {$dateRange['to']}");
+        }
+    }
+    
+    return $totalWorkingDays;
+}
+
+/**
+ * Get regular monthly used leaves (EXCLUDING late deductions)
+ */
+private function getRegularMonthlyUsed($employeeId, $type, $year, $month)
+{
+    return LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', $type)
+        ->where('year', $year)
+        ->where('month', $month)
+        ->where('points_deducted', '>', 0)
+        ->where(function($query) {
+            $query->whereNull('remarks')
+                  ->orWhere('remarks', 'not like', '%Late%')
+                  ->orWhere('remarks', 'not like', '%late%')
+                  ->orWhere('remarks', 'not like', '%LATE%');
+        })
+        ->sum('points_deducted');
+}
+
+/**
+ * Trigger debug logging for a specific employee and year
+ */
+public function triggerDebugLog(Request $request)
+{
+    $employeeId = $request->input('employee_id', 26);
+    $year = $request->input('year', 2025);
+    
+    try {
+        \Log::info("=== MANUAL DEBUG TRIGGERED ===");
+        \Log::info("Parameters - Employee: {$employeeId}, Year: {$year}");
+        
+        // This will trigger all the logging in getEmployeeLeaveRecordings
+        $recordings = $this->getEmployeeLeaveRecordings($employeeId, $year);
+        
+        \Log::info("=== MANUAL DEBUG COMPLETED ===");
+        
+        return response()->json([
+            'message' => 'Debug logging completed for employee ' . $employeeId . ', year ' . $year,
+            'check_laravel_log' => true,
+            'log_file' => storage_path('logs/laravel.log')
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error("Debug trigger failed: " . $e->getMessage());
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
+
+
+
+/**
+ * Get late deductions from leave credit logs
+ */
+private function getLateDeductions($employeeId, $year, $month)
+{
+    return LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', 'VL') // Late deductions affect VL balance
+        ->where('year', $year)
+        ->where('month', $month)
+        ->where(function($query) {
+            $query->where('remarks', 'like', '%Late%')
+                  ->orWhere('remarks', 'like', '%late%')
+                  ->orWhere('remarks', 'like', '%LATE%');
+        })
+        ->sum('points_deducted');
+}
+/**
  * Get inclusive dates from leave requests (SL and VL only)
+ */
+/**
+ * Get inclusive dates from leave requests (SL and VL only) - ONLY FULLY APPROVED
+ */
+/**
+ * Get inclusive dates from leave requests (SL and VL only) - ONLY admin approved leaves
+ */
+/**
+ * Get inclusive dates from leave requests (SL and VL only) - ONLY admin approved leaves
  */
 private function getInclusiveDates($employeeId, $year, $month)
 {
@@ -2013,9 +2356,12 @@ private function getInclusiveDates($employeeId, $year, $month)
     $endDate = date('Y-m-t', strtotime($startDate));
     
     $leaveRequests = LeaveRequest::where('employee_id', $employeeId)
-        ->where('status', 'approved')
+        ->where('status', 'approved') // ONLY fully approved leaves
+        ->whereHas('approvals', function($query) {
+            $query->where('role', 'admin')->where('status', 'approved');
+        })
         ->whereHas('leaveType', function($query) {
-            $query->whereIn('code', ['VL', 'SL']); // Only VL and SL leaves
+            $query->whereIn('code', ['VL', 'SL']);
         })
         ->where(function ($query) use ($startDate, $endDate) {
             $query->whereBetween('date_from', [$startDate, $endDate])
@@ -2025,7 +2371,7 @@ private function getInclusiveDates($employeeId, $year, $month)
                         ->where('date_to', '>=', $endDate);
                   });
         })
-        ->with('leaveType')
+        ->with(['leaveType', 'approvals'])
         ->get();
     
     return $leaveRequests->map(function ($request) {
@@ -2033,11 +2379,17 @@ private function getInclusiveDates($employeeId, $year, $month)
             'from' => $request->date_from,
             'to' => $request->date_to,
             'type' => $request->leaveType->name ?? 'Leave',
-            'code' => $request->leaveType->code ?? ''
+            'code' => $request->leaveType->code ?? '',
+            'status' => $request->status,
+            'approvals' => $request->approvals->map(function($approval) {
+                return [
+                    'role' => $approval->role,
+                    'status' => $approval->status,
+                ];
+            })
         ];
     });
 }
-
 /**
  * Get total lates from attendance logs
  */
@@ -2046,12 +2398,7 @@ private function getInclusiveDates($employeeId, $year, $month)
  */
 private function getTotalLates($employeeId, $year, $month)
 {
-    return LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', 'VL') // Late deductions affect VL balance
-        ->where('year', $year)
-        ->where('month', $month)
-        ->where('remarks', 'like', '%Late%') // Look for logs with "Late" in remarks
-        ->sum('points_deducted');
+    return $this->getLateDeductions($employeeId, $year, $month);
 }
 
 /**
@@ -2302,4 +2649,112 @@ public function fixMissingDeductions($leaveRequestId)
         ], 500);
     }
 }
- }
+
+
+public function exportDepartmentRecordings(Request $request)
+{
+    $request->validate([
+        'department_id' => 'nullable|exists:departments,id',
+        'year' => 'required|integer',
+    ]);
+
+    $departmentId = $request->department_id;
+    $year = $request->year;
+    
+    $department = $departmentId 
+        ? Department::find($departmentId)->name 
+        : 'All_Departments';
+
+    $filename = "employee_recordings_{$department}_{$year}_" . now()->format('Y-m-d') . '.xlsx';
+
+    return Excel::download(new EmployeeRecordingsExport($departmentId, $year), $filename);
+}
+
+/**
+ * Export all employee recordings
+ */
+public function exportAllRecordings(Request $request)
+{
+    $request->validate([
+        'year' => 'required|integer',
+    ]);
+
+    $year = $request->year;
+    $filename = "all_employee_recordings_{$year}_" . now()->format('Y-m-d') . '.xlsx';
+
+    return Excel::download(new EmployeeRecordingsExport(null, $year), $filename);
+}
+
+
+
+
+
+
+
+// public function generatePDF(Request $request)
+// {
+//     try {
+//         $leaveRequestId = $request->input('leave_request_id');
+        
+//         if (!$leaveRequestId) {
+//             return back()->with('error', 'Leave request ID is required');
+//         }
+        
+//         // First, get the leave request without relationships to debug
+//         $leaveRequest = LeaveRequest::find($leaveRequestId);
+        
+//         if (!$leaveRequest) {
+//             return back()->with('error', 'Leave request not found');
+//         }
+        
+//         // Debug: Check what relationships are available
+//         \Log::info('LeaveRequest relationships: ' . implode(', ', array_keys($leaveRequest->getRelations())));
+        
+//         // Load relationships one by one to find the correct names
+//         $leaveRequest->load([
+//             'employee.department',
+//             'employee.leaveCreditLogs',
+//             'details',
+//         ]);
+        
+//         // Try to load approvals with different names
+//         if (method_exists($leaveRequest, 'approvals')) {
+//             $leaveRequest->load(['approvals.approver']);
+//             $approvers = $leaveRequest->approvals;
+//         } elseif (method_exists($leaveRequest, 'leaveApprovals')) {
+//             $leaveRequest->load(['leaveApprovals.approver']);
+//             $approvers = $leaveRequest->leaveApprovals;
+//         } elseif (method_exists($leaveRequest, 'approvers')) {
+//             $leaveRequest->load(['approvers']);
+//             $approvers = $leaveRequest->approvers;
+//         } else {
+//             $approvers = collect(); // Empty collection if no relationship found
+//         }
+        
+//         // Prepare data for PDF
+//         $data = [
+//             'leaveRequest' => $leaveRequest,
+//             'employee' => $leaveRequest->employee,
+//             'approvers' => $approvers,
+//         ];
+
+//         // Generate PDF
+//         $pdf = PDF::loadView('pdf.leave-form', $data)
+//             ->setPaper('a4', 'portrait')
+//             ->setOptions([
+//                 'dpi' => 150,
+//                 'defaultFont' => 'Arial',
+//                 'isHtml5ParserEnabled' => true,
+//                 'isRemoteEnabled' => true,
+//             ]);
+
+//         return $pdf->download("leave-request-{$leaveRequest->id}.pdf");
+
+//     } catch (\Exception $e) {
+//         \Log::error('PDF Generation Error: ' . $e->getMessage());
+//         return back()->with('error', 'Failed to generate PDF: ' . $e->getMessage());
+//     }
+// }
+
+
+}

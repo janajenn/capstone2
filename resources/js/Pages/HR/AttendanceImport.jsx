@@ -42,6 +42,9 @@ export default function AttendanceImport({ auth, importResult, flash }) {
         if (flash?.error) {
             showMessage(flash.error, 'error');
         }
+        if (flash?.warning) {
+            showMessage(flash.warning, 'warning');
+        }
     }, [flash]);
 
     const showMessage = (text, type = 'success') => {
@@ -50,7 +53,7 @@ export default function AttendanceImport({ auth, importResult, flash }) {
         setTimeout(() => {
             setMessage('');
             setMessageType('');
-        }, 5000);
+        }, 6000);
     };
 
     const handleFileSelect = (event) => {
@@ -89,8 +92,21 @@ export default function AttendanceImport({ auth, importResult, flash }) {
                 clearInterval(progressInterval);
                 setUploadProgress(100);
                 
-                if (page.props.flash?.success) {
-                    showMessage(page.props.flash.success);
+                // Always show a success message, with fallback if no flash
+                let successMsg = page.props.flash?.success || 'Attendance data imported successfully!';
+                
+                // Enhance with importResult details if available
+                if (page.props.importResult) {
+                    const { success_count, error_count } = page.props.importResult;
+                    if (error_count > 0) {
+                        successMsg = `${success_count} records imported successfully, but ${error_count} errors occurred. Check details below.`;
+                        showMessage(successMsg, 'warning');
+                    } else {
+                        successMsg = `${success_count} records imported successfully!`;
+                        showMessage(successMsg, 'success');
+                    }
+                } else {
+                    showMessage(successMsg, 'success');
                 }
                 
                 // Reset form
@@ -99,6 +115,11 @@ export default function AttendanceImport({ auth, importResult, flash }) {
                 if (fileInputRef.current) {
                     fileInputRef.current.value = '';
                 }
+                
+                // Brief delay to show 100% progress before hiding
+                setTimeout(() => {
+                    setUploadProgress(0);
+                }, 1000);
             },
             onError: (errors) => {
                 clearInterval(progressInterval);
@@ -115,7 +136,6 @@ export default function AttendanceImport({ auth, importResult, flash }) {
             },
             onFinish: () => {
                 setIsUploading(false);
-                setUploadProgress(0);
             }
         });
     };
@@ -132,7 +152,7 @@ export default function AttendanceImport({ auth, importResult, flash }) {
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-            showMessage('Template downloaded successfully');
+            showMessage('Template downloaded successfully', 'success');
         } catch (error) {
             showMessage('Failed to download template', 'error');
         }
@@ -177,18 +197,22 @@ export default function AttendanceImport({ auth, importResult, flash }) {
 
                 {/* Message Display */}
                 {message && (
-                    <div className={`p-4 rounded-md ${
+                    <div className={`p-4 rounded-xl border ${
                         messageType === 'error' 
-                            ? 'bg-red-50 border border-red-200 text-red-800' 
-                            : 'bg-green-50 border border-green-200 text-green-800'
+                            ? 'bg-red-50 border-red-200 text-red-800' 
+                            : messageType === 'warning'
+                            ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                            : 'bg-green-50 border-green-200 text-green-800'
                     }`}>
                         <div className="flex items-center">
                             {messageType === 'error' ? (
-                                <XCircle className="w-5 h-5 mr-2" />
+                                <XCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+                            ) : messageType === 'warning' ? (
+                                <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
                             ) : (
-                                <CheckCircle className="w-5 h-5 mr-2" />
+                                <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
                             )}
-                            {message}
+                            <span className="font-medium">{message}</span>
                         </div>
                     </div>
                 )}

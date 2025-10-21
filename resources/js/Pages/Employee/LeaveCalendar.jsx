@@ -1,3 +1,4 @@
+// resources/js/Pages/Employee/LeaveCalendar.jsx
 import EmployeeLayout from '@/Layouts/EmployeeLayout';
 import { usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -39,7 +40,7 @@ export default function LeaveCalendar({ events }) {
         eventOrder: "start,-duration,allDay",
         dayMaxEvents: true,
         moreLinkClick: 'popover',
-        // Enhanced styling for calendar
+        // Enhanced styling for calendar with status-based colors
         eventDidMount: function(info) {
             const event = info.event;
             const status = event.extendedProps.status;
@@ -48,22 +49,25 @@ export default function LeaveCalendar({ events }) {
             let bgColor, borderColor, textColor;
             switch(status?.toLowerCase()) {
                 case 'approved':
-                    bgColor = '#10B981';
+                    bgColor = '#10B981'; // Green
                     borderColor = '#059669';
                     textColor = '#FFFFFF';
                     break;
                 case 'pending':
-                    bgColor = '#F59E0B';
+                case 'pending_admin':
+                case 'pending_dept_head':
+                case 'pending_hr':
+                    bgColor = '#F59E0B'; // Orange
                     borderColor = '#D97706';
                     textColor = '#FFFFFF';
                     break;
                 case 'rejected':
-                    bgColor = '#EF4444';
+                    bgColor = '#EF4444'; // Red
                     borderColor = '#DC2626';
                     textColor = '#FFFFFF';
                     break;
                 default:
-                    bgColor = '#6B7280';
+                    bgColor = '#6B7280'; // Gray
                     borderColor = '#4B5563';
                     textColor = '#FFFFFF';
             }
@@ -94,17 +98,23 @@ export default function LeaveCalendar({ events }) {
                     <div className="mb-8">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                             <div className="mb-4 sm:mb-0">
-                                <h1 className="text-3xl font-bold text-gray-900 mb-2">Leave Calendar</h1>
-                                <p className="text-gray-600 text-lg">Manage and view your leave requests at a glance</p>
+                                <h1 className="text-3xl font-bold text-gray-900 mb-2">My Leave Calendar</h1>
+                                <p className="text-gray-600 text-lg">View all your leave requests with status colors</p>
                             </div>
                             <div className="flex items-center space-x-3">
                                 <div className="flex items-center space-x-4 text-sm text-gray-600">
                                     <div className="flex items-center">
                                         <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                                        <span>Approved Leave Requests</span>
+                                        <span>Approved Leaves</span>
                                     </div>
-                                    
-                                   
+                                    <div className="flex items-center">
+                                        <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
+                                        <span>Pending Leaves</span>
+                                    </div>
+                                    <div className="flex items-center">
+                                        
+                                        
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -128,7 +138,7 @@ export default function LeaveCalendar({ events }) {
                     </div>
                 </div>
 
-                {/* Enhanced Event Details Modal */}
+                {/* Event Details Modal */}
                 {isModalOpen && selectedEvent && (
                     <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto transform transition-all">
@@ -141,11 +151,14 @@ export default function LeaveCalendar({ events }) {
                                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                                                 selectedEvent.extendedProps.status === 'approved'
                                                     ? 'bg-green-100 text-green-800'
-                                                    : selectedEvent.extendedProps.status === 'pending'
+                                                    : selectedEvent.extendedProps.status === 'pending' || 
+                                                      selectedEvent.extendedProps.status === 'pending_admin' ||
+                                                      selectedEvent.extendedProps.status === 'pending_dept_head' ||
+                                                      selectedEvent.extendedProps.status === 'pending_hr'
                                                     ? 'bg-yellow-100 text-yellow-800'
                                                     : 'bg-red-100 text-red-800'
                                             }`}>
-                                                {selectedEvent.extendedProps.status}
+                                                {selectedEvent.extendedProps.status.replace('_', ' ').toUpperCase()}
                                             </span>
                                             <span className="text-gray-500">•</span>
                                             <span className="text-gray-600">
@@ -228,7 +241,7 @@ export default function LeaveCalendar({ events }) {
                                 {/* Approval Chain Section */}
                                 {selectedEvent.extendedProps.approvals && selectedEvent.extendedProps.approvals.length > 0 && (
                                     <div>
-                                        <label className="block text-sm font-semibold text-gray-700 mb-3">Approval Chain</label>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-3">Approval Status</label>
                                         <div className="space-y-3">
                                             {selectedEvent.extendedProps.approvals.map((approval, index) => (
                                                 <div key={index} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -237,13 +250,17 @@ export default function LeaveCalendar({ events }) {
                                                             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                                                                 approval.status === 'approved'
                                                                     ? 'bg-green-100 text-green-600'
-                                                                    : 'bg-red-100 text-red-600'
+                                                                    : approval.status === 'rejected'
+                                                                    ? 'bg-red-100 text-red-600'
+                                                                    : 'bg-yellow-100 text-yellow-600'
                                                             }`}>
                                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                     {approval.status === 'approved' ? (
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                                    ) : (
+                                                                    ) : approval.status === 'rejected' ? (
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                    ) : (
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                                     )}
                                                                 </svg>
                                                             </div>
@@ -256,9 +273,11 @@ export default function LeaveCalendar({ events }) {
                                                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
                                                                 approval.status === 'approved'
                                                                     ? 'bg-green-100 text-green-800'
-                                                                    : 'bg-red-100 text-red-800'
+                                                                    : approval.status === 'rejected'
+                                                                    ? 'bg-red-100 text-red-800'
+                                                                    : 'bg-yellow-100 text-yellow-800'
                                                             }`}>
-                                                                {approval.status}
+                                                                {approval.status.toUpperCase()}
                                                             </span>
                                                             <p className="text-xs text-gray-500 mt-2">
                                                                 {approval.approved_at 

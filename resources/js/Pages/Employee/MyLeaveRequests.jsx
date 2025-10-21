@@ -13,6 +13,22 @@ export default function MyLeaveRequests() {
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [selectedRecallData, setSelectedRecallData] = useState(null);
 
+    // DEBUG: Check the complete employee object structure
+    console.log('=== EMPLOYEE DATA DEBUG ===');
+    console.log('Full employee object:', employee);
+    console.log('Employee keys:', Object.keys(employee || {}));
+    console.log('Employee user object:', employee?.user);
+    console.log('User keys:', Object.keys(employee?.user || {}));
+    
+    // Check if role is at different locations
+    console.log('employee.role:', employee?.role);
+    console.log('employee.user.role:', employee?.user?.role);
+    console.log('employee.user_type:', employee?.user_type);
+    console.log('employee.user?.user_type:', employee?.user?.user_type);
+    
+    // Check the page props structure
+    console.log('All page props:', usePage().props);
+
     const handleViewProgress = (request) => {
         setSelectedRequest(request);
         setIsProgressModalOpen(true);
@@ -69,15 +85,25 @@ export default function MyLeaveRequests() {
 
     return (
         <EmployeeLayout>
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="flex justify-between items-center mb-8">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">My Leave Requests</h1>
-                        <p className="text-sm text-gray-600 mt-1">
-                            Showing {from}-{to} of {total} requests
-                        </p>
-                    </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="flex justify-between items-center mb-8">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">My Leave Requests</h1>
+                    <p className="text-sm text-gray-600 mt-1">
+                        Showing {from}-{to} of {total} requests
+                    </p>
                 </div>
+                {/* ADD THIS BUTTON */}
+                <Link
+                    href={route('employee.leave-history')}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-blue-700 focus:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition ease-in-out duration-150"
+                >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Leave History
+                </Link>
+            </div>
 
                 <motion.div
                     className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200"
@@ -207,12 +233,13 @@ export default function MyLeaveRequests() {
 
                                                 {/* Progress Column */}
                                                 <td className="px-6 py-4">
-                                                    <CompactProgressIndicator 
-                                                        approvals={request.approvals} 
-                                                        isDeptHead={request.is_dept_head_request || employee?.user?.role === 'dept_head'}
-                                                        isRecalled={isRecalled}
-                                                        onClick={() => isRecalled ? handleViewRecallDetails(request) : handleViewProgress(request)}
-                                                    />
+                                                <CompactProgressIndicator 
+    approvals={request.approvals} 
+    isDeptHead={request.is_dept_head_request || employee?.user?.role === 'dept_head'}
+    isAdmin={employee?.user?.role === 'admin'}
+    isRecalled={isRecalled}
+    onClick={() => isRecalled ? handleViewRecallDetails(request) : handleViewProgress(request)}
+/>
                                                 </td>
 
                                                 {/* Actions Column */}

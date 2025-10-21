@@ -48,6 +48,22 @@ class AttendanceLog extends Model
 
     // ADD THESE ACCESSORS:
 
+    public function leaveCreditLogs(): HasMany
+    {
+        return $this->hasMany(LeaveCreditLog::class, 'employee_id', 'employee_id')
+            ->whereDate('date', $this->work_date)
+            ->where('remarks', 'like', '%Late%');
+    }
+
+    /**
+     * Alternative: More generic relationship to all leave credit logs for this employee
+     */
+    public function employeeLeaveCreditLogs(): HasMany
+    {
+        return $this->hasMany(LeaveCreditLog::class, 'employee_id', 'employee_id');
+    }
+
+
     /**
      * Get formatted schedule start time
      */

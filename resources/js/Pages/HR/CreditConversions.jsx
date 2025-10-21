@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import HRLayout from '@/Layouts/HRLayout';
 import PrimaryButton from '@/Components/PrimaryButton';
+import CreditConversionForm from '@/Components/CreditConversionForm';
 
 export default function CreditConversions({ auth, conversions, stats, filters }) {
     const [searchTerm, setSearchTerm] = useState(filters.employee || '');
     const [statusFilter, setStatusFilter] = useState(filters.status || '');
+    const [showFormModal, setShowFormModal] = useState(false);
+    const [selectedConversion, setSelectedConversion] = useState(null);
 
     const getStatusConfig = (status) => {
         const configs = {
@@ -50,6 +53,13 @@ export default function CreditConversions({ auth, conversions, stats, filters })
         });
     };
 
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('en-PH', {
+            style: 'currency',
+            currency: 'PHP'
+        }).format(amount);
+    };
+
     const handleFilter = () => {
         router.get('/hr/credit-conversions', {
             status: statusFilter,
@@ -67,6 +77,20 @@ export default function CreditConversions({ auth, conversions, stats, filters })
             preserveState: true,
             preserveScroll: true,
         });
+    };
+
+    const handleGenerateForm = (conversion) => {
+        setSelectedConversion(conversion);
+        setShowFormModal(true);
+    };
+
+    const handlePrintForm = () => {
+        window.print();
+    };
+
+    const handleDownloadForm = () => {
+        // You can implement PDF download functionality here
+        alert('PDF download functionality will be implemented here');
     };
 
     const StatCard = ({ title, value, subtitle, trend, color }) => (
@@ -96,7 +120,23 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                             <div>
                                 <h1 className="text-3xl font-bold text-gray-900">Credit Conversion Management</h1>
                                 <p className="text-gray-600 mt-2">
-                                    Review and manage employee leave credit to cash conversion requests
+                                    Review and manage employee Vacation Leave credit to cash conversion requests
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Important Notice */}
+                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-start">
+                            <svg className="w-5 h-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <div>
+                                <h4 className="text-sm font-medium text-blue-900">Important Information</h4>
+                                <p className="text-sm text-blue-700 mt-1">
+                                    <strong>Only Vacation Leave (VL) credits can be monetized.</strong> Sick Leave (SL) credits are not eligible for cash conversion. 
+                                    Minimum 10 VL credits required per request. Maximum 10 days can be converted per year.
                                 </p>
                             </div>
                         </div>
@@ -208,7 +248,7 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                     {/* Conversions Table */}
                     <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-200">
                         <div className="px-6 py-5 border-b border-gray-200">
-                            <h3 className="text-lg font-semibold text-gray-900">Conversion Requests</h3>
+                            <h3 className="text-lg font-semibold text-gray-900">VL Credit Conversion Requests</h3>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -218,7 +258,6 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Leave Type</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Days</th>
-                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Cash Value</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Submitted</th>
                                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                                         <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
@@ -227,7 +266,7 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {conversions.data.length === 0 ? (
                                         <tr>
-                                            <td colSpan="8" className="px-6 py-12 text-center">
+                                            <td colSpan="7" className="px-6 py-12 text-center">
                                                 <div className="text-gray-400 mb-4">
                                                     <svg className="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -235,13 +274,16 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                                 </div>
                                                 <h3 className="text-sm font-medium text-gray-900 mb-2">No conversion requests found</h3>
                                                 <p className="text-sm text-gray-500 max-w-md mx-auto">
-                                                    {filters.employee || filters.status ? 'Try adjusting your search filters.' : 'Employees will appear here when they submit conversion requests.'}
+                                                    {filters.employee || filters.status ? 'Try adjusting your search filters.' : 'Employees will appear here when they submit VL conversion requests.'}
                                                 </p>
                                             </td>
                                         </tr>
                                     ) : (
                                         conversions.data.map((conversion) => {
                                             const statusConfig = getStatusConfig(conversion.status);
+                                            const isVL = conversion.leave_type_code === 'VL';
+                                            const isApproved = conversion.status === 'approved';
+                                            
                                             return (
                                                 <tr key={conversion.conversion_id} className="hover:bg-gray-50 transition-colors">
                                                     <td className="px-6 py-4 whitespace-nowrap">
@@ -265,15 +307,26 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                                         {conversion.employee.department?.name || 'N/A'}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap">
-                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                                                            isVL 
+                                                                ? 'bg-green-100 text-green-800 border border-green-200' 
+                                                                : 'bg-gray-100 text-gray-800 border border-gray-200'
+                                                        }`}>
                                                             {conversion.leave_type_code} - {conversion.leave_type_name}
+                                                            {isVL && (
+                                                                <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-200 text-green-800 rounded-full">
+                                                                    Monetizable
+                                                                </span>
+                                                            )}
+                                                            {!isVL && (
+                                                                <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-200 text-gray-600 rounded-full">
+                                                                    Not Eligible
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                                                         {conversion.credits_requested} days
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                                                        ₱{parseFloat(conversion.equivalent_cash).toLocaleString()}
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                         {formatDate(conversion.submitted_at)}
@@ -285,16 +338,32 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                        <Link 
-                                                            href={route('hr.credit-conversions.show', conversion.conversion_id)}
-                                                            className="inline-flex items-center text-blue-600 hover:text-blue-900 transition-colors"
-                                                        >
-                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                            </svg>
-                                                            View Details
-                                                        </Link>
+                                                        <div className="flex items-center justify-end space-x-2">
+                                                            <Link 
+                                                                href={route('hr.credit-conversions.show', conversion.conversion_id)}
+                                                                className="inline-flex items-center text-blue-600 hover:text-blue-900 transition-colors"
+                                                            >
+                                                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                </svg>
+                                                                View Details
+                                                            </Link>
+                                                            <button
+                                                                onClick={() => handleGenerateForm(conversion)}
+                                                                disabled={!isApproved}
+                                                                className={`inline-flex items-center transition-colors ${
+                                                                    isApproved 
+                                                                        ? 'text-green-600 hover:text-green-900' 
+                                                                        : 'text-gray-400 cursor-not-allowed'
+                                                                }`}
+                                                            >
+                                                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                </svg>
+                                                                Generate Form
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -348,6 +417,15 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                     </div>
                 </div>
             </div>
+
+           
+{showFormModal && selectedConversion && (
+    <CreditConversionForm 
+        conversion={selectedConversion}
+        employee={selectedConversion.employee}
+        approvers={[]} // Pass actual approvers data if available
+    />
+)}
         </HRLayout>
     );
 }

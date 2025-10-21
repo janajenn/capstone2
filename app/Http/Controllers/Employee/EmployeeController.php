@@ -26,12 +26,14 @@ class EmployeeController extends Controller
 
 
     protected $notificationService;
+    protected $creditConversionService;
 
-    public function __construct(NotificationService $notificationService)
+    // ADD THIS CONSTRUCTOR
+    public function __construct(NotificationService $notificationService, CreditConversionService $creditConversionService)
     {
         $this->notificationService = $notificationService;
+        $this->creditConversionService = $creditConversionService;
     }
-
 
  public function dashboard(Request $request)
 {
@@ -106,6 +108,7 @@ public function showLeaveRequest(Request $request)
             'vl' => $leaveCredit->vl_balance ?? 0,
         ],
         'leaveBalances' => $leaveBalances,
+        'employeeGender' => $user->employee->gender ?? null, // Add this line
     ]);
 }
 
@@ -432,10 +435,10 @@ public function myLeaveRequests(Request $request)
             ];
         });
 
-    return Inertia::render('Employee/MyLeaveRequests', [
-        'leaveRequests' => $leaveRequests,
-        'employee' => $user->employee,
-    ]);
+        return Inertia::render('Employee/MyLeaveRequests', [
+            'leaveRequests' => $leaveRequests,
+            'employee' => $user->employee->load('user'), // ← ADD THIS LINE
+        ]);
 }
 //leave balance
 
@@ -497,9 +500,106 @@ public function leaveBalances(Request $request)
     ]);
 }
 
+/**
+ * Show employee leave history (approved leaves only)
+ */
+public function leaveHistory(Request $request)
+{
+    $user = $request->user()->load('employee');
+    $employeeId = $user->employee?->employee_id;
+
+    if (!$employeeId) {
+        abort(400, 'Employee profile not found for user.');
+    }
+
+    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
+
+    $leaveHistory = LeaveRequest::with(['leaveType', 'details', 'approvals'])
+        ->where('employee_id', $employeeId)
+        ->where('status', 'approved') // Only show approved leaves
+        ->orderBy('date_from', 'desc')
+        ->paginate(10)
+        ->through(function ($request) use ($employeeId, $leaveCredit) {
+            // Calculate approved_at using the eager-loaded approvals collection
+            $approvedAt = $request->approvals
+                ->where('status', 'approved')
+                ->sortByDesc('approved_at')
+                ->first()
+                ?->approved_at;
+
+            // Calculate balance before/after based on leave type
+            $before = 'N/A';
+            $after = 'N/A';
+
+            $code = $request->leaveType->code ?? '';
+
+            $subsequentSum = 0;
+            if ($approvedAt) {
+                $subsequentSum = LeaveRequest::where('employee_id', $employeeId)
+                    ->where('leave_type_id', $request->leave_type_id)
+                    ->where('status', 'approved')
+                    ->whereRaw('(SELECT MAX(approved_at) FROM leave_approvals WHERE leave_id = leave_requests.id AND status = "approved") > ?', [$approvedAt])
+                    ->sum('days_with_pay');
+            }
+
+            if (in_array($code, ['SL', 'VL'])) {
+                // For VL/SL, calculate from current leave_credits balances
+                $current = 0;
+                if ($leaveCredit) {
+                    $current = ($code === 'SL') ? $leaveCredit->sl_balance : $leaveCredit->vl_balance;
+                }
+                $after = $current + $subsequentSum;
+                $before = $after + $request->days_with_pay;
+            } else {
+                // For non-VL/SL (non-earnable), calculate from leave_balances table
+                $leaveBalance = \App\Models\LeaveBalance::where('employee_id', $employeeId)
+                    ->where('leave_type_id', $request->leave_type_id)
+                    ->first();
+
+                if ($leaveBalance) {
+                    $after = $leaveBalance->balance + $subsequentSum;
+                    $before = $after + $request->days_with_pay;
+                }
+            }
+
+            return [
+                'id' => $request->id,
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'status' => $request->status,
+                'total_days' => $request->total_days,
+                'created_at' => $request->created_at,
+                'reason' => $request->reason,
+                'days_with_pay' => $request->days_with_pay,
+                'days_without_pay' => $request->days_without_pay,
+                'attachment_path' => $request->attachment_path,
+                'approved_at' => $approvedAt,
+                'balance_before' => $before,
+                'balance_after' => $after,
+                
+                'leave_type' => $request->leaveType ? [
+                    'id' => $request->leaveType->id,
+                    'name' => $request->leaveType->name,
+                    'code' => $request->leaveType->code,
+                ] : null,
+                
+                'details' => $request->details->map(function($detail) {
+                    return [
+                        'id' => $detail->id,
+                        'field_name' => $detail->field_name,
+                        'field_value' => $detail->field_value,
+                    ];
+                }),
+            ];
+        });
+
+    return Inertia::render('Employee/LeaveHistory', [
+        'leaveHistory' => $leaveHistory,
+        'employee' => $user->employee->load('user'),
+    ]);
+}
 //employee calendar
 
-// In your EmployeeController.php
 public function leaveCalendar(Request $request)
 {
     $user = $request->user()->load('employee');
@@ -509,31 +609,31 @@ public function leaveCalendar(Request $request)
         abort(400, 'Employee profile not found for user.');
     }
 
-    // Get fully approved leave requests (all three approvals: hr, dept_head, admin)
-    $approvedLeaveRequests = LeaveRequest::where('employee_id', $employeeId)
-        ->where('status', 'approved')
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'hr')->where('status', 'approved');
-        })
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'dept_head')->where('status', 'approved');
-        })
-        ->whereHas('approvals', function ($query) {
-            $query->where('role', 'admin')->where('status', 'approved');
-        })
+    // Get ALL leave requests for the employee (both pending and approved)
+    $leaveRequests = LeaveRequest::where('employee_id', $employeeId)
+        ->whereIn('status', ['pending', 'approved', 'pending_admin', 'pending_dept_head', 'pending_hr'])
         ->with(['leaveType', 'approvals' => function ($query) {
             $query->with('approver');
         }])
         ->get()
         ->map(function ($leaveRequest) {
+            // Determine event color based on status
+            $backgroundColor = '#F59E0B'; // Orange for pending
+            $borderColor = '#D97706';
+            
+            if ($leaveRequest->status === 'approved') {
+                $backgroundColor = '#10B981'; // Green for approved
+                $borderColor = '#059669';
+            }
+
             return [
                 'id' => $leaveRequest->id,
                 'title' => $leaveRequest->leaveType->code . ' - ' . $leaveRequest->leaveType->name,
                 'start' => $leaveRequest->date_from,
                 'end' => $leaveRequest->date_to,
                 'allDay' => true,
-                'backgroundColor' => '#10B981', // Green color for approved leaves
-                'borderColor' => '#059669',
+                'backgroundColor' => $backgroundColor,
+                'borderColor' => $borderColor,
                 'display' => 'block',
                 'extendedProps' => [
                     'leave_type' => $leaveRequest->leaveType->name,
@@ -557,145 +657,145 @@ public function leaveCalendar(Request $request)
         });
 
     return Inertia::render('Employee/LeaveCalendar', [
-        'events' => $approvedLeaveRequests,
+        'events' => $leaveRequests,
     ]);
 }
+
 
     /**
      * Show credit conversion request form
      */
     public function showCreditConversion(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
+    
+    // Try to load the employee relationship
+    $user->load('employee');
+    
+    // Debug logging to help troubleshoot
+    \Log::info('User data:', [
+        'user_id' => $user->id,
+        'user_role' => $user->role,
+        'employee_id_in_user' => $user->employee_id,
+        'employee_loaded' => $user->employee ? 'yes' : 'no',
+        'employee_data' => $user->employee ? [
+            'employee_id' => $user->employee->employee_id,
+            'firstname' => $user->employee->firstname,
+            'lastname' => $user->employee->lastname,
+        ] : null
+    ]);
+    
+    // Try multiple ways to get the employee ID
+    $employeeId = null;
+    
+    if ($user->employee && $user->employee->employee_id) {
+        $employeeId = $user->employee->employee_id;
+    } elseif ($user->employee_id) {
+        // Fallback: try to find employee directly
+        $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
+        if ($employee) {
+            $employeeId = $employee->employee_id;
+            \Log::info('Found employee through direct query', ['employee_id' => $employeeId]);
+        }
+    }
+    
+    if (!$employeeId) {
+        // More detailed error message
+        $errorMessage = 'Employee profile not found for user. ';
+        $errorMessage .= 'User ID: ' . $user->id . ', ';
+        $errorMessage .= 'User Role: ' . $user->role . ', ';
+        $errorMessage .= 'Employee ID in User: ' . ($user->employee_id ?? 'null');
         
-        // Try to load the employee relationship
-        $user->load('employee');
-        
-        // Debug logging to help troubleshoot
-        \Log::info('User data:', [
+        \Log::error('Employee profile not found:', [
             'user_id' => $user->id,
             'user_role' => $user->role,
             'employee_id_in_user' => $user->employee_id,
-            'employee_loaded' => $user->employee ? 'yes' : 'no',
-            'employee_data' => $user->employee ? [
-                'employee_id' => $user->employee->employee_id,
-                'firstname' => $user->employee->firstname,
-                'lastname' => $user->employee->lastname,
-            ] : null
+            'employee_relationship' => $user->employee ? 'exists' : 'missing'
         ]);
         
-        // Try multiple ways to get the employee ID
-        $employeeId = null;
-        
-        if ($user->employee && $user->employee->employee_id) {
-            $employeeId = $user->employee->employee_id;
-        } elseif ($user->employee_id) {
-            // Fallback: try to find employee directly
-            $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
-            if ($employee) {
-                $employeeId = $employee->employee_id;
-                \Log::info('Found employee through direct query', ['employee_id' => $employeeId]);
-            }
-        }
-        
-        if (!$employeeId) {
-            // More detailed error message
-            $errorMessage = 'Employee profile not found for user. ';
-            $errorMessage .= 'User ID: ' . $user->id . ', ';
-            $errorMessage .= 'User Role: ' . $user->role . ', ';
-            $errorMessage .= 'Employee ID in User: ' . ($user->employee_id ?? 'null');
-            
-            \Log::error('Employee profile not found:', [
-                'user_id' => $user->id,
-                'user_role' => $user->role,
-                'employee_id_in_user' => $user->employee_id,
-                'employee_relationship' => $user->employee ? 'exists' : 'missing'
-            ]);
-            
-            abort(400, $errorMessage);
-        }
-
-        $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
-        $creditConversionService = new CreditConversionService();
-        
-        $slEligibility = $creditConversionService->checkEligibility($employeeId, 'SL');
-        $vlEligibility = $creditConversionService->checkEligibility($employeeId, 'VL');
-        
-        $conversionStats = $creditConversionService->getEmployeeConversionStats($employeeId);
-
-        return Inertia::render('Employee/CreditConversion', [
-            'auth' => ['user' => $user],
-            'leaveCredits' => [
-                'sl' => $leaveCredit->sl_balance ?? 0,
-                'vl' => $leaveCredit->vl_balance ?? 0,
-            ],
-            'eligibility' => [
-                'sl' => $slEligibility,
-                'vl' => $vlEligibility,
-            ],
-            'conversionStats' => $conversionStats,
-        ]);
+        abort(400, $errorMessage);
     }
+
+    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
+    
+    // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
+    $slEligibility = $this->creditConversionService->checkEligibility($employeeId, 'SL');
+    $vlEligibility = $this->creditConversionService->checkEligibility($employeeId, 'VL');
+    
+    $conversionStats = $this->creditConversionService->getEmployeeConversionStats($employeeId);
+
+    return Inertia::render('Employee/CreditConversion', [
+        'auth' => ['user' => $user],
+        'leaveCredits' => [
+            'sl' => $leaveCredit->sl_balance ?? 0,
+            'vl' => $leaveCredit->vl_balance ?? 0,
+        ],
+        'eligibility' => [
+            'sl' => $slEligibility,
+            'vl' => $vlEligibility,
+        ],
+        'conversionStats' => $conversionStats,
+    ]);
+}
 
     /**
      * Submit credit conversion request
      */
     public function submitCreditConversion(Request $request)
-    {
-        $user = $request->user();
-        $user->load('employee');
-        
-        // Try multiple ways to get the employee ID
-        $employeeId = null;
-        
-        if ($user->employee && $user->employee->employee_id) {
-            $employeeId = $user->employee->employee_id;
-        } elseif ($user->employee_id) {
-            // Fallback: try to find employee directly
-            $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
-            if ($employee) {
-                $employeeId = $employee->employee_id;
-                \Log::info('Found employee through direct query in submitCreditConversion', ['employee_id' => $employeeId]);
-            }
-        }
-
-        if (!$employeeId) {
-            $errorMessage = 'Employee profile not found for user. ';
-            $errorMessage .= 'User ID: ' . $user->id . ', ';
-            $errorMessage .= 'User Role: ' . $user->role . ', ';
-            $errorMessage .= 'Employee ID in User: ' . ($user->employee_id ?? 'null');
-            
-            \Log::error('Employee profile not found in submitCreditConversion:', [
-                'user_id' => $user->id,
-                'user_role' => $user->role,
-                'employee_id_in_user' => $user->employee_id,
-                'employee_relationship' => $user->employee ? 'exists' : 'missing'
-            ]);
-            
-            abort(400, $errorMessage);
-        }
-
-        $validated = $request->validate([
-            'leave_type' => ['required', 'in:SL,VL'],
-            'credits_requested' => ['required', 'numeric', 'min:1', 'max:10'],
-            'remarks' => ['nullable', 'string', 'max:500'],
-        ]);
-
-        try {
-            $creditConversionService = new CreditConversionService();
-            $conversion = $creditConversionService->requestConversion(
-                $employeeId,
-                $validated['leave_type'],
-                $validated['credits_requested'],
-                $validated['remarks']
-            );
-
-            return redirect()->route('employee.credit-conversions')->with('success', 'Credit conversion request submitted successfully!');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
+{
+    $user = $request->user();
+    $user->load('employee');
+    
+    // Try multiple ways to get the employee ID
+    $employeeId = null;
+    
+    if ($user->employee && $user->employee->employee_id) {
+        $employeeId = $user->employee->employee_id;
+    } elseif ($user->employee_id) {
+        // Fallback: try to find employee directly
+        $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
+        if ($employee) {
+            $employeeId = $employee->employee_id;
+            \Log::info('Found employee through direct query in submitCreditConversion', ['employee_id' => $employeeId]);
         }
     }
 
+    if (!$employeeId) {
+        $errorMessage = 'Employee profile not found for user. ';
+        $errorMessage .= 'User ID: ' . $user->id . ', ';
+        $errorMessage .= 'User Role: ' . $user->role . ', ';
+        $errorMessage .= 'Employee ID in User: ' . ($user->employee_id ?? 'null');
+        
+        \Log::error('Employee profile not found in submitCreditConversion:', [
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'employee_id_in_user' => $user->employee_id,
+            'employee_relationship' => $user->employee ? 'exists' : 'missing'
+        ]);
+        
+        abort(400, $errorMessage);
+    }
+
+    $validated = $request->validate([
+        'leave_type' => ['required', 'in:SL,VL'],
+        'credits_requested' => ['required', 'numeric', 'min:1', 'max:10'],
+        'remarks' => ['nullable', 'string', 'max:500'],
+    ]);
+
+    try {
+        // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
+        $conversion = $this->creditConversionService->requestConversion(
+            $employeeId,
+            $validated['leave_type'],
+            $validated['credits_requested'],
+            $validated['remarks']
+        );
+
+        return redirect()->route('employee.credit-conversions')->with('success', 'Credit conversion request submitted successfully!');
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
     /**
      * Debug method to check user-employee relationship
      */
@@ -728,80 +828,97 @@ public function leaveCalendar(Request $request)
     /**
      * Show employee's credit conversion history
      */
-    public function myCreditConversions(Request $request)
-    {
-        $user = $request->user();
-        $user->load('employee');
-        
-        // Try multiple ways to get the employee ID
-        $employeeId = null;
-        
-        if ($user->employee && $user->employee->employee_id) {
-            $employeeId = $user->employee->employee_id;
-        } elseif ($user->employee_id) {
-            // Fallback: try to find employee directly
-            $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
-            if ($employee) {
-                $employeeId = $employee->employee_id;
-                \Log::info('Found employee through direct query in myCreditConversions', ['employee_id' => $employeeId]);
-            }
+   /**
+ * Show employee's credit conversion history
+ */
+public function myCreditConversions(Request $request)
+{
+    $user = $request->user();
+    $user->load('employee');
+    
+    // Try multiple ways to get the employee ID
+    $employeeId = null;
+    
+    if ($user->employee && $user->employee->employee_id) {
+        $employeeId = $user->employee->employee_id;
+    } elseif ($user->employee_id) {
+        // Fallback: try to find employee directly
+        $employee = \App\Models\Employee::where('employee_id', $user->employee_id)->first();
+        if ($employee) {
+            $employeeId = $employee->employee_id;
         }
-
-        if (!$employeeId) {
-            $errorMessage = 'Employee profile not found for user. ';
-            $errorMessage .= 'User ID: ' . $user->id . ', ';
-            $errorMessage .= 'User Role: ' . $user->role . ', ';
-            $errorMessage .= 'Employee ID in User: ' . ($user->employee_id ?? 'null');
-            
-            \Log::error('Employee profile not found in myCreditConversions:', [
-                'user_id' => $user->id,
-                'user_role' => $user->role,
-                'employee_id_in_user' => $user->employee_id,
-                'employee_relationship' => $user->employee ? 'exists' : 'missing'
-            ]);
-            
-            abort(400, $errorMessage);
-        }
-
-        $conversions = CreditConversion::where('employee_id', $employeeId)
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($conversion) {
-                // Map leave type codes to readable names
-                $leaveTypeNames = [
-                    'SL' => 'Sick Leave',
-                    'VL' => 'Vacation Leave'
-                ];
-                
-                return [
-                    'conversion_id' => $conversion->conversion_id,
-                    'employee_id' => $conversion->employee_id,
-                    'leave_type_code' => $conversion->leave_type,
-                    'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
-                    'credits_requested' => $conversion->credits_requested,
-                    'equivalent_cash' => $conversion->equivalent_cash,
-                    'status' => $conversion->status,
-                    'submitted_at' => $conversion->submitted_at,
-                    'approved_at' => $conversion->approved_at,
-                    'approved_by' => $conversion->approved_by,
-                    'remarks' => $conversion->remarks,
-                    'created_at' => $conversion->created_at,
-                    'updated_at' => $conversion->updated_at,
-                ];
-            });
-
-        $creditConversionService = new CreditConversionService();
-        $conversionStats = $creditConversionService->getEmployeeConversionStats($employeeId);
-
-        return Inertia::render('Employee/MyCreditConversions', [
-            'auth' => ['user' => $user],
-            'conversions' => $conversions,
-            'conversionStats' => $conversionStats,
-        ]);
     }
 
+    if (!$employeeId) {
+        abort(400, 'Employee profile not found for user.');
+    }
 
+    $conversions = CreditConversion::where('employee_id', $employeeId)
+        ->orderBy('created_at', 'desc')
+        ->get()
+        ->map(function ($conversion) {
+            // Use the same transformation logic as HRController
+            return $this->transformConversionData($conversion);
+        });
 
+    // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
+    $conversionStats = $this->creditConversionService->getEmployeeConversionStats($employeeId);
+
+    return Inertia::render('Employee/MyCreditConversions', [
+        'auth' => ['user' => $user],
+        'conversions' => $conversions,
+        'conversionStats' => $conversionStats,
+    ]);
+}
+
+/**
+ * Use the same transformation method as HRController for consistency
+ */
+private function transformConversionData($conversion)
+{
+    $leaveTypeNames = [
+        'SL' => 'Sick Leave',
+        'VL' => 'Vacation Leave'
+    ];
+
+    // Use the same status mapping as HRController
+    $statusDisplay = [
+        'pending' => 'Pending HR Review',
+        'approved' => 'Approved - Forwarded to Accounting',
+        'rejected' => 'Rejected'
+    ];
+
+    // Calculate cash equivalent using the same formula
+    $monthlySalary = $conversion->employee->monthly_salary ?? 0;
+    $calculatedCash = $this->calculateCashEquivalent($monthlySalary);
+
+    return [
+        'conversion_id' => $conversion->conversion_id,
+        'employee_id' => $conversion->employee_id,
+        'leave_type_code' => $conversion->leave_type,
+        'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+        'credits_requested' => $conversion->credits_requested,
+        'equivalent_cash' => $calculatedCash,
+        'status' => $conversion->status,
+        'status_display' => $statusDisplay[$conversion->status] ?? $conversion->status,
+        'submitted_at' => $conversion->submitted_at,
+        'approved_at' => $conversion->approved_at,
+        'approved_by' => $conversion->approved_by,
+        'remarks' => $conversion->remarks,
+        'created_at' => $conversion->created_at,
+        'updated_at' => $conversion->updated_at,
+    ];
+}
+
+/**
+ * Calculate cash equivalent using the same formula as HRController
+ */
+private function calculateCashEquivalent($monthlySalary)
+{
+    // Same formula as used in HRController and CreditConversionService
+    $cashValue = $monthlySalary * 10 * 0.0481927;
+    return round($cashValue, 2);
+}
 
     /**
  * Update leave request status based on approvals

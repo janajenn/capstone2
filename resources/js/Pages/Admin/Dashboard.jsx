@@ -243,6 +243,9 @@ export default function AdminDashboard() {
     // Chart colors
     const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316'];
 
+
+    
+
     return (
         <AdminLayout>
             <div className="min-h-screen bg-gray-50 p-6">
@@ -276,130 +279,270 @@ export default function AdminDashboard() {
                     </div>
                 </div>
 
-                {/* Stats Cards - Enhanced for Admin */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-blue-50">
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalEmployees || 0}</h2>
-                                <p className="text-sm text-gray-600">Total Employees</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-green-50">
-                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5a2 2 0 012-2h2a2 2 0 012 2v1H9V5zm0 4a2 2 0 012-2h2a2 2 0 012 2v5a2 2 0 01-2 2h-2a2 2 0 01-2-2V9z" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{activeEmployees || 0}</h2>
-                                <p className="text-sm text-gray-600">Active Employees</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-red-50">
-                                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{inactiveEmployees || 0}</h2>
-                                <p className="text-sm text-gray-600">Inactive Employees</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-purple-50">
-                                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalUsers || 0}</h2>
-                                <p className="text-sm text-gray-600">System Users</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                
+{/* Filter Section */}
+<div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <h3 className="text-lg font-semibold text-gray-800 mb-4 md:mb-0">Filter Reports</h3>
+        <div className="flex flex-col sm:flex-row gap-4">
+            {/* Year Filter */}
+            <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Year:</label>
+                <select 
+                    value={props.currentYear || new Date().getFullYear()}
+                    onChange={(e) => {
+                        const year = e.target.value;
+                        router.get(route('admin.dashboard'), { 
+                            year: year,
+                            month: props.currentMonth 
+                        }, {
+                            preserveState: true,
+                            preserveScroll: true
+                        });
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                    {props.availableYears?.map(year => (
+                        <option key={year} value={year}>{year}</option>
+                    ))}
+                </select>
+            </div>
 
-                {/* Second Row of Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-emerald-50">
-                                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{fullyApprovedRequests || 0}</h2>
-                                <p className="text-sm text-gray-600">Fully Approved Requests</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-red-50">
-                                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{rejectedRequests || 0}</h2>
-                                <p className="text-sm text-gray-600">Rejected Requests</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-green-50">
-                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalDepartments || 0}</h2>
-                                <p className="text-sm text-gray-600">Total Departments</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center">
-                            <div className="p-3 rounded-lg bg-orange-50">
-                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                                </svg>
-                            </div>
-                            <div className="ml-4">
-                                <h2 className="text-2xl font-bold text-gray-800">{totalHRUsers || 0}</h2>
-                                <p className="text-sm text-gray-600">HR Users</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            {/* Month Filter */}
+            <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Month:</label>
+                <select 
+                    value={props.currentMonth || ''}
+                    onChange={(e) => {
+                        const month = e.target.value;
+                        router.get(route('admin.dashboard'), { 
+                            year: props.currentYear,
+                            month: month 
+                        }, {
+                            preserveState: true,
+                            preserveScroll: true
+                        });
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                    <option value="">All Months</option>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                </select>
+            </div>
+
+            {/* Reset Filter Button */}
+            <button
+                onClick={() => {
+                    router.get(route('admin.dashboard'), {}, {
+                        preserveState: true,
+                        preserveScroll: true
+                    });
+                }}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm"
+            >
+                Reset Filters
+            </button>
+        </div>
+    </div>
+    
+    {/* Active Filter Display */}
+    {(props.currentYear || props.currentMonth) && (
+        <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+                <strong>Active Filters:</strong> 
+                {props.currentYear && ` Year: ${props.currentYear}`}
+                {props.currentMonth && ` | Month: ${new Date(2000, props.currentMonth - 1).toLocaleString('default', { month: 'long' })}`}
+            </p>
+        </div>
+    )}
+</div>
+
+
+
+{/* Stats Cards - Enhanced for Admin */}
+<div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+    {/* Total Employees Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.employees.index'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-blue-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-blue-50">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{totalEmployees || 0}</h2>
+                <p className="text-sm text-gray-600">Total Employees</p>
+            </div>
+        </div>
+    </div>
+    
+    {/* Active Employees Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.employees.active'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-green-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-green-50">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5a2 2 0 012-2h2a2 2 0 012 2v1H9V5zm0 4a2 2 0 012-2h2a2 2 0 012 2v5a2 2 0 01-2 2h-2a2 2 0 01-2-2V9z" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{activeEmployees || 0}</h2>
+                <p className="text-sm text-gray-600">Active Employees</p>
+            </div>
+        </div>
+    </div>
+    
+    {/* Inactive Employees Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.employees.inactive'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-red-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-red-50">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{inactiveEmployees || 0}</h2>
+                <p className="text-sm text-gray-600">Inactive Employees</p>
+            </div>
+        </div>
+    </div>
+    
+    {/* System Users Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.users.index'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-purple-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-purple-50">
+                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{totalUsers || 0}</h2>
+                <p className="text-sm text-gray-600">System Users</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{/* Second Row of Stats Cards */}
+<div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+    {/* Fully Approved Requests Card - Clickable */}
+    <div 
+       onClick={() => {
+        try {
+            router.visit(route('admin.leave-requests.fully-approved'));
+        } catch (error) {
+            console.error('Route error:', error);
+            // Fallback to direct URL
+            router.visit('/admin/leave-requests/fully-approved');
+        }
+    }}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-emerald-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-emerald-50">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{fullyApprovedRequests || 0}</h2>
+                <p className="text-sm text-gray-600">Fully Approved Requests</p>
+            </div>
+        </div>
+    </div>
+    
+    {/* Rejected Requests Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.leave-requests.rejected'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-red-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-red-50">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{rejectedRequests || 0}</h2>
+                <p className="text-sm text-gray-600">Rejected Requests</p>
+            </div>
+        </div>
+    </div>
+    
+    {/* Total Departments Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.departments.index'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-green-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-green-50">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{totalDepartments || 0}</h2>
+                <p className="text-sm text-gray-600">Total Departments</p>
+            </div>
+        </div>
+    </div>
+    
+    {/* HR Users Card - Clickable */}
+    <div 
+        onClick={() => router.visit(route('admin.users.hr'))}
+        className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-orange-300"
+    >
+        <div className="flex items-center">
+            <div className="p-3 rounded-lg bg-orange-50">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                </svg>
+            </div>
+            <div className="ml-4">
+                <h2 className="text-2xl font-bold text-gray-800">{totalHRUsers || 0}</h2>
+                <p className="text-sm text-gray-600">HR Users</p>
+            </div>
+        </div>
+    </div>
+</div>
 
                 {/* Charts Section */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                     {/* Leave Types Chart */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Most Applied Leave Types</h3>
+    <div className="flex items-center justify-between mb-4">
+        <div>
+            <h3 className="text-lg font-semibold text-gray-800">
+                Most Applied Leave Types
+                {(props.currentYear || props.currentMonth) && (
+                    <span className="text-sm text-gray-500 ml-2">
+                        ({props.currentYear || 'All Years'}{props.currentMonth ? ` - ${new Date(2000, props.currentMonth - 1).toLocaleString('default', { month: 'long' })}` : ''})
+                    </span>
+                )}
+            </h3>
+            </div>
                             <div className="p-2 rounded-lg bg-blue-50">
                                 <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -421,8 +564,17 @@ export default function AdminDashboard() {
 
                     {/* Monthly Trends Chart */}
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Leave Requests by Month</h3>
+    <div className="flex items-center justify-between mb-4">
+        <div>
+            <h3 className="text-lg font-semibold text-gray-800">
+                {props.currentMonth ? 'Daily Trends' : 'Monthly Trends'}
+                {props.currentYear && (
+                    <span className="text-sm text-gray-500 ml-2">
+                        ({props.currentYear})
+                    </span>
+                )}
+            </h3>
+        </div>
                             <div className="p-2 rounded-lg bg-green-50">
                                 <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -445,8 +597,17 @@ export default function AdminDashboard() {
 
                 {/* Department Comparison Chart */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-800">Leave Requests by Department</h3>
+    <div className="flex items-center justify-between mb-4">
+        <div>
+            <h3 className="text-lg font-semibold text-gray-800">
+                Leave Requests by Department
+                {(props.currentYear || props.currentMonth) && (
+                    <span className="text-sm text-gray-500 ml-2">
+                        ({props.currentYear || 'All Years'}{props.currentMonth ? ` - ${new Date(2000, props.currentMonth - 1).toLocaleString('default', { month: 'long' })}` : ''})
+                    </span>
+                )}
+            </h3>
+        </div>
                         <div className="p-2 rounded-lg bg-purple-50">
                             <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />

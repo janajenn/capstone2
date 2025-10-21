@@ -43,6 +43,47 @@ class HRNotificationController extends Controller
     /**
      * Mark HR notification as read
      */
+   
+
+    /**
+     * Mark single notification as read - FIXED FOR INERTIA
+     */
+    public function markAllAsRead(Request $request)
+    {
+        try {
+            $user = $request->user()->load('employee');
+            $employeeId = $user->employee?->employee_id;
+
+            if (!$employeeId) {
+                return response()->json([
+                    'success' => false, 
+                    'error' => 'Employee profile not found for user.'
+                ], 400);
+            }
+
+            $this->notificationService->markAllAsRead($employeeId);
+
+            return response()->json([
+                'success' => true,
+                'unread_count' => 0,
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error in HR markAllAsRead', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()?->id,
+            ]);
+            
+            return response()->json([
+                'success' => false, 
+                'error' => 'Failed to mark all notifications as read.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark single notification as read - RETURN JSON
+     */
     public function markAsRead(Request $request, $id)
     {
         try {
@@ -50,7 +91,10 @@ class HRNotificationController extends Controller
             $employeeId = $user->employee?->employee_id;
 
             if (!$employeeId) {
-                return response()->json(['success' => false, 'error' => 'Employee profile not found for user.'], 400);
+                return response()->json([
+                    'success' => false, 
+                    'error' => 'Employee profile not found for user.'
+                ], 400);
             }
 
             $success = $this->notificationService->markAsRead($id, $employeeId);
@@ -64,7 +108,11 @@ class HRNotificationController extends Controller
                 ]);
             }
 
-            return response()->json(['success' => false, 'error' => 'Failed to mark notification as read'], 400);
+            return response()->json([
+                'success' => false, 
+                'error' => 'Failed to mark notification as read'
+            ], 400);
+            
         } catch (\Exception $e) {
             \Log::error('Error in HR markAsRead', [
                 'error' => $e->getMessage(),
@@ -79,37 +127,6 @@ class HRNotificationController extends Controller
         }
     }
 
-    /**
-     * Mark all HR notifications as read
-     */
-    public function markAllAsRead(Request $request)
-    {
-        try {
-            $user = $request->user()->load('employee');
-            $employeeId = $user->employee?->employee_id;
-
-            if (!$employeeId) {
-                return response()->json(['success' => false, 'error' => 'Employee profile not found for user.'], 400);
-            }
-
-            $this->notificationService->markAllAsRead($employeeId);
-
-            return response()->json([
-                'success' => true,
-                'unread_count' => 0,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Error in HR markAllAsRead', [
-                'error' => $e->getMessage(),
-                'user_id' => $request->user()?->id,
-            ]);
-            
-            return response()->json([
-                'success' => false, 
-                'error' => 'Internal server error'
-            ], 500);
-        }
-    }
 
     /**
      * Get unread count for HR sidebar

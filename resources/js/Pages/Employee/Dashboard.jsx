@@ -104,30 +104,30 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    {/* Sick Leave Balance Card */}
-                    <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1">
-                        <div className="flex items-center justify-between mb-4">
-                            <div>
-                                <h3 className="text-lg font-semibold text-green-900">Sick Leave</h3>
-                                <p className="text-green-600 text-sm">Available Leave Credits Balance</p>
-                            </div>
-                            <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center">
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <div className="text-3xl font-bold text-green-900 mb-2">
-                            {leaveCredits?.sl ?? 0} <span className="text-lg font-normal text-green-600">days</span>
-                        </div>
-                        <div className="w-full bg-green-200 rounded-full h-2">
-                            <div 
-                                className="bg-green-600 h-2 rounded-full transition-all duration-500"
-                                style={{ width: `${Math.min((leaveCredits?.sl / 15) * 100, 100)}%` }}
-                            ></div>
-                        </div>
-                    </div>
-                </div>
+{/* Sick Leave Balance Card */}
+<div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1">
+    <div className="flex items-center justify-between mb-4">
+        <div>
+            <h3 className="text-lg font-semibold text-green-900">Sick Leave</h3>
+            <p className="text-green-600 text-sm">Available Leave Credits Balance</p>
+        </div>
+        <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+        </div>
+    </div>
+    <div className="text-3xl font-bold text-green-900 mb-2">
+        {leaveCredits?.sl ?? 0} <span className="text-lg font-normal text-green-600">days</span>
+    </div>
+    <div className="w-full bg-green-200 rounded-full h-2">
+        <div 
+            className="bg-green-600 h-2 rounded-full transition-all duration-500"
+            style={{ width: `${Math.min((leaveCredits?.sl / 15) * 100, 100)}%` }}
+        ></div>
+    </div>
+</div>
+</div>
 
                 {/* Quick Actions Section */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">

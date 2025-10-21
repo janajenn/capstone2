@@ -352,7 +352,7 @@ export default function Dashboard({
                         </div>
                     </div>
 
-                    {/* Pending Leave Requests Table */}
+                    {/* Pending Leave Requests Table
                     <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                         <div className="p-6 bg-white border-b border-gray-200">
                             <div className="flex justify-between items-center mb-6">
@@ -368,9 +368,9 @@ export default function Dashboard({
                                         Live Updates
                                     </span>
                                 )}
-                            </div>
+                            </div> */}
 
-                            {leaveRequests.length === 0 ? (
+                            {/* {leaveRequests.length === 0 ? (
                                 <p className="text-gray-500">No pending leave requests requiring your approval.</p>
                             ) : (
                                 <div className="overflow-x-auto">
@@ -465,11 +465,11 @@ export default function Dashboard({
                                         </tbody>
                                     </table>
                                 </div>
-                            )}
+                            )} */}
                         </div>
                     </div>
-                </div>
-            </div>
+                {/* </div>
+            </div> */}
         </DeptHeadLayout>
     );
 }

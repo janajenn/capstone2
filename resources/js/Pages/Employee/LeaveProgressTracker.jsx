@@ -1,7 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
-const LeaveProgressTracker = ({ approvals, isDeptHead = false, isRecalled = false, recallData = null }) => {
+const LeaveProgressTracker = ({ 
+    approvals, 
+    isDeptHead = false, 
+    isAdmin = false, 
+    isRecalled = false, 
+    recallData = null 
+}) => {
     // If recalled, show special recalled status
     if (isRecalled) {
         return (
@@ -65,7 +71,7 @@ const LeaveProgressTracker = ({ approvals, isDeptHead = false, isRecalled = fals
         );
     }
 
-    // Define the steps in order with Heroicons - conditionally exclude dept_head for dept heads
+    // Define the steps in order with Heroicons - conditionally exclude dept_head for dept heads and admins
     const baseSteps = [
         { 
             id: 'submitted', 
@@ -105,8 +111,8 @@ const LeaveProgressTracker = ({ approvals, isDeptHead = false, isRecalled = fals
         },
     ];
 
-    // For department heads, remove the dept_head step
-    const steps = isDeptHead 
+    // For department heads and admins, remove the dept_head step (3-step process)
+    const steps = (isDeptHead || isAdmin) 
         ? baseSteps.filter(step => step.id !== 'dept_head')
         : baseSteps;
 
@@ -117,19 +123,24 @@ const LeaveProgressTracker = ({ approvals, isDeptHead = false, isRecalled = fals
         return approval?.status || 'pending';
     };
 
-    // Determine which step is current - with dept head bypass logic
+    // Determine which step is current - with dept head and admin bypass logic
     const getCurrentStepIndex = () => {
-        if (isDeptHead) {
-            // For department heads: submitted -> hr -> admin
+        if (isDeptHead || isAdmin) {
+            // For department heads and admins: submitted -> hr -> admin (3 steps)
             if (getStatus('admin') === 'approved') return steps.length - 1; // Admin approved
+            if (getStatus('admin') === 'rejected') return steps.length - 1; // Admin rejected
             if (getStatus('hr') === 'approved') return 2; // HR approved, waiting for admin
+            if (getStatus('hr') === 'rejected') return 2; // HR rejected
             if (getStatus('hr') === 'pending') return 1; // Waiting for HR
             return 0; // Just submitted
         } else {
-            // For regular employees: submitted -> hr -> dept_head -> admin
+            // For regular employees: submitted -> hr -> dept_head -> admin (4 steps)
             if (getStatus('admin') === 'approved') return steps.length - 1;
+            if (getStatus('admin') === 'rejected') return steps.length - 1;
             if (getStatus('dept_head') === 'approved') return 3;
+            if (getStatus('dept_head') === 'rejected') return 3;
             if (getStatus('hr') === 'approved') return 2;
+            if (getStatus('hr') === 'rejected') return 2;
             return 1; // Default to HR step if just submitted
         }
     };
@@ -166,8 +177,8 @@ const LeaveProgressTracker = ({ approvals, isDeptHead = false, isRecalled = fals
     const getStatusMessage = () => {
         const currentStep = steps[currentStepIndex];
         
-        if (isDeptHead) {
-            // Special messages for department heads
+        if (isDeptHead || isAdmin) {
+            // Special messages for department heads and admins
             if (currentStep.id === 'submitted') {
                 return "Your request has been submitted and is awaiting HR review";
             } else if (currentStep.id === 'hr') {
@@ -306,13 +317,18 @@ const LeaveProgressTracker = ({ approvals, isDeptHead = false, isRecalled = fals
                     </p>
                 </div>
                 
-                {/* Special note for department heads */}
-                {isDeptHead && currentStepIndex >= 1 && (
+                {/* Special note for department heads and admins */}
+                {(isDeptHead || isAdmin) && currentStepIndex >= 1 && (
                     <div className="mt-2 flex items-start text-xs text-blue-600 bg-blue-50 p-2 rounded">
                         <svg className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                         </svg>
-                        <span>As a Department Head, your request bypasses the Department Head approval step.</span>
+                        <span>
+                            {isAdmin 
+                                ? "As an Admin, your request bypasses the Department Head approval step."
+                                : "As a Department Head, your request bypasses the Department Head approval step."
+                            }
+                        </span>
                     </div>
                 )}
             </motion.div>

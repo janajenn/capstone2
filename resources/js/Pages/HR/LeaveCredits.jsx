@@ -1,11 +1,23 @@
 import HRLayout from '@/Layouts/HRLayout';
 import { usePage, useForm, router } from '@inertiajs/react';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 
-export default function LeaveCredits({ employees, alreadyCredited, flash, creditedMonth, creditedYear, departments, filters }) {
+export default function LeaveCredits({ 
+    employees, 
+    alreadyCredited, 
+    flash, 
+    creditedMonth, 
+    creditedYear, 
+    departments, 
+    filters,
+    showCreditWarning,
+    warningMonth,
+    warningYear 
+}) {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isWarningModalOpen, setIsWarningModalOpen] = useState(showCreditWarning || false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [selectedDepartment, setSelectedDepartment] = useState(filters?.department || '');
     const [searchTerm, setSearchTerm] = useState(filters?.search || '');
@@ -17,6 +29,13 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
         vl_balance: '',
         imported_at: '',
     });
+
+    // Auto-show warning modal when component loads with showCreditWarning
+    useEffect(() => {
+        if (showCreditWarning) {
+            setIsWarningModalOpen(true);
+        }
+    }, [showCreditWarning]);
 
     // Debounced search function
     const debouncedSearch = useCallback(
@@ -104,7 +123,7 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
             
             // If it's an ISO string like "2025-08-01T00:00:00.000000Z"
             if (typeof dateString === 'string') {
-                return dateString.split('T')[0]; // Takes "2025-08-01" from "2025-08-01T00:00:00.000000Z"
+                return dateString.split('T')[0];
             }
             
             return '';
@@ -123,6 +142,10 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
         setIsModalOpen(false);
         setSelectedEmployee(null);
         reset();
+    };
+
+    const closeWarningModal = () => {
+        setIsWarningModalOpen(false);
     };
 
     const handleSubmit = (e) => {
@@ -175,6 +198,9 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
             onSuccess: (page) => {
                 const { creditedMonth, creditedYear } = page.props;
                 const monthYear = `${creditedMonth} ${creditedYear}`;
+
+                // Close warning modal if it's open
+                setIsWarningModalOpen(false);
 
                 Swal.fire({
                     icon: 'success',
@@ -249,26 +275,26 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                         </p>
                     </div>
                     <div className="mt-4 flex md:mt-0 md:ml-4">
-                        <button
-                            onClick={handleMonthlyCredit}
-                            className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${alreadyCredited ? 'bg-gray-400 ' : 'bg-blue-600 hover:bg-blue-700'}`}
-                        >
-                            {alreadyCredited ? (
-                                <>
-                                    <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                    Monthly Credits Added
-                                </>
-                            ) : (
-                                <>
-                                    <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                                    </svg>
-                                    Add Monthly Credits (+1.25)
-                                </>
-                            )}
-                        </button>
+                    <button
+    onClick={handleMonthlyCredit}
+    className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${alreadyCredited ? 'bg-gray-400 ' : 'bg-blue-600 hover:bg-blue-700'}`}
+>
+    {alreadyCredited ? (
+        <>
+            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            Monthly Credits Added for {creditedMonth} {creditedYear}
+        </>
+    ) : (
+        <>
+            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+            </svg>
+            Add {creditedMonth} {creditedYear} Credits (+1.25)
+        </>
+    )}
+</button>
                     </div>
                 </div>
 
@@ -444,7 +470,7 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                     {renderPagination()}
                 </div>
 
-                {/* Modal */}
+                {/* Edit Credits Modal */}
                 {isModalOpen && selectedEmployee && (
                     <div className="fixed inset-0 overflow-y-auto z-50">
                         <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
@@ -535,6 +561,61 @@ export default function LeaveCredits({ employees, alreadyCredited, flash, credit
                                         className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
                                     >
                                         Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Monthly Credit Warning Modal */}
+                {isWarningModalOpen && (
+                    <div className="fixed inset-0 overflow-y-auto z-50">
+                        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+                                <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={closeWarningModal}></div>
+                            </div>
+
+                            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+                            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                    <div className="sm:flex sm:items-start">
+                                        <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
+                                            <svg className="h-6 w-6 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                            </svg>
+                                        </div>
+                                        <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                            <h3 className="text-lg leading-6 font-medium text-gray-900">
+                                                Monthly Credit Reminder
+                                            </h3>
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-500">
+                                                    The month is about to end. You need to add monthly credits now. 
+                                                    If you skip this, you won't be able to go back and add them later.
+                                                </p>
+                                                <p className="text-sm text-gray-700 mt-2 font-medium">
+                                                    Current Month: {warningMonth} {warningYear}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                    <button
+                                        type="button"
+                                        onClick={handleMonthlyCredit}
+                                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                                    >
+                                        Add Monthly Credits Now
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={closeWarningModal}
+                                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                                    >
+                                        Remind Me Later
                                     </button>
                                 </div>
                             </div>

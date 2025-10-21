@@ -269,22 +269,18 @@ class DeptHeadController extends Controller
     public function leaveRequests(Request $request)
     {
         $user = $request->user();
-        
-        // Get department ID with null check
         $departmentId = $user->employee->department_id ?? null;
     
         if (!$departmentId) {
             return Inertia::render('DeptHead/LeaveRequests', [
-                'leaveRequests' => [],
+                'leaveRequests' => ['data' => [], 'links' => []],
                 'departmentName' => 'No Department Assigned',
-                'filters' => $request->only(['status'])
+                'filters' => $request->only(['status', 'search'])
             ]);
         }
     
-        // Get the current department head's employee_id to exclude their own requests
         $currentDeptHeadEmployeeId = $user->employee_id;
     
-        // Get leave requests for employees in the department EXCLUDING the current department head's own requests
         $query = LeaveRequest::with([
                 'employee.user', 
                 'leaveType:id,name,code',
@@ -294,44 +290,84 @@ class DeptHeadController extends Controller
             ])
             ->whereHas('employee', function($query) use ($departmentId, $currentDeptHeadEmployeeId) {
                 $query->where('department_id', $departmentId)
-                      // Exclude the current department head's own requests using employee_id
                       ->where('employee_id', '!=', $currentDeptHeadEmployeeId);
             })
             ->orderBy('created_at', 'desc');
     
-        // Filter by status
+        // FIXED: Better status filtering logic
         if ($request->has('status') && $request->status !== 'all') {
             switch ($request->status) {
                 case 'pending':
-                    $query->where('status', 'pending')
-                        ->whereDoesntHave('approvals', function($q) {
-                            $q->where('role', 'dept_head');
-                        });
+                    // Requests that need dept head approval
+                    $query->where(function($q) {
+                        $q->where('status', 'pending')
+                          ->orWhere('status', 'pending_dept_head')
+                          ->orWhere('status', 'pending_hr_to_dept');
+                    })->whereDoesntHave('approvals', function($q) {
+                        $q->where('role', 'dept_head');
+                    });
                     break;
                     
                 case 'approved_by_dept_head':
-                    $query->whereHas('approvals', function($q) {
+                    // Requests approved by dept head but pending other approvals
+                    $query->where(function($q) {
+                        $q->where('status', 'pending')
+                          ->orWhere('status', 'pending_admin')
+                          ->orWhere('status', 'pending_hr');
+                    })->whereHas('approvals', function($q) {
                         $q->where('role', 'dept_head')->where('status', 'approved');
-                    })->where('status', 'pending'); // Still pending overall
+                    });
                     break;
                     
                 case 'fully_approved':
+                    // Fully approved requests
                     $query->where('status', 'approved')
-                        ->whereHas('approvals', function($q) {
-                            $q->where('role', 'admin')->where('status', 'approved');
-                        });
+                          ->whereHas('approvals', function($q) {
+                              $q->where('role', 'admin')->where('status', 'approved');
+                          });
                     break;
                     
                 case 'rejected':
+                    // Rejected requests (by anyone)
                     $query->where('status', 'rejected');
                     break;
             }
         }
     
-        $leaveRequests = $query->get()
-            ->map(function ($leaveRequest) {
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function($q) use ($searchTerm) {
+                $q->whereHas('employee', function($q) use ($searchTerm) {
+                    $q->where('firstname', 'like', "%{$searchTerm}%")
+                      ->orWhere('lastname', 'like', "%{$searchTerm}%")
+                      ->orWhere('position', 'like', "%{$searchTerm}%");
+                })
+                ->orWhereHas('leaveType', function($q) use ($searchTerm) {
+                    $q->where('name', 'like', "%{$searchTerm}%")
+                      ->orWhere('code', 'like', "%{$searchTerm}%");
+                })
+                ->orWhere('reason', 'like', "%{$searchTerm}%");
+            });
+        }
+    
+        $leaveRequests = $query->paginate(10)
+            ->through(function ($leaveRequest) {
                 $deptHeadApproval = $leaveRequest->approvals->firstWhere('role', 'dept_head');
                 $adminApproval = $leaveRequest->approvals->firstWhere('role', 'admin');
+                $hrApproval = $leaveRequest->approvals->firstWhere('role', 'hr');
+                
+                // Improved status determination
+                $displayStatus = 'pending';
+                
+                if ($leaveRequest->status === 'rejected') {
+                    $displayStatus = 'rejected';
+                } elseif ($adminApproval && $adminApproval->status === 'approved') {
+                    $displayStatus = 'fully_approved';
+                } elseif ($deptHeadApproval && $deptHeadApproval->status === 'approved') {
+                    $displayStatus = 'approved_by_dept_head';
+                }
+                // Otherwise, it remains 'pending'
                 
                 return [
                     'id' => $leaveRequest->id,
@@ -343,7 +379,8 @@ class DeptHeadController extends Controller
                     'date_from' => $leaveRequest->date_from,
                     'date_to' => $leaveRequest->date_to,
                     'reason' => $leaveRequest->reason,
-                    'status' => $leaveRequest->status,
+                    'status' => $leaveRequest->status, // actual database status
+                    'display_status' => $displayStatus, // calculated display status
                     'created_at' => $leaveRequest->created_at,
                     'dept_head_approval' => $deptHeadApproval ? [
                         'status' => $deptHeadApproval->status,
@@ -357,6 +394,12 @@ class DeptHeadController extends Controller
                         'approved_at' => $adminApproval->approved_at,
                         'approver_name' => $adminApproval->approver->name ?? 'Unknown'
                     ] : null,
+                    'hr_approval' => $hrApproval ? [
+                        'status' => $hrApproval->status,
+                        'remarks' => $hrApproval->remarks,
+                        'approved_at' => $hrApproval->approved_at,
+                        'approver_name' => $hrApproval->approver->name ?? 'Unknown'
+                    ] : null,
                     'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1
                 ];
             });
@@ -364,7 +407,7 @@ class DeptHeadController extends Controller
         return Inertia::render('DeptHead/LeaveRequests', [
             'leaveRequests' => $leaveRequests,
             'departmentName' => $user->employee->department->name ?? 'Department',
-            'filters' => $request->only(['status'])
+            'filters' => $request->only(['status', 'search'])
         ]);
     }
     /**
@@ -383,20 +426,21 @@ class DeptHeadController extends Controller
             DB::transaction(function () use ($request, $id, $user) {
                 $leaveRequest = LeaveRequest::with(['employee', 'leaveType', 'employee.user'])->findOrFail($id);
         
-                // Check if request is in correct status for dept head approval
-                if (!in_array($leaveRequest->status, ['pending_dept_head', 'pending'])) {
-                    throw new \Exception('This request is not pending department head approval.');
+                // FIXED: Check if request is in correct status for dept head approval
+                $allowedStatuses = ['pending', 'pending_dept_head', 'pending_hr_to_dept'];
+                if (!in_array($leaveRequest->status, $allowedStatuses)) {
+                    throw new \Exception('This request is not pending department head approval. Current status: ' . $leaveRequest->status);
                 }
-        
+    
                 // Check if already processed by dept head
                 $existingApproval = LeaveApproval::where('leave_id', $id)
                     ->where('role', 'dept_head')
                     ->first();
-        
+    
                 if ($existingApproval) {
-                    throw new \Exception('This request has already been processed.');
+                    throw new \Exception('This request has already been processed by department head.');
                 }
-        
+    
                 // Create approval record
                 LeaveApproval::create([
                     'leave_id' => $leaveRequest->id,
@@ -406,56 +450,30 @@ class DeptHeadController extends Controller
                     'remarks' => $request->remarks,
                     'approved_at' => now(),
                 ]);
-        
-                // Update status based on employee type
-                if ($leaveRequest->employee->user->role === 'dept_head') {
-                    // Department head's own request goes to admin after dept head approval
+    
+                // FIXED: Update status based on the current workflow
+                if ($leaveRequest->status === 'pending_hr_to_dept' || $leaveRequest->status === 'pending_dept_head') {
+                    // Request came from HR, so after dept head approval it goes to admin
                     $leaveRequest->update(['status' => 'pending_admin']);
                 } else {
-                    // Regular employee request goes to pending_admin after dept head approval
-                    $leaveRequest->update(['status' => 'pending_admin']);
+                    // Regular flow: dept head -> HR -> admin
+                    $leaveRequest->update(['status' => 'pending_hr']);
                 }
-        
-                // Send notification to employee using employee-specific method
+    
+                // FIXED: Use the centralized notification service instead of creating multiple notifications manually
                 $notificationService = new NotificationService();
-                $notificationService->createEmployeeNotification(
-                    $leaveRequest->employee_id,
-                    'leave_request',
-                    'Leave Request Approved by Department Head',
-                    "Your {$leaveRequest->leaveType->name} leave request from {$leaveRequest->date_from} to {$leaveRequest->date_to} has been approved by your Department Head.",
-                    [
-                        'request_id' => $id,
-                        'status' => 'dept_head_approved',
-                        'leave_type' => $leaveRequest->leaveType->name,
-                        'date_from' => $leaveRequest->date_from,
-                        'date_to' => $leaveRequest->date_to,
-                        'remarks' => $request->remarks
-                    ]
+                
+                // Notify the employee about department head approval
+                $notificationService->notifyDeptHeadApproval(
+                    $leaveRequest,
+                    $user->id,
+                    $request->remarks
                 );
     
-                // Also notify admin if needed using admin-specific method
-                if ($leaveRequest->status === 'pending_admin') {
-                    $adminUsers = User::where('role', 'admin')->get();
-                    foreach ($adminUsers as $admin) {
-                        $adminEmployeeId = $notificationService->getEmployeeIdFromUserId($admin->id);
-                        if ($adminEmployeeId) {
-                            $notificationService->createAdminNotification(
-                                $adminEmployeeId,
-                                'leave_request_approval',
-                                'Leave Request Requires Admin Approval',
-                                "A leave request from {$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname} requires your approval after department head review.",
-                                [
-                                    'request_id' => $id,
-                                    'employee_name' => "{$leaveRequest->employee->firstname} {$leaveRequest->employee->lastname}",
-                                    'leave_type' => $leaveRequest->leaveType->name,
-                                    'date_from' => $leaveRequest->date_from,
-                                    'date_to' => $leaveRequest->date_to,
-                                    'previous_approver' => 'dept_head'
-                                ]
-                            );
-                        }
-                    }
-                }
+                // FIXED: Remove the manual notification creation below - it's already handled in notifyDeptHeadApproval
+                // The notifyDeptHeadApproval method in NotificationService already handles:
+                // 1. Notifying the employee
+                // 2. Notifying the next approver (Admin for regular employees)
             });
     
             return redirect()->back()->with('success', 'Leave request approved successfully.');
@@ -695,20 +713,24 @@ class DeptHeadController extends Controller
         
         // Get department ID with null check
         $departmentId = $user->employee->department_id ?? null;
-
+    
         if (!$departmentId) {
             return Inertia::render('DeptHead/Employees', [
-                'employees' => [],
+                'employees' => [
+                    'data' => [],
+                    'links' => [],
+                    'meta' => []
+                ],
                 'departmentName' => 'No Department Assigned'
             ]);
         }
-
-        // Get employees in the department
+    
+        // Get employees in the department with pagination
         $employees = Employee::with(['user', 'department'])
             ->where('department_id', $departmentId)
             ->orderBy('firstname')
-            ->get()
-            ->map(function ($employee) {
+            ->paginate(10) // 10 employees per page
+            ->through(function ($employee) {
                 return [
                     'employee_id' => $employee->employee_id,
                     'firstname' => $employee->firstname,
@@ -724,14 +746,12 @@ class DeptHeadController extends Controller
                     ] : null,
                 ];
             });
-
+    
         return Inertia::render('DeptHead/Employees', [
             'employees' => $employees,
             'departmentName' => $user->employee->department->name ?? 'Department'
         ]);
     }
-
-
 
 
     public function removeFromDepartment(Request $request, $employeeId)
@@ -759,61 +779,115 @@ class DeptHeadController extends Controller
 
 
     // LEAVE CALENDAR
-    public function leaveCalendar(Request $request)
-    {
-        $user = $request->user();
+   // In DeptHeadController.php - update leaveCalendar method to match admin/HR
+public function leaveCalendar(Request $request)
+{
+    $user = $request->user();
+    
+    // Get department ID with null check
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return Inertia::render('DeptHead/LeaveCalendar', [
+            'events' => [],
+            'leavesByMonth' => [],
+            'departmentName' => 'No Department Assigned',
+            'departments' => [],
+            'leaveTypes' => [],
+            'filters' => $request->only(['year', 'month', 'day', 'leave_type']),
+            'currentYear' => now()->year,
+        ]);
+    }
+
+    // Get the current year or use the year from request - SAME AS ADMIN
+    $year = $request->input('year', now()->year);
+    $month = $request->input('month');
+    $day = $request->input('day');
+
+    // Define the filter period for overlapping leaves - SAME AS ADMIN
+    $startDate = Carbon::createFromDate($year, $month ?: 1, $day ?: 1)->startOfDay();
+    if (!$month) {
+        $startDate->startOfYear();
+    } elseif (!$day) {
+        $startDate->startOfMonth();
+    }
+
+    $endDate = $startDate->copy()->endOfDay();
+    if (!$month) {
+        $endDate->endOfYear();
+    } elseif (!$day) {
+        $endDate->endOfMonth();
+    }
+
+    // Get fully approved leave requests for the specified period - FILTERED BY DEPARTMENT
+    $query = LeaveRequest::where('status', 'approved')
+        ->whereHas('approvals', function ($query) {
+            $query->where('role', 'admin')->where('status', 'approved');
+        })
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId); // DEPARTMENT FILTER
+        })
+        ->where('date_to', '>=', $startDate)
+        ->where('date_from', '<=', $endDate)
+        ->with(['employee', 'leaveType', 'approvals' => function ($query) {
+            $query->with('approver');
+        }]);
+
+    // Apply additional filters if provided - SAME AS ADMIN
+    if ($request->has('leave_type') && $request->leave_type) {
+        $query->whereHas('leaveType', function ($q) use ($request) {
+            $q->where('code', $request->leave_type);
+        });
+    }
+
+    $approvedLeaveRequests = $query->get();
+
+    // Group leaves by month for list view - SAME AS ADMIN
+    $leavesByMonth = [];
+    foreach ($approvedLeaveRequests as $leaveRequest) {
+        $month = Carbon::parse($leaveRequest->date_from)->format('F Y');
         
-        // Get department ID with null check
-        $departmentId = $user->employee->department_id ?? null;
-    
-        if (!$departmentId) {
-            return Inertia::render('DeptHead/LeaveCalendar', [
-                'events' => [],
-                'leavesByMonth' => [],
-                'departmentName' => 'No Department Assigned',
-                'departments' => [],
-                'leaveTypes' => [],
-                'filters' => $request->only(['year', 'leave_type']),
-                'currentYear' => now()->year,
-            ]);
+        if (!isset($leavesByMonth[$month])) {
+            $leavesByMonth[$month] = [];
         }
-    
-        // Get the current year or use the year from request
-        $currentYear = $request->year ?? now()->year;
-        
-        // Get fully approved leave requests for employees in the department
-        $query = LeaveRequest::where('status', 'approved')
-            ->whereHas('approvals', function ($query) {
-                $query->where('role', 'admin')->where('status', 'approved');
+
+        $leavesByMonth[$month][] = [
+            'id' => $leaveRequest->id,
+            'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
+            'leave_type' => $leaveRequest->leaveType->name,
+            'leave_type_code' => $leaveRequest->leaveType->code,
+            'start_date' => $leaveRequest->date_from,
+            'end_date' => $leaveRequest->date_to,
+            'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1,
+            'reason' => $leaveRequest->reason,
+            'department' => $leaveRequest->employee->department->name ?? 'No Department',
+            'approvals' => $leaveRequest->approvals->map(function ($approval) {
+                return [
+                    'role' => $approval->role,
+                    'status' => $approval->status,
+                    'approver_name' => $approval->approver->name ?? 'Unknown',
+                    'approved_at' => $approval->approved_at,
+                    'remarks' => $approval->remarks
+                ];
             })
-            ->whereHas('employee', function($query) use ($departmentId) {
-                $query->where('department_id', $departmentId);
-            })
-            ->whereYear('date_from', $currentYear) // Filter by year
-            ->with(['employee', 'leaveType', 'approvals' => function ($query) {
-                $query->with('approver');
-            }]);
-    
-        // Apply additional filters if provided
-        if ($request->has('leave_type') && $request->leave_type) {
-            $query->whereHas('leaveType', function ($q) use ($request) {
-                $q->where('code', $request->leave_type);
-            });
-        }
-    
-        $approvedLeaveRequests = $query->get();
-    
-        // Group leaves by month for list view
-        $leavesByMonth = [];
-        foreach ($approvedLeaveRequests as $leaveRequest) {
-            $month = Carbon::parse($leaveRequest->date_from)->format('F Y');
-            
-            if (!isset($leavesByMonth[$month])) {
-                $leavesByMonth[$month] = [];
-            }
-    
-            $leavesByMonth[$month][] = [
-                'id' => $leaveRequest->id,
+        ];
+    }
+
+    // Sort months chronologically - SAME AS ADMIN
+    uksort($leavesByMonth, function ($a, $b) {
+        return strtotime($a) - strtotime($b);
+    });
+
+    // Format for calendar view - SAME AS ADMIN
+    $calendarEvents = $approvedLeaveRequests->map(function ($leaveRequest) {
+        return [
+            'id' => $leaveRequest->id,
+            'title' => $leaveRequest->leaveType->code,
+            'start' => $leaveRequest->date_from,
+            'allDay' => true,
+            'backgroundColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
+            'borderColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
+            'extendedProps' => [
                 'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
                 'leave_type' => $leaveRequest->leaveType->name,
                 'leave_type_code' => $leaveRequest->leaveType->code,
@@ -831,55 +905,19 @@ class DeptHeadController extends Controller
                         'remarks' => $approval->remarks
                     ];
                 })
-            ];
-        }
-    
-        // Sort months chronologically
-        uksort($leavesByMonth, function ($a, $b) {
-            return strtotime($a) - strtotime($b);
-        });
-    
-        // Format for calendar view (existing functionality)
-        $calendarEvents = $approvedLeaveRequests->map(function ($leaveRequest) {
-            return [
-                'id' => $leaveRequest->id,
-                'title' => $leaveRequest->leaveType->code . ' - ' . $leaveRequest->employee->firstname,
-                'start' => $leaveRequest->date_from, // Only the start date
-                'allDay' => true,
-                'backgroundColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
-                'borderColor' => $this->getLeaveTypeColor($leaveRequest->leaveType->code),
-                'extendedProps' => [
-                    'employee_name' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname,
-                    'leave_type' => $leaveRequest->leaveType->name,
-                    'leave_type_code' => $leaveRequest->leaveType->code,
-                    'start_date' => $leaveRequest->date_from,
-                    'end_date' => $leaveRequest->date_to,
-                    'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1,
-                    'reason' => $leaveRequest->reason,
-                    'department' => $leaveRequest->employee->department->name ?? 'No Department',
-                    'approvals' => $leaveRequest->approvals->map(function ($approval) {
-                        return [
-                            'role' => $approval->role,
-                            'status' => $approval->status,
-                            'approver_name' => $approval->approver->name ?? 'Unknown',
-                            'approved_at' => $approval->approved_at,
-                            'remarks' => $approval->remarks
-                        ];
-                    })
-                ]
-            ];
-        });
-    
-        return Inertia::render('DeptHead/LeaveCalendar', [
-            'events' => $calendarEvents,
-            'leavesByMonth' => $leavesByMonth,
-            'departmentName' => $user->employee->department->name ?? 'Department',
-            'leaveTypes' => LeaveType::all(),
-            'filters' => $request->only(['year', 'leave_type']),
-            'currentYear' => $currentYear,
-        ]);
-    }
+            ]
+        ];
+    });
 
+    return Inertia::render('DeptHead/LeaveCalendar', [
+        'events' => $calendarEvents,
+        'leavesByMonth' => $leavesByMonth,
+        'departmentName' => $user->employee->department->name ?? 'Department',
+        'leaveTypes' => LeaveType::all(),
+        'filters' => $request->only(['year', 'month', 'day', 'leave_type']),
+        'currentYear' => $year,
+    ]);
+}
     
     /**
      * Helper method to assign colors based on leave type
@@ -935,5 +973,67 @@ private function updateLeaveRequestStatus($leaveRequestId)
     }
     
     $leaveRequest->save();
+}
+
+
+// Add this method to your DeptHeadController
+public function showEmployeeLeaveCredits(Request $request, $employee_id)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return redirect()->back()->with('error', 'You are not assigned to a department.');
+    }
+
+    // Verify the employee belongs to the department head's department
+    $employee = Employee::with(['department', 'user', 'leaveCredit'])
+        ->where('employee_id', $employee_id)
+        ->where('department_id', $departmentId)
+        ->firstOrFail();
+
+    // Get SL and VL balances from leave_credits table (earnable leaves)
+    $earnableLeaveCredits = [
+        [
+            'type' => 'Sick Leave (SL)',
+            'code' => 'SL',
+            'balance' => $employee->leaveCredit->sl_balance ?? 0,
+            'earnable' => true,
+            'description' => 'Accumulates 1.25 days monthly'
+        ],
+        [
+            'type' => 'Vacation Leave (VL)',
+            'code' => 'VL',
+            'balance' => $employee->leaveCredit->vl_balance ?? 0,
+            'earnable' => true,
+            'description' => 'Accumulates 1.25 days monthly'
+        ]
+    ];
+
+    // Get non-earnable leave balances from leave_balances table
+    $nonEarnableLeaveBalances = \App\Models\LeaveBalance::with('leaveType')
+        ->where('employee_id', $employee_id)
+        ->whereHas('leaveType', function($query) {
+            $query->where('earnable', false);
+        })
+        ->get()
+        ->map(function($balance) {
+            return [
+                'type' => $balance->leaveType->name,
+                'code' => $balance->leaveType->code,
+                'balance' => $balance->balance,
+                'total_earned' => $balance->total_earned,
+                'total_used' => $balance->total_used,
+                'default_days' => $balance->leaveType->default_days,
+                'earnable' => false,
+                'description' => 'Fixed allocation'
+            ];
+        });
+
+    return Inertia::render('DeptHead/ShowLeaveCredit', [
+        'employee' => $employee,
+        'earnableLeaveCredits' => $earnableLeaveCredits,
+        'nonEarnableLeaveBalances' => $nonEarnableLeaveBalances,
+    ]);
 }
 }

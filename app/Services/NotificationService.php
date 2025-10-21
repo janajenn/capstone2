@@ -57,9 +57,9 @@ class NotificationService
     }
 
     /**
-     * Create leave request notification with proper employee_id handling
+     * Create leave request notification with role-specific messages
      */
-    public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null)
+    public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null)
     {
         // Validate employee_id
         if (!$employeeId) {
@@ -71,8 +71,8 @@ class NotificationService
             return null;
         }
 
-        // Map status to proper notification type and message
-        $notificationData = $this->getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks);
+        // Map status to proper notification type and message based on target role
+        $notificationData = $this->getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks, $targetRole);
         
         $data = [
             'request_id' => $requestId,
@@ -81,6 +81,7 @@ class NotificationService
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
             'remarks' => $remarks,
+            'notification_for' => $targetRole, // Specify who this notification is for
         ];
 
         return $this->createNotification(
@@ -93,71 +94,158 @@ class NotificationService
     }
 
     /**
-     * Get notification data based on status
+     * Get notification data based on status AND target role
      */
-    private function getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks = null)
+    private function getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null)
     {
         $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
         $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
         
-        // Handle different status types properly
+        // Handle different status types properly with role-specific messages
         switch ($status) {
+            case 'hr_approved_pending_dept_head':
+                if ($targetRole === 'dept_head') {
+                    return [
+                        'title' => 'Leave Request Requires Your Approval',
+                        'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending your department head approval."
+                    ];
+                } elseif ($targetRole === 'employee') {
+                    return [
+                        'title' => 'Leave Request Approved by HR',
+                        'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Department Head approval."
+                    ];
+                } else {
+                    // For admin or others, show generic message
+                    return [
+                        'title' => 'Leave Request Progress Update',
+                        'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Department Head approval."
+                    ];
+                }
+
+            case 'hr_approved_pending_admin':
+                if ($targetRole === 'admin') {
+                    return [
+                        'title' => 'Department Head Leave Request Requires Approval',
+                        'message' => "A Department Head has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} that requires your admin approval."
+                    ];
+                } elseif ($targetRole === 'employee') {
+                    return [
+                        'title' => 'Leave Request Approved by HR',
+                        'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Admin approval."
+                    ];
+                } else {
+                    return [
+                        'title' => 'Leave Request Progress Update',
+                        'message' => "A Department Head's {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} is pending Admin approval."
+                    ];
+                }
+
             case 'dept_head_approved':
-                return [
-                    'title' => 'Leave Request Approved by Department Head',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by your Department Head."
-                ];
-                
-            case 'dept_head_rejected':
-                return [
-                    'title' => 'Leave Request Rejected by Department Head',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by your Department Head." . 
-                                ($remarks ? " Remarks: {$remarks}" : "")
-                ];
-                
+                if ($targetRole === 'admin') {
+                    return [
+                        'title' => 'Leave Request Requires Final Approval',
+                        'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by Department Head and requires your final approval."
+                    ];
+                } elseif ($targetRole === 'employee') {
+                    return [
+                        'title' => 'Leave Request Approved by Department Head',
+                        'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by your Department Head and is pending Admin approval."
+                    ];
+                } else {
+                    return [
+                        'title' => 'Leave Request Progress Update',
+                        'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by Department Head."
+                    ];
+                }
+
             case 'approved':
-                return [
-                    'title' => 'Leave Request Fully Approved',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been fully approved by Admin."
-                ];
+                if ($targetRole === 'employee') {
+                    return [
+                        'title' => 'Leave Request Fully Approved',
+                        'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been fully approved."
+                    ];
+                } else {
+                    return [
+                        'title' => 'Leave Request Approved',
+                        'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been fully approved."
+                    ];
+                }
                 
             case 'rejected':
-                return [
-                    'title' => 'Leave Request Rejected',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected." . 
-                                ($remarks ? " Remarks: {$remarks}" : "")
-                ];
-                
-            case 'hr_approved':
-                return [
-                    'title' => 'Leave Request Approved by HR',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Department Head approval."
-                ];
-                
-            case 'hr_approved_pending_admin':
-                return [
-                    'title' => 'Leave Request Approved by HR',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Admin approval."
-                ];
+                if ($targetRole === 'employee') {
+                    $message = "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected.";
+                    if ($remarks) {
+                        $message .= " Reason: {$remarks}";
+                    }
+                    return [
+                        'title' => 'Leave Request Rejected',
+                        'message' => $message
+                    ];
+                } else {
+                    $message = "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected.";
+                    if ($remarks) {
+                        $message .= " Reason: {$remarks}";
+                    }
+                    return [
+                        'title' => 'Leave Request Rejected',
+                        'message' => $message
+                    ];
+                }
 
-            case 'hr_approved_pending_dept_head':
-                return [
-                    'title' => 'Leave Request Approved by HR',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been approved by HR and is pending Department Head approval."
-                ];
-                
+            case 'dept_head_rejected':
+                if ($targetRole === 'employee') {
+                    $message = "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by your Department Head.";
+                    if ($remarks) {
+                        $message .= " Reason: {$remarks}";
+                    }
+                    return [
+                        'title' => 'Leave Request Rejected by Department Head',
+                        'message' => $message
+                    ];
+                } else {
+                    $message = "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by Department Head.";
+                    if ($remarks) {
+                        $message .= " Reason: {$remarks}";
+                    }
+                    return [
+                        'title' => 'Leave Request Rejected by Department Head',
+                        'message' => $message
+                    ];
+                }
+
             case 'hr_rejected':
-                return [
-                    'title' => 'Leave Request Rejected by HR',
-                    'message' => "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by HR." . 
-                                ($remarks ? " Remarks: {$remarks}" : "")
-                ];
+                if ($targetRole === 'employee') {
+                    $message = "Your {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by HR.";
+                    if ($remarks) {
+                        $message .= " Reason: {$remarks}";
+                    }
+                    return [
+                        'title' => 'Leave Request Rejected by HR',
+                        'message' => $message
+                    ];
+                } else {
+                    $message = "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} has been rejected by HR.";
+                    if ($remarks) {
+                        $message .= " Reason: {$remarks}";
+                    }
+                    return [
+                        'title' => 'Leave Request Rejected by HR',
+                        'message' => $message
+                    ];
+                }
 
             case 'admin_pending':
-                return [
-                    'title' => 'Department Head Leave Request Pending',
-                    'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} by a Department Head requires your approval."
-                ];
+                if ($targetRole === 'admin') {
+                    return [
+                        'title' => 'Department Head Leave Request Pending',
+                        'message' => "A {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted} by a Department Head requires your approval."
+                    ];
+                } else {
+                    return [
+                        'title' => 'Leave Request Submitted',
+                        'message' => "A Department Head has submitted a {$leaveType} leave request from {$dateFromFormatted} to {$dateToFormatted}."
+                    ];
+                }
 
             case 'late_deduction':
                 return [
@@ -175,33 +263,422 @@ class NotificationService
     }
 
     /**
-     * Create credit conversion notification
+     * Update HR approval to send role-specific notifications
      */
-    public function createCreditConversionNotification($employeeId, $status, $conversionId, $leaveType, $creditsRequested, $cashEquivalent)
+    public function notifyHRApproval($leaveRequest, $approverUserId, $remarks = null)
+    {
+        try {
+            $leaveRequest->load(['employee', 'leaveType', 'employee.user']);
+            
+            $employee = $leaveRequest->employee;
+            $isDeptHeadRequest = $employee->user->role === 'dept_head';
+
+            if ($isDeptHeadRequest) {
+                // Dept head request goes to admin after HR approval
+                $status = 'hr_approved_pending_admin';
+                
+                // Notify Admin
+                $adminUsers = User::where('role', 'admin')->get();
+                foreach ($adminUsers as $admin) {
+                    $adminEmployeeId = $this->getEmployeeIdFromUserId($admin->id);
+                    if ($adminEmployeeId) {
+                        $this->createLeaveRequestNotification(
+                            $adminEmployeeId,
+                            $status,
+                            $leaveRequest->id,
+                            $leaveRequest->leaveType->name,
+                            $leaveRequest->date_from,
+                            $leaveRequest->date_to,
+                            $remarks,
+                            'admin' // Target role
+                        );
+                    }
+                }
+                
+                // Notify Employee (the dept head)
+                $this->createLeaveRequestNotification(
+                    $employee->employee_id,
+                    $status,
+                    $leaveRequest->id,
+                    $leaveRequest->leaveType->name,
+                    $leaveRequest->date_from,
+                    $leaveRequest->date_to,
+                    $remarks,
+                    'employee' // Target role
+                );
+                
+            } else {
+                // Regular employee request goes to department head after HR approval
+                $status = 'hr_approved_pending_dept_head';
+                
+                // Notify Department Head
+                $deptHeadUser = User::where('role', 'dept_head')
+                    ->whereHas('employee', function($query) use ($employee) {
+                        $query->where('department_id', $employee->department_id);
+                    })->first();
+                    
+                if ($deptHeadUser) {
+                    $deptHeadEmployeeId = $this->getEmployeeIdFromUserId($deptHeadUser->id);
+                    if ($deptHeadEmployeeId) {
+                        $this->createLeaveRequestNotification(
+                            $deptHeadEmployeeId,
+                            $status,
+                            $leaveRequest->id,
+                            $leaveRequest->leaveType->name,
+                            $leaveRequest->date_from,
+                            $leaveRequest->date_to,
+                            $remarks,
+                            'dept_head' // Target role
+                        );
+                    }
+                }
+                
+                // Notify Employee
+                $this->createLeaveRequestNotification(
+                    $employee->employee_id,
+                    $status,
+                    $leaveRequest->id,
+                    $leaveRequest->leaveType->name,
+                    $leaveRequest->date_from,
+                    $leaveRequest->date_to,
+                    $remarks,
+                    'employee' // Target role
+                );
+            }
+
+            Log::info("HR approval notifications sent", [
+                'request_id' => $leaveRequest->id,
+                'employee_id' => $employee->employee_id,
+                'is_dept_head' => $isDeptHeadRequest,
+                'status' => $status
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('Error creating HR approval notifications: ' . $e->getMessage(), [
+                'leave_request_id' => $leaveRequest->id ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Notify Department Head approval
+     */
+    public function notifyDeptHeadApproval($leaveRequest, $approverUserId, $remarks = null)
+    {
+        try {
+            $leaveRequest->load(['employee', 'leaveType', 'employee.user']);
+            
+            $employee = $leaveRequest->employee;
+            $isDeptHeadRequest = $employee->user->role === 'dept_head';
+
+            if ($isDeptHeadRequest) {
+                // Dept head requests should not go through dept head approval
+                Log::warning('Department head tried to approve their own request', [
+                    'request_id' => $leaveRequest->id,
+                    'approver_id' => $approverUserId
+                ]);
+                return false;
+            }
+
+            $status = 'dept_head_approved';
+            
+            // Notify Admin for final approval
+            $adminUsers = User::where('role', 'admin')->get();
+            foreach ($adminUsers as $admin) {
+                $adminEmployeeId = $this->getEmployeeIdFromUserId($admin->id);
+                if ($adminEmployeeId) {
+                    $this->createLeaveRequestNotification(
+                        $adminEmployeeId,
+                        $status,
+                        $leaveRequest->id,
+                        $leaveRequest->leaveType->name,
+                        $leaveRequest->date_from,
+                        $leaveRequest->date_to,
+                        $remarks,
+                        'admin' // Target role
+                    );
+                }
+            }
+            
+            // Notify Employee
+            $this->createLeaveRequestNotification(
+                $employee->employee_id,
+                $status,
+                $leaveRequest->id,
+                $leaveRequest->leaveType->name,
+                $leaveRequest->date_from,
+                $leaveRequest->date_to,
+                $remarks,
+                'employee' // Target role
+            );
+
+            Log::info("Department Head approval notifications sent", [
+                'request_id' => $leaveRequest->id,
+                'employee_id' => $employee->employee_id,
+                'approver_id' => $approverUserId
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('Error creating Department Head approval notifications: ' . $e->getMessage(), [
+                'leave_request_id' => $leaveRequest->id ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Notify Admin approval (final approval)
+     */
+    public function notifyAdminApproval($leaveRequest, $approverUserId, $remarks = null)
+    {
+        try {
+            $leaveRequest->load(['employee', 'leaveType']);
+            
+            $employee = $leaveRequest->employee;
+            $status = 'approved';
+            
+            // Notify Employee
+            $this->createLeaveRequestNotification(
+                $employee->employee_id,
+                $status,
+                $leaveRequest->id,
+                $leaveRequest->leaveType->name,
+                $leaveRequest->date_from,
+                $leaveRequest->date_to,
+                $remarks,
+                'employee' // Target role
+            );
+
+            Log::info("Admin approval notifications sent", [
+                'request_id' => $leaveRequest->id,
+                'employee_id' => $employee->employee_id,
+                'approver_id' => $approverUserId
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('Error creating Admin approval notifications: ' . $e->getMessage(), [
+                'leave_request_id' => $leaveRequest->id ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Notify rejection with role-specific messages
+     */
+    public function notifyRejection($leaveRequest, $rejecterRole, $approverUserId, $remarks = null)
+    {
+        try {
+            $leaveRequest->load(['employee', 'leaveType']);
+            
+            $employee = $leaveRequest->employee;
+            $status = 'rejected';
+            
+            if ($rejecterRole === 'hr') {
+                $status = 'hr_rejected';
+            } elseif ($rejecterRole === 'dept_head') {
+                $status = 'dept_head_rejected';
+            }
+            
+            // Notify Employee
+            $this->createLeaveRequestNotification(
+                $employee->employee_id,
+                $status,
+                $leaveRequest->id,
+                $leaveRequest->leaveType->name,
+                $leaveRequest->date_from,
+                $leaveRequest->date_to,
+                $remarks,
+                'employee' // Target role
+            );
+
+            Log::info("Rejection notifications sent", [
+                'request_id' => $leaveRequest->id,
+                'employee_id' => $employee->employee_id,
+                'rejecter_role' => $rejecterRole,
+                'rejecter_id' => $approverUserId
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('Error creating rejection notifications: ' . $e->getMessage(), [
+                'leave_request_id' => $leaveRequest->id ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Create credit conversion notification with role-specific messages
+     */
+    public function createCreditConversionNotification($employeeId, $status, $conversionId, $leaveType, $creditsRequested, $cashEquivalent = null, $targetRole = null)
     {
         if (!$employeeId) {
             Log::error('Credit conversion notification failed: employee_id is null');
             return null;
         }
 
-        $statusText = ucfirst($status);
-        $title = "Credit Conversion {$statusText}";
+        $notificationData = $this->getCreditConversionNotificationData($status, $leaveType, $creditsRequested, $cashEquivalent, $targetRole);
         
-        if ($status === 'approved') {
-            $message = "Your request to convert {$creditsRequested} {$leaveType} credits to ₱{$cashEquivalent} has been approved.";
-        } else {
-            $message = "Your request to convert {$creditsRequested} {$leaveType} credits to ₱{$cashEquivalent} has been rejected.";
-        }
-
         $data = [
             'conversion_id' => $conversionId,
             'status' => $status,
             'leave_type' => $leaveType,
             'credits_requested' => $creditsRequested,
             'cash_equivalent' => $cashEquivalent,
+            'notification_for' => $targetRole,
         ];
 
-        return $this->createNotification($employeeId, 'credit_conversion', $title, $message, $data);
+        return $this->createNotification(
+            $employeeId, 
+            'credit_conversion', 
+            $notificationData['title'], 
+            $notificationData['message'], 
+            $data
+        );
+    }
+
+    /**
+     * Get credit conversion notification data based on status and target role
+     */
+    private function getCreditConversionNotificationData($status, $leaveType, $creditsRequested, $cashEquivalent = null, $targetRole = null)
+    {
+        switch ($status) {
+            case 'forwarded_to_accounting':
+                if ($targetRole === 'employee') {
+                    return [
+                        'title' => 'VL Conversion Forwarded to Accounting',
+                        'message' => "Your request to convert {$creditsRequested} {$leaveType} credits has been approved by HR and forwarded to the Accounting/Budget Office for processing and cash release. Your VL credits have been deducted and the cash equivalent will be processed by Accounting."
+                    ];
+                } else {
+                    return [
+                        'title' => 'VL Conversion Forwarded to Accounting',
+                        'message' => "A request to convert {$creditsRequested} {$leaveType} credits has been approved by HR and forwarded to Accounting for processing."
+                    ];
+                }
+            
+            case 'approved':
+                if ($targetRole === 'employee') {
+                    return [
+                        'title' => 'VL Conversion Fully Processed',
+                        'message' => "Your request to convert {$creditsRequested} {$leaveType} credits has been fully processed. The cash equivalent has been released by the Accounting Office."
+                    ];
+                } else {
+                    return [
+                        'title' => 'VL Conversion Completed',
+                        'message' => "A request to convert {$creditsRequested} {$leaveType} credits has been fully processed and cash released."
+                    ];
+                }
+            
+            case 'rejected':
+                $reason = $cashEquivalent ? " Reason: {$cashEquivalent}" : "";
+                if ($targetRole === 'employee') {
+                    return [
+                        'title' => 'VL Conversion Rejected',
+                        'message' => "Your request to convert {$creditsRequested} {$leaveType} credits has been rejected.{$reason}"
+                    ];
+                } else {
+                    return [
+                        'title' => 'VL Conversion Rejected',
+                        'message' => "A request to convert {$creditsRequested} {$leaveType} credits has been rejected.{$reason}"
+                    ];
+                }
+
+            case 'pending':
+                if ($targetRole === 'hr') {
+                    return [
+                        'title' => 'New VL Credit Conversion Request',
+                        'message' => "A new request to convert {$creditsRequested} {$leaveType} credits has been submitted and requires HR approval."
+                    ];
+                } elseif ($targetRole === 'employee') {
+                    return [
+                        'title' => 'VL Conversion Submitted',
+                        'message' => "Your request to convert {$creditsRequested} {$leaveType} credits has been submitted and is pending HR approval."
+                    ];
+                } else {
+                    return [
+                        'title' => 'VL Conversion Request Submitted',
+                        'message' => "A request to convert {$creditsRequested} {$leaveType} credits has been submitted."
+                    ];
+                }
+                
+            default:
+                return [
+                    'title' => 'Credit Conversion Update',
+                    'message' => "Your {$leaveType} credit conversion request has been updated. Status: {$status}"
+                ];
+        }
+    }
+
+    public function notifyCreditConversionStatus($creditConversion, $targetRole = null)
+    {
+        try {
+            // Load relationships
+            $creditConversion->load(['employee', 'approver']);
+            
+            $employee = $creditConversion->employee;
+            $employeeName = $employee->firstname . ' ' . $employee->lastname;
+            $creditsRequested = $creditConversion->credits_requested;
+            $leaveType = $creditConversion->leave_type;
+
+            // Create notification for employee
+            $employeeNotification = $this->createCreditConversionNotification(
+                $employee->employee_id,
+                $creditConversion->status,
+                $creditConversion->conversion_id,
+                $leaveType,
+                $creditsRequested,
+                $creditConversion->equivalent_cash,
+                'employee' // Target role for employee
+            );
+
+            // If approved, also notify HR about forwarding to accounting
+            if ($creditConversion->status === 'approved') {
+                $hrUsers = User::where('role', 'hr')->get();
+                foreach ($hrUsers as $hrUser) {
+                    $hrEmployeeId = $this->getEmployeeIdFromUserId($hrUser->id);
+                    if ($hrEmployeeId) {
+                        $this->createCreditConversionNotification(
+                            $hrEmployeeId,
+                            'forwarded_to_accounting',
+                            $creditConversion->conversion_id,
+                            $leaveType,
+                            $creditsRequested,
+                            $creditConversion->equivalent_cash,
+                            'hr' // Target role for HR
+                        );
+                    }
+                }
+            }
+
+            Log::info("Credit conversion status notification created", [
+                'conversion_id' => $creditConversion->conversion_id,
+                'employee_id' => $employee->employee_id,
+                'status' => $creditConversion->status,
+                'notification_id' => $employeeNotification ? $employeeNotification->id : null
+            ]);
+
+            return $employeeNotification;
+
+        } catch (\Exception $e) {
+            Log::error('Error creating credit conversion status notification: ' . $e->getMessage(), [
+                'conversion_id' => $creditConversion->conversion_id ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
     }
 
     /**
@@ -290,26 +767,14 @@ class NotificationService
     /**
      * Create leave recall notification
      */
-    public function createLeaveRecallNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null)
+    public function createLeaveRecallNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null)
     {
         if (!$employeeId) {
             Log::error('Leave recall notification failed: employee_id is null');
             return null;
         }
 
-        $statusText = ucfirst($status);
-        $title = "Leave Recall Request {$statusText}";
-        
-        if ($status === 'approved') {
-            $message = "Your {$leaveType} leave recall request has been approved. Your new leave dates are from {$dateFrom} to {$dateTo}.";
-        } elseif ($status === 'dept_head_approved') {
-            $message = "Your {$leaveType} leave recall request has been approved by your department head and forwarded to HR for final approval.";
-        } else {
-            $message = "Your {$leaveType} leave recall request has been rejected.";
-            if ($remarks) {
-                $message .= " Reason: {$remarks}";
-            }
-        }
+        $notificationData = $this->getLeaveRecallNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks, $targetRole);
 
         $data = [
             'request_id' => $requestId,
@@ -318,9 +783,71 @@ class NotificationService
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
             'remarks' => $remarks,
+            'notification_for' => $targetRole,
         ];
 
-        return $this->createNotification($employeeId, 'leave_recall', $title, $message, $data);
+        return $this->createNotification($employeeId, 'leave_recall', $notificationData['title'], $notificationData['message'], $data);
+    }
+
+    /**
+     * Get leave recall notification data based on status and target role
+     */
+    private function getLeaveRecallNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null)
+    {
+        $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
+
+        if ($status === 'approved') {
+            if ($targetRole === 'employee') {
+                return [
+                    'title' => 'Leave Recall Request Approved',
+                    'message' => "Your {$leaveType} leave recall request has been approved. Your new leave dates are from {$dateFromFormatted} to {$dateToFormatted}."
+                ];
+            } else {
+                return [
+                    'title' => 'Leave Recall Request Approved',
+                    'message' => "A {$leaveType} leave recall request has been approved with new dates from {$dateFromFormatted} to {$dateToFormatted}."
+                ];
+            }
+        } elseif ($status === 'dept_head_approved') {
+            if ($targetRole === 'hr') {
+                return [
+                    'title' => 'Leave Recall Request Requires HR Approval',
+                    'message' => "A {$leaveType} leave recall request has been approved by Department Head and requires your HR approval."
+                ];
+            } elseif ($targetRole === 'employee') {
+                return [
+                    'title' => 'Leave Recall Approved by Department Head',
+                    'message' => "Your {$leaveType} leave recall request has been approved by your department head and forwarded to HR for final approval."
+                ];
+            } else {
+                return [
+                    'title' => 'Leave Recall Progress Update',
+                    'message' => "A {$leaveType} leave recall request has been approved by Department Head."
+                ];
+            }
+        } else {
+            // Rejected
+            if ($targetRole === 'employee') {
+                $message = "Your {$leaveType} leave recall request has been rejected.";
+                if ($remarks) {
+                    $message .= " Reason: {$remarks}";
+                }
+                return [
+                    'title' => 'Leave Recall Request Rejected',
+                    'message' => $message
+                ];
+            } else {
+                $message = "A {$leaveType} leave recall request has been rejected.";
+                if ($remarks) {
+                    $message .= " Reason: {$remarks}";
+                }
+                return [
+                    'title' => 'Leave Recall Request Rejected',
+                    'message' => $message
+                ];
+            }
+        }
     }
 
     /**
@@ -711,4 +1238,41 @@ class NotificationService
             return false;
         }
     }
+
+   
+   public function createCreditConversionSubmissionNotification($hrEmployeeId, $conversionId, $employeeName, $employeeId, $creditsRequested, $cashEquivalent, $submittedAt)
+   {
+       $title = 'New VL Credit Conversion Request';
+       $message = "{$employeeName} has submitted a request to convert {$creditsRequested} VL credits (₱" . number_format($cashEquivalent, 2) . ").";
+       
+       $data = [
+           'conversion_id' => $conversionId,
+           'employee_name' => $employeeName,
+           'employee_id' => $employeeId,
+           'credits_requested' => $creditsRequested,
+           'cash_equivalent' => $cashEquivalent,
+           'submitted_at' => $submittedAt,
+           'notification_for' => 'hr',
+       ];
+   
+       return $this->createNotification(
+           $hrEmployeeId,
+           'credit_conversion_submission',
+           $title,
+           $message,
+           $data
+       );
+   }
+
+   // Add this method to your NotificationService
+private function preventDuplicateNotification($employeeId, $type, $data)
+{
+    $recentTime = now()->subMinutes(5); // Check last 5 minutes
+    
+    return Notification::where('employee_id', $employeeId)
+        ->where('type', $type)
+        ->where('created_at', '>=', $recentTime)
+        ->where('data', json_encode($data))
+        ->exists();
+}
 }

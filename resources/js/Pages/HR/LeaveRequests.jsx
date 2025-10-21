@@ -1,6 +1,7 @@
 import HRLayout from '@/Layouts/HRLayout';
 import { useForm, usePage, router } from '@inertiajs/react';
 import { useState, useMemo } from 'react';
+import Swal from 'sweetalert2';
 import LeaveForm from '@/Components/LeaveForm';
 
 const formatDate = (dateString) => {
@@ -35,10 +36,11 @@ const getApprovalStatus = (request) => {
 
   // Check if this is a department head request
   const isDeptHead = request.employee?.user?.role === 'dept_head' || request.is_dept_head_request;
+  const isAdmin = request.employee?.user?.role === 'admin';
 
   // Check if fully approved
-  if (isDeptHead) {
-    // Department heads only need HR and Admin approval
+  if (isDeptHead || isAdmin) {
+    // Department heads AND Admins only need HR and Admin approval
     if (hrApproval && adminApproval) {
       return 'fully_approved';
     }
@@ -51,9 +53,9 @@ const getApprovalStatus = (request) => {
 
   // Check if approved by HR only
   if (hrApproval && !deptHeadApproval && !adminApproval) {
-    // Check if this is a department head request (bypass dept head approval)
-    if (isDeptHead) {
-      return 'approved_by_hr_to_admin'; // Special status for dept head requests
+    // Check if this is a department head or admin request (bypass dept head approval)
+    if (isDeptHead || isAdmin) {
+      return 'approved_by_hr_to_admin'; // Special status for dept head and admin requests
     }
     return 'approved_by_hr';
   }
@@ -136,7 +138,7 @@ const isDeptHeadRequest = (request) => {
 
 export default function LeaveRequests() {
   const { props } = usePage();
-  const { leaveRequests, filters, flash } = props;
+  const { leaveRequests, filters, flash , departments} = props;
 
   const [selectedRequests, setSelectedRequests] = useState([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
@@ -149,7 +151,12 @@ export default function LeaveRequests() {
     date_from: filters?.date_from || '',
     date_to: filters?.date_to || '',
     search: filters?.search || '',
+    department: filters?.department || '', 
   });
+
+    // Add debug logging
+    console.log('Departments prop:', departments);
+    console.log('All props:', props);
 
   // Calculate summary statistics
   const summaryData = useMemo(() => {
@@ -186,8 +193,10 @@ const filteredRequests = useMemo(() => {
     switch (activeTab) {
       case 'hr_pending':
         return approvalStatus === 'hr_pending';
-      case 'dept_head_pending':
-        return approvalStatus === 'dept_head_pending';
+        case 'dept_head_pending':
+          // Show department head AND admin requests
+          return approvalStatus === 'dept_head_pending' || 
+                 (request.employee?.user?.role === 'admin' && approvalStatus === 'hr_pending');
       case 'approved_by_hr':
         // Show ALL requests that have HR approval, regardless of current status
         return hasHRApproval;
@@ -247,13 +256,14 @@ const tabCounts = useMemo(() => {
 }, [leaveRequests.data]);
 
   // Tab configuration
-  const tabs = [
-    { id: 'hr_pending', name: 'HR Pending', count: tabCounts.hr_pending },
-    { id: 'dept_head_pending', name: 'Dept Head Requests', count: tabCounts.dept_head_pending },
-    { id: 'approved_by_hr', name: 'Approved by HR', count: tabCounts.approved_by_hr },
-    { id: 'rejected', name: 'Rejected', count: tabCounts.rejected },
-    { id: 'fully_approved', name: 'Fully Approved', count: tabCounts.fully_approved },
-  ];
+ // In the tabs configuration:
+const tabs = [
+  { id: 'hr_pending', name: 'HR Pending', count: tabCounts.hr_pending },
+  { id: 'dept_head_pending', name: 'Special Requests', count: tabCounts.dept_head_pending }, // Changed name
+  { id: 'approved_by_hr', name: 'Approved by HR', count: tabCounts.approved_by_hr },
+  { id: 'rejected', name: 'Disapproved', count: tabCounts.rejected },
+  { id: 'fully_approved', name: 'Fully Approved', count: tabCounts.fully_approved },
+];
 
   const handleFilter = () => {
     router.get('/hr/leave-requests', data, {
@@ -329,13 +339,25 @@ const tabCounts = useMemo(() => {
   };
 
   // Handle form generation
-  const handleGenerateForm = (request) => {
-    // Show confirmation dialog first
-    if (confirm('Please review the form in case there are mistakes. Do you want to proceed with generating the leave form?')) {
-      setSelectedRequestForForm(request);
-      setShowFormModal(true);
-    }
-  };
+  // Handle form generation
+const handleGenerateForm = async (request) => {
+  const result = await Swal.fire({
+    title: 'Generate Leave Form',
+    text: 'Please review the form in case there are mistakes. Do you want to proceed with generating the leave form?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, proceed',
+    cancelButtonText: 'Cancel',
+    confirmButtonColor: '#3085d6',
+    cancelButtonColor: '#d33',
+    reverseButtons: true, // Optional: Puts confirm on the right
+  });
+
+  if (result.isConfirmed) {
+    setSelectedRequestForForm(request);
+    setShowFormModal(true);
+  }
+};
 
   // Close form modal
   const closeFormModal = () => {
@@ -453,7 +475,7 @@ const tabCounts = useMemo(() => {
     if (approvalStatus === 'hr_pending' || approvalStatus === 'dept_head_pending') {
       actions.push({
         type: 'approve',
-        label: isDeptHead ? 'Approve → To Admin' : 'Approve',
+        label: isDeptHead || request.employee?.user?.role === 'admin' ? 'Approve → To Admin' : 'Approve',
         color: 'text-green-600 hover:text-green-900',
         icon: (
           <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -643,37 +665,68 @@ const tabCounts = useMemo(() => {
                 />
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <label htmlFor="status" className="text-sm text-gray-600">Status:</label>
+            
+            {/* ADD DEPARTMENT FILTER DROPDOWN */}
+            <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
+              <div className="w-full md:w-48">
                 <select
-                  id="status"
-                  value={data.status}
-                  onChange={(e) => setData('status', e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
+                  value={data.department}
+                  onChange={(e) => setData('department', e.target.value)}
+                  className="block w-full pl-3 pr-10 py-2 text-base border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-lg"
                 >
-                  <option value="all">All Status</option>
-                  <option value="hr_pending">HR Pending</option>
-                  <option value="dept_head_pending">Dept Head Requests</option>
-                  <option value="approved_by_hr">Approved by HR</option>
-                  <option value="rejected">Rejected</option>
-                  <option value="fully_approved">Fully Approved</option>
+                  <option value="">All Departments</option>
+                  {departments && Array.isArray(departments) && departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
                 </select>
+                {/* Debug info */}
+                {!departments && (
+                  <div className="text-xs text-red-500 mt-1">⚠️ Departments data not loaded</div>
+                )}
+                {departments && !Array.isArray(departments) && (
+                  <div className="text-xs text-red-500 mt-1">⚠️ Departments is not an array: {typeof departments}</div>
+                )}
               </div>
-              <button
-                onClick={handleFilter}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center shadow-md hover:shadow-lg"
-              >
-                <div className="p-1 rounded-lg bg-blue-500 mr-2">
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleFilter}
+                  disabled={processing}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center shadow-md hover:shadow-lg disabled:opacity-50"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                   </svg>
-                </div>
-                Apply Filters
-              </button>
+                  Apply Filters
+                </button>
+                
+                {(data.search || data.department || data.date_from || data.date_to) && (
+                  <button
+                    onClick={() => {
+                      setData({
+                        status: 'all',
+                        date_from: '',
+                        date_to: '',
+                        search: '',
+                        department: '',
+                      });
+                      setTimeout(handleFilter, 100);
+                    }}
+                    className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors flex items-center"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Reset
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
+
 
         {/* Tabs and Table Section */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
@@ -714,14 +767,14 @@ const tabCounts = useMemo(() => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                  {/* <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
                     <input
                       type="checkbox"
                       onChange={handleSelectAll}
                       checked={selectedRequests.length === filteredRequests.length && filteredRequests.length > 0}
                       className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                     />
-                  </th>
+                  </th> */}
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Employee & Type
                   </th>
@@ -762,7 +815,7 @@ const tabCounts = useMemo(() => {
                     
                     return (
                       <tr key={request.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        {/* <td className="px-6 py-4 whitespace-nowrap">
                           <input
                             type="checkbox"
                             checked={selectedRequests.includes(request.id)}
@@ -770,32 +823,39 @@ const tabCounts = useMemo(() => {
                             className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                             disabled={!canApprove(request)}
                           />
-                        </td>
+                        </td> */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                              <span className="text-blue-600 font-medium">
-                                {request.employee?.firstname?.charAt(0)}{request.employee?.lastname?.charAt(0)}
-                              </span>
-                            </div>
-                            <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">
-                                {request.employee?.firstname} {request.employee?.lastname}
-                                {isDeptHead && (
-                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                    Dept Head
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {request.employee?.department?.name}
-                              </div>
-                              <div className="text-xs text-blue-600">
-                                {isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
+  <div className="flex items-center">
+    <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+      <span className="text-blue-600 font-medium">
+        {request.employee?.firstname?.charAt(0)}{request.employee?.lastname?.charAt(0)}
+      </span>
+    </div>
+    <div className="ml-4">
+      <div className="text-sm font-medium text-gray-900">
+        {request.employee?.firstname} {request.employee?.lastname}
+        {isDeptHead && (
+          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+            Dept Head
+          </span>
+        )}
+        {/* ADD ADMIN BADGE HERE */}
+        {request.employee?.user?.role === 'admin' && (
+          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            Admin
+          </span>
+        )}
+      </div>
+      <div className="text-sm text-gray-500">
+        {request.employee?.department?.name}
+      </div>
+      <div className="text-xs text-blue-600">
+        {request.employee?.user?.role === 'admin' ? 'HR → Admin' : 
+         isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
+      </div>
+    </div>
+  </div>
+</td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">{request.leave_type?.name}</div>
                           <div className="text-sm text-gray-500">{request.leave_type?.code}</div>
@@ -814,32 +874,34 @@ const tabCounts = useMemo(() => {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-500">
-                            {request.approvals && request.approvals.length > 0 ? (
-                              <div className="flex space-x-2">
-                                {request.approvals.map(approval => (
-                                  <span
-                                    key={approval.approval_id}
-                                    className={`px-1 text-xs ${
-                                      approval.status === 'approved' ? 'text-green-600' :
-                                      approval.status === 'rejected' ? 'text-red-600' : 'text-gray-400'
-                                    }`}
-                                    title={`${approval.role}: ${approval.status}`}
-                                  >
-                                    {approval.role.charAt(0).toUpperCase()}
-                                  </span>
-                                ))}
-                                {isDeptHead && !request.approvals.find(a => a.role === 'dept_head') && (
-                                  <span className="px-1 text-xs text-gray-300" title="Department Head Approval Bypassed">
-                                    D
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              'No approvals yet'
-                            )}
-                          </div>
-                        </td>
+  <div className="text-sm text-gray-500">
+    {request.approvals && request.approvals.length > 0 ? (
+      <div className="flex space-x-2">
+        {request.approvals.map(approval => (
+          <span
+            key={approval.approval_id}
+            className={`px-1 text-xs ${
+              approval.status === 'approved' ? 'text-green-600' :
+              approval.status === 'rejected' ? 'text-red-600' : 'text-gray-400'
+            }`}
+            title={`${approval.role}: ${approval.status}`}
+          >
+            {approval.role.charAt(0).toUpperCase()}
+          </span>
+        ))}
+        {/* Show bypassed approvals for special roles */}
+        {(isDeptHead || request.employee?.user?.role === 'admin') && 
+         !request.approvals.find(a => a.role === 'dept_head') && (
+          <span className="px-1 text-xs text-gray-300" title="Department Head Approval Bypassed">
+            D
+          </span>
+        )}
+      </div>
+    ) : (
+      'No approvals yet'
+    )}
+  </div>
+</td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center justify-start space-x-2">
                             {actions.map((action, index) => (
@@ -910,34 +972,33 @@ const tabCounts = useMemo(() => {
           )}
         </div>
 
-        {/* Leave Form Modal */}
-        {showFormModal && selectedRequestForForm && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-75 z-50">
-            <div className="h-full w-full flex flex-col">
-              {/* Header */}
-              <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Generate Leave Form - {selectedRequestForForm.employee?.firstname} {selectedRequestForForm.employee?.lastname}
-                </h2>
-                <button
-                  onClick={closeFormModal}
-                  className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              {/* Content - Full height, no scroll */}
-              <div className="flex-1 bg-white overflow-hidden">
-                <LeaveForm 
-                  {...prepareFormData(selectedRequestForForm)}
-                />
-              </div>
-            </div>
-          </div>
-        )}
+{/* Simple Full-screen Modal */}
+{showFormModal && selectedRequestForForm && (
+  <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+    {/* Sticky Header */}
+    <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10 shadow-sm">
+      <h2 className="text-xl font-semibold text-gray-800">
+        Generate Leave Form - {selectedRequestForForm.employee?.firstname} {selectedRequestForForm.employee?.lastname}
+      </h2>
+      <div className="flex space-x-3">
+        
+        <button
+          onClick={closeFormModal}
+          className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+    
+    {/* Form Content */}
+    <div className="p-6">
+      <LeaveForm 
+        {...prepareFormData(selectedRequestForForm)}
+      />
+    </div>
+  </div>
+)}
       </div>
     </HRLayout>
   );

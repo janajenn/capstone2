@@ -14,19 +14,19 @@ const EmployeeRecordings = () => {
             const start = new Date(fromDate);
             const end = new Date(toDate);
             const days = [];
-            
+
             if (isNaN(start.getTime()) || isNaN(end.getTime())) {
                 return [];
             }
-            
+
             const currentDate = new Date(start);
-            
+
             while (currentDate <= end) {
                 const dayNumber = currentDate.getDate();
                 days.push(dayNumber);
                 currentDate.setDate(currentDate.getDate() + 1);
             }
-            
+
             return days;
         } catch (error) {
             console.error('Error parsing date range:', error);
@@ -36,7 +36,7 @@ const EmployeeRecordings = () => {
 
     const handleYearChange = (newYear) => {
         setSelectedYear(newYear);
-        router.get(route('hr.leave-recordings.employee', { 
+        router.get(route('hr.leave-recordings.employee', {
             employee: employee.employee_id,
             year: newYear
         }));
@@ -97,7 +97,7 @@ const EmployeeRecordings = () => {
     return (
         <HRLayout>
             <Head title={`Leave Recordings - ${employee.firstname} ${employee.lastname}`} />
-            
+
             <div className="py-6">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
                     {/* Header */}
@@ -165,8 +165,8 @@ const EmployeeRecordings = () => {
                                             Leave Dates
                                         </th>
                                         <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-            Lates
-        </th>
+                                            Lates
+                                        </th>
                                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                             VL Earned
                                         </th>
@@ -200,34 +200,34 @@ const EmployeeRecordings = () => {
                                                 {recording.date_month}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
-    {recording.inclusive_dates && recording.inclusive_dates.length > 0 ? (
-        <div className="space-y-1">
-            {recording.inclusive_dates.map((date, idx) => {
-                const dayNumbers = parseDateRangeToDays(date.from, date.to);
-                return (
-                    <div key={idx} className="text-xs leading-tight">
-                        {dayNumbers.length > 0 ? (
-                            <span className="text-gray-700 font-medium">
-                                {dayNumbers.join(', ')}
-                            </span>
-                        ) : (
-                            <span className="text-gray-400">Invalid date range</span>
-                        )}
-                        <span className="text-gray-500 ml-1 text-xs">({date.type})</span>
-                    </div>
-                );
-            })}
-        </div>
-    ) : (
-        <span className="text-gray-400 text-xs">No leaves</span>
-    )}
-</td>
+                                                {recording.inclusive_dates && recording.inclusive_dates.length > 0 ? (
+                                                    <div className="space-y-1">
+                                                        {recording.inclusive_dates.map((date, idx) => {
+                                                            const dayNumbers = parseDateRangeToDays(date.from, date.to);
+                                                            return (
+                                                                <div key={idx} className="text-xs leading-tight">
+                                                                    {dayNumbers.length > 0 ? (
+                                                                        <span className="text-gray-700 font-medium">
+                                                                            {dayNumbers.join(', ')}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-gray-400">Invalid date range</span>
+                                                                    )}
+                                                                    <span className="text-gray-500 ml-1 text-xs">({date.type})</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400 text-xs">No leaves</span>
+                                                )}
+                                            </td>
 
-<td className="px-4 py-3 whitespace-nowrap text-sm text-red-600 text-center">
-    {formatLateDays(recording.total_lates)}
-</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-red-600 text-center">
+                                                {formatLateDays(recording.total_lates)}
+                                            </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm text-green-600 text-center">
-                                                {recording.vl_earned ?? '–'}
+                                                {recording.vl_earned !== null && recording.vl_earned !== undefined ? recording.vl_earned : '–'}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-center">
                                                 {recording.vl_used}
@@ -236,7 +236,7 @@ const EmployeeRecordings = () => {
                                                 {recording.vl_balance ?? '–'}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm text-green-600 text-center">
-                                                {recording.sl_earned ?? '–'}
+                                                {recording.sl_earned !== null && recording.sl_earned !== undefined ? recording.sl_earned : '–'}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-center">
                                                 {recording.sl_used}
@@ -245,10 +245,10 @@ const EmployeeRecordings = () => {
                                                 {recording.sl_balance ?? '–'}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-900 max-w-xs">
-                                                {editingRemarks && 
-                                                 editingRemarks.employeeId === employee.employee_id &&
-                                                 editingRemarks.year === recording.year &&
-                                                 editingRemarks.month === recording.month ? (
+                                                {editingRemarks &&
+                                                    editingRemarks.employeeId === employee.employee_id &&
+                                                    editingRemarks.year === recording.year &&
+                                                    editingRemarks.month === recording.month ? (
                                                     <div className="space-y-2">
                                                         <textarea
                                                             value={remarksValue}
@@ -273,11 +273,11 @@ const EmployeeRecordings = () => {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div 
+                                                    <div
                                                         onClick={() => startEditRemarks(
-                                                            employee.employee_id, 
-                                                            recording.year, 
-                                                            recording.month, 
+                                                            employee.employee_id,
+                                                            recording.year,
+                                                            recording.month,
                                                             recording.remarks
                                                         )}
                                                         className="cursor-pointer hover:bg-gray-100 p-2 rounded border border-transparent hover:border-gray-300 min-h-[40px]"

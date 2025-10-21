@@ -80,78 +80,39 @@ class AttendanceImportController extends Controller
         try {
             $file = $request->file('file');
             $overwrite = $request->boolean('overwrite', false);
-
-            // Ensure we have a test employee for biometric_id 22
-            $testEmployee = \App\Models\Employee::where('biometric_id', 22)->first();
-            if (!$testEmployee) {
-                \Log::info("Creating test employee with biometric_id 22");
-                $testEmployee = \App\Models\Employee::create([
-                    'firstname' => 'Joseph',
-                    'middlename' => 'A',
-                    'lastname' => 'Actub',
-                    'gender' => 'male',
-                    'date_of_birth' => '1990-01-01',
-                    'position' => 'Test Position',
-                    'department_id' => 1,
-                    'status' => 'active',
-                    'contact_number' => '1234567890',
-                    'address' => 'Test Address',
-                    'civil_status' => 'single',
-                    'biometric_id' => 22,
-                    'monthly_salary' => 25000.00,
-                    'daily_rate' => 1000.00
-                ]);
-            }
-
-            // Store the file temporarily
+    
+            // Store and process file
             $filePath = $file->store('temp/attendance-imports');
             $fullPath = storage_path('app/' . $filePath);
-
+    
             // Process the import
             $result = $this->importService->importFromExcel($fullPath, [
                 'overwrite' => $overwrite
             ]);
-
-            // Clean up the temporary file
+    
+            // Clean up temporary file
             Storage::delete($filePath);
-
+    
             if ($result['success']) {
-                // Process late credits after successful import
-                \Log::info("🔄 Starting late credit processing after attendance import");
+                // ✅ CRITICAL: Process late credits IMMEDIATELY after successful import
                 $leaveCreditService = new LeaveCreditService();
-                $lateCreditResult = $leaveCreditService->processLateCreditsForAllEmployees();
+                $lateCreditResult = $leaveCreditService->processLateCreditsForRecentImports();
                 
-                \Log::info("📊 Late credit processing result", $lateCreditResult);
-
+                \Log::info("✅ Automatic late credit processing completed", $lateCreditResult);
+    
                 return redirect()->back()->with([
-                    'flash' => [
-                        'success' => "Successfully imported {$result['success_count']} records. " . 
-                                   ($lateCreditResult['success'] ? 
-                                       "Processed late credits for {$lateCreditResult['processed_count']} employees." : 
-                                       "Late credit processing had issues.")
-                    ],
-                    'importResult' => [
-                        'success_count' => $result['success_count'],
-                        'error_count' => $result['error_count'],
-                        'errors' => $result['errors'],
-                        'processed_rows' => $result['processed_rows'],
-                        'late_credit_result' => $lateCreditResult
-                    ]
-                ]);
-            } else {
-                return redirect()->back()->withErrors([
-                    'message' => $result['message'],
-                    'errors' => $result['errors']
+                    'success' => "Successfully imported {$result['success_count']} records. " . 
+                               "Processed late credits for {$lateCreditResult['processed_count']} employees.",
+                    'importResult' => $result,
+                    'lateCreditResult' => $lateCreditResult
                 ]);
             }
-
+    
         } catch (\Exception $e) {
-            return redirect()->back()->withErrors([
-                'message' => 'Import failed: ' . $e->getMessage()
-            ]);
+            \Log::error('Import failed: ' . $e->getMessage());
+            return redirect()->back()->withErrors(['error' => 'Import failed: ' . $e->getMessage()]);
         }
     }
-
     /**
      * Get attendance import template
      */
@@ -569,24 +530,81 @@ class AttendanceImportController extends Controller
 
 
     private function formatLogData($log)
+    {
+        \Log::info("DEBUG Accessors", [
+            'schedule_start' => $log->schedule_start,
+            'schedule_start_formatted' => $log->schedule_start_formatted,
+            'schedule_formatted' => $log->schedule_formatted,
+            'time_in' => $log->time_in,
+            'time_in_formatted' => $log->time_in_formatted,
+        ]);
+        
+        return [
+            'id' => $log->id,
+            'schedule_start' => $log->schedule_start,
+            'schedule_end' => $log->schedule_end,
+            'schedule_formatted' => $log->schedule_formatted,
+            'time_in' => $log->time_in_formatted,
+            'time_out' => $log->time_out_formatted,
+            'break_start' => $log->break_start,
+            'break_end' => $log->break_end,
+            'break_formatted' => $log->break_formatted,
+            'hrs_worked_minutes' => $log->hrs_worked_minutes,
+            'hrs_worked_formatted' => $log->hrs_worked_formatted,
+            'late_minutes' => $log->late_minutes,
+            'late_formatted' => $log->late_formatted,
+            'remarks' => $log->remarks,
+            'absent' => $log->absent,
+            'status' => $log->status
+        ];
+    }
+
+    /**
+ * Process late credits after successful import
+ */
+public function processLateCreditsAfterImport($processedRows)
 {
-    return [
-        'id' => $log->id,
-        'schedule_start' => $log->schedule_start,
-        'schedule_end' => $log->schedule_end,
-        'schedule_formatted' => $log->schedule_formatted,
-        'time_in' => $log->time_in_formatted,
-        'time_out' => $log->time_out_formatted,
-        'break_start' => $log->break_start,
-        'break_end' => $log->break_end,
-        'break_formatted' => $log->break_formatted,
-        'hrs_worked_minutes' => $log->hrs_worked_minutes,
-        'hrs_worked_formatted' => $log->hrs_worked_formatted,
-        'late_minutes' => $log->late_minutes,
-        'late_formatted' => $log->late_formatted,
-        'remarks' => $log->remarks,
-        'absent' => $log->absent,
-        'status' => $log->status
-    ];
+    try {
+        $leaveCreditService = new \App\Services\LeaveCreditService();
+        $processedLates = 0;
+        $failedLates = 0;
+
+        foreach ($processedRows as $row) {
+            if (isset($row['late_minutes']) && $row['late_minutes'] > 0) {
+                $result = $leaveCreditService->deductLateCredits(
+                    $row['employee_id'] ?? null,
+                    $row['late_minutes']
+                );
+
+                if ($result['success']) {
+                    $processedLates++;
+                    \Log::info("✅ Processed late credits after import", [
+                        'employee_id' => $row['employee_id'],
+                        'late_minutes' => $row['late_minutes'],
+                        'deducted_amount' => $result['deducted_amount']
+                    ]);
+                } else {
+                    $failedLates++;
+                    \Log::warning("⚠️ Failed to process late credits after import", [
+                        'employee_id' => $row['employee_id'],
+                        'late_minutes' => $row['late_minutes'],
+                        'error' => $result['message']
+                    ]);
+                }
+            }
+        }
+
+        return [
+            'processed_lates' => $processedLates,
+            'failed_lates' => $failedLates
+        ];
+    } catch (\Exception $e) {
+        \Log::error('Error processing late credits after import: ' . $e->getMessage());
+        return [
+            'processed_lates' => 0,
+            'failed_lates' => 0,
+            'error' => $e->getMessage()
+        ];
+    }
 }
 }

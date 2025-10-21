@@ -7,6 +7,7 @@ import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
 import { Head, useForm } from '@inertiajs/react';
 import Modal from '@/Components/Modal';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Login({ status, canResetPassword }) {
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -52,128 +53,493 @@ export default function Login({ status, canResetPassword }) {
         setShowForgotPasswordModal(false);
     };
 
+    const containerVariants = {
+        hidden: { opacity: 0 },
+        visible: {
+            opacity: 1,
+            transition: {
+                duration: 1.0,
+                staggerChildren: 0.2,
+                delayChildren: 0.3
+            }
+        }
+    };
+
+    const itemVariants = {
+        hidden: { 
+            opacity: 0, 
+            y: 50,
+            scale: 0.95
+        },
+        visible: { 
+            opacity: 1, 
+            y: 0,
+            scale: 1,
+            transition: {
+                duration: 0.8,
+                ease: "easeOut"
+            }
+        }
+    };
+
+    const glowVariants = {
+        hidden: { textShadow: '0 0 0 rgba(255, 255, 255, 0)' },
+        visible: {
+            textShadow: [
+                '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)',
+                '0 0 20px rgba(255, 255, 255, 0.7), 0 0 30px rgba(255, 255, 255, 0.5)',
+                '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)'
+            ],
+            transition: {
+                duration: 2,
+                repeat: Infinity,
+                repeatType: 'reverse',
+                ease: 'easeInOut'
+            }
+        }
+    };
+
+    const pulseVariants = {
+        hidden: { scale: 1 },
+        visible: {
+            scale: [1, 1.05, 1],
+            transition: {
+                duration: 1.5,
+                repeat: Infinity,
+                repeatType: 'reverse',
+                ease: 'easeInOut'
+            }
+        }
+    };
+
+    const backgroundVariants = {
+        animate: {
+            backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+            transition: {
+                duration: 20,
+                repeat: Infinity,
+                ease: 'linear'
+            }
+        }
+    };
+
+    const particleStyles = {
+        position: 'absolute',
+        width: '100%',
+        height: '100%',
+        top: 0,
+        left: 0,
+        pointerEvents: 'none',
+        overflow: 'hidden'
+    };
+
+    // Simple particle effect using CSS (no extra libs needed)
+    const particles = Array.from({ length: 50 }).map((_, i) => (
+        <motion.div
+            key={i}
+            style={{
+                position: 'absolute',
+                width: `${Math.random() * 4 + 2}px`,
+                height: `${Math.random() * 4 + 2}px`,
+                background: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '50%',
+                top: `${Math.random() * 100}%`,
+                left: `${Math.random() * 100}%`,
+            }}
+            animate={{
+                y: [0, -Math.random() * 200 - 100],
+                opacity: [0, 0.5, 0],
+            }}
+            transition={{
+                duration: Math.random() * 10 + 10,
+                repeat: Infinity,
+                ease: 'linear',
+                delay: Math.random() * 5
+            }}
+        />
+    ));
+
     return (
         <GuestLayout>
             <Head title="Log in" />
 
-            {/* Contact HR Modal */}
-            <Modal show={showContactModal} onClose={closeContactModal} maxWidth="md">
-                <div className="p-6">
-                    <div className="flex items-center justify-center w-12 h-12 mx-auto bg-blue-100 rounded-full mb-4">
-                        <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+{/* Contact HR Modal */}
+<AnimatePresence>
+    {showContactModal && (
+        <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+        >
+            {/* Blurred Backdrop */}
+            <motion.div
+                className="fixed inset-0 bg-red-900/40 backdrop-blur-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                onClick={closeContactModal}
+            />
+            {/* Modal Content */}
+            <motion.div
+                className="relative w-full max-w-md"
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <motion.div 
+                    className="p-6 bg-blue-950 backdrop-blur-sm rounded-2xl border border-blue-800/50 shadow-2xl"
+                    variants={containerVariants}
+                >
+                    <motion.div
+                        className="flex items-center justify-center w-16 h-16 mx-auto bg-blue-800/50 rounded-full mb-6 relative overflow-hidden"
+                        variants={pulseVariants}
+                        initial="hidden"
+                        animate="visible"
+                    >
+                        <svg className="w-8 h-8 text-white relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                        {/* Subtle Glow Ring */}
+                        <motion.div
+                            className="absolute inset-0 rounded-full"
+                            style={{
+                                boxShadow: '0 0 30px 10px rgba(255, 255, 255, 0.6)',
+                            }}
+                            animate={{ opacity: [0.5, 1, 0.5] }}
+                            transition={{
+                                duration: 2,
+                                repeat: Infinity,
+                                ease: 'easeInOut'
+                            }}
+                        />
+                    </motion.div>
+                    <motion.h3 
+                        className="text-xl font-bold text-white text-center mb-4 leading-tight drop-shadow-md"
+                        variants={glowVariants}
+                        initial="hidden"
+                        animate="visible"
+                        style={{
+                            textShadow: '0 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.5)',
+                        }}
+                    >
                         Contact HR Department
-                    </h3>
-                    <div className="text-center text-gray-600 mb-6">
-                        <p className="mb-3">
+                    </motion.h3>
+                    <motion.div 
+                        className="text-center mb-6"
+                        variants={itemVariants}
+                    >
+                        <p className="mb-4 text-lg leading-relaxed text-white drop-shadow-md"
+                           style={{
+                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                           }}
+                        >
                             For account registration and general assistance, please visit the HR Office during working hours.
                         </p>
-                        <div className="bg-gray-50 rounded-lg p-4 text-sm">
-                            <p className="font-medium text-gray-900">HR Office Location:</p>
-                            <p>Main Administration Building, 2nd Floor</p>
-                            <p className="mt-2 font-medium text-gray-900">Office Hours:</p>
-                            <p>Monday - Friday: 8:00 AM - 5:00 PM</p>
+                        <div className="bg-blue-800/50 rounded-xl p-5 text-sm shadow-inner border border-blue-700/30">
+                            <p className="font-semibold text-white mb-2 drop-shadow-md" 
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >HR Office Location:</p>
+                            <p className="text-white mb-3 drop-shadow-md"
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >Main Administration Building, 2nd Floor</p>
+                            <p className="font-semibold text-white mb-2 drop-shadow-md"
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >Office Hours:</p>
+                            <p className="text-white drop-shadow-md"
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >Monday - Friday: 8:00 AM - 5:00 PM</p>
                         </div>
-                    </div>
-                    <div className="flex justify-center">
+                    </motion.div>
+                    <motion.div 
+                        className="flex justify-center"
+                        variants={itemVariants}
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ duration: 0.2 }}
+                    >
                         <button
                             onClick={closeContactModal}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-150 font-medium"
+                            className="px-8 py-3 bg-blue-800/70 text-white rounded-full hover:bg-blue-700/70 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg border border-blue-600/50"
                         >
                             Understood
                         </button>
-                    </div>
-                </div>
-            </Modal>
+                    </motion.div>
+                </motion.div>
+            </motion.div>
+        </motion.div>
+    )}
+</AnimatePresence>
 
-            {/* Forgot Password Modal */}
-            <Modal show={showForgotPasswordModal} onClose={closeForgotPasswordModal} maxWidth="md">
-                <div className="p-6">
-                    <div className="flex items-center justify-center w-12 h-12 mx-auto bg-orange-100 rounded-full mb-4">
-                        <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+{/* Forgot Password Modal */}
+<AnimatePresence>
+    {showForgotPasswordModal && (
+        <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: 'easeInOut' }}
+        >
+            {/* Blurred Backdrop */}
+            <motion.div
+                className="fixed inset-0 bg-red-900/40 backdrop-blur-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+                onClick={closeForgotPasswordModal}
+            />
+            {/* Modal Content */}
+            <motion.div
+                className="relative w-full max-w-md"
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <motion.div 
+                    className="p-6 bg-blue-950 backdrop-blur-sm rounded-2xl border border-blue-800/50 shadow-2xl"
+                    variants={containerVariants}
+                >
+                    <motion.div
+                        className="flex items-center justify-center w-16 h-16 mx-auto bg-blue-800/50 rounded-full mb-6 relative overflow-hidden"
+                        variants={pulseVariants}
+                        initial="hidden"
+                        animate="visible"
+                    >
+                        <svg className="w-8 h-8 text-white relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                         </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 text-center mb-2">
+                        {/* Subtle Glow Ring */}
+                        <motion.div
+                            className="absolute inset-0 rounded-full"
+                            style={{
+                                boxShadow: '0 0 30px 10px rgba(255, 255, 255, 0.6)',
+                            }}
+                            animate={{ opacity: [0.5, 1, 0.5] }}
+                            transition={{
+                                duration: 2,
+                                repeat: Infinity,
+                                ease: 'easeInOut'
+                            }}
+                        />
+                    </motion.div>
+                    <motion.h3 
+                        className="text-xl font-bold text-white text-center mb-4 leading-tight drop-shadow-md"
+                        variants={glowVariants}
+                        initial="hidden"
+                        animate="visible"
+                        style={{
+                            textShadow: '0 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.5)',
+                        }}
+                    >
                         Password Assistance Required
-                    </h3>
-                    <div className="text-center text-gray-600 mb-6">
-                        <p className="mb-3">
+                    </motion.h3>
+                    <motion.div 
+                        className="text-center mb-6"
+                        variants={itemVariants}
+                    >
+                        <p className="mb-4 text-lg leading-relaxed text-white drop-shadow-md"
+                           style={{
+                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                           }}
+                        >
                             For security reasons, password resets must be processed in person at the HR Office.
                         </p>
-                        <div className="bg-gray-50 rounded-lg p-4 text-sm">
-                            <p className="font-medium text-gray-900">Please bring:</p>
-                            <ul className="mt-1 space-y-1 text-left">
-                                <li>• Your company ID</li>
-                                <li>• Valid government-issued ID</li>
-                                <li>• Completed password reset form</li>
+                        <div className="bg-blue-800/50 rounded-xl p-5 text-sm shadow-inner border border-blue-700/30">
+                            <p className="font-semibold text-white mb-3 drop-shadow-md"
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >Please bring:</p>
+                            <ul className="space-y-2 text-left mb-4">
+                                <li className="flex items-center text-white drop-shadow-md"
+                                    style={{
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                    }}
+                                >
+                                    <span className="w-2 h-2 bg-white rounded-full mr-2 flex-shrink-0"></span>
+                                    Your company ID
+                                </li>
+                                <li className="flex items-center text-white drop-shadow-md"
+                                    style={{
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                    }}
+                                >
+                                    <span className="w-2 h-2 bg-white rounded-full mr-2 flex-shrink-0"></span>
+                                    Valid government-issued ID
+                                </li>
+                                <li className="flex items-center text-white drop-shadow-md"
+                                    style={{
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                    }}
+                                >
+                                    <span className="w-2 h-2 bg-white rounded-full mr-2 flex-shrink-0"></span>
+                                    Completed password reset form
+                                </li>
                             </ul>
-                            <p className="mt-3 font-medium text-gray-900">HR Office:</p>
-                            <p>Main Administration Building, 2nd Floor</p>
+                            <p className="font-semibold text-white mb-2 drop-shadow-md"
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >HR Office:</p>
+                            <p className="text-white drop-shadow-md"
+                               style={{
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               }}
+                            >Main Administration Building, 2nd Floor</p>
                         </div>
-                    </div>
-                    <div className="flex justify-center">
+                    </motion.div>
+                    <motion.div 
+                        className="flex justify-center"
+                        variants={itemVariants}
+                        whileHover={{ scale: 1.05 }}
+                        transition={{ duration: 0.2 }}
+                    >
                         <button
                             onClick={closeForgotPasswordModal}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-150 font-medium"
+                            className="px-8 py-3 bg-blue-800/70 text-white rounded-full hover:bg-blue-700/70 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg border border-blue-600/50"
                         >
                             I Understand
                         </button>
-                    </div>
-                </div>
-            </Modal>
+                    </motion.div>
+                </motion.div>
+            </motion.div>
+        </motion.div>
+    )}
+</AnimatePresence>
 
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-                <div className="max-w-md w-full space-y-8">
+            <div 
+                className="min-h-screen flex items-center justify-center relative overflow-hidden py-12 px-4 sm:px-6 lg:px-8"
+                style={{ 
+                    background: 'linear-gradient(135deg, #7d0c0c 0%, #a52a2a 50%, #7d0c0c 100%)',
+                }}
+            >
+                {/* Animated Background Gradient */}
+                <motion.div
+                    className="absolute inset-0"
+                    variants={backgroundVariants}
+                    animate="animate"
+                    style={{
+                        background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.1) 100%)',
+                        backgroundSize: '200% 200%',
+                    }}
+                />
+
+                {/* Subtle Rising Particles */}
+                <div style={particleStyles}>
+                    {particles}
+                </div>
+
+                <motion.div 
+                    className="max-w-md w-full space-y-8 relative z-10"
+                    variants={containerVariants}
+                    initial="hidden"
+                    animate="visible"
+                >
                     {/* Header */}
-                    <div className="text-center">
-                        <div className="flex justify-center mb-6">
-                            <div className="w-16 h-16 bg-white-600 rounded-3xl flex items-center justify-center">
+                    <motion.div 
+                        className="text-center"
+                        variants={itemVariants}
+                    >
+                        <div className="flex justify-center mb-6 relative">
+                            <motion.div 
+                                className="w-20 h-20 bg-white bg-opacity-10 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-sm"
+                                variants={pulseVariants}
+                                initial="hidden"
+                                animate="visible"
+                                style={{
+                                    filter: 'drop-shadow(0 0 15px rgba(255, 255, 255, 0.3))',
+                                }}
+                            >
                                 <img
                                     src="/assets/Opol_logo.png"
                                     alt="OPOL Logo"
-                                    
+                                    className="w-16 h-16 object-contain"
                                 />
-                            </div>
+                            </motion.div>
+                            {/* Glow Ring Around Logo */}
+                            <motion.div
+                                className="absolute inset-0 rounded-full"
+                                style={{
+                                    // boxShadow: '0 0 30px 10px rgba(141, 7, 7, 0.2)',
+                                    opacity: 0,
+                                }}
+                                animate={{ opacity: [0.2, 0.5, 0.2] }}
+                                transition={{
+                                    duration: 3,
+                                    repeat: Infinity,
+                                    ease: 'easeInOut'
+                                }}
+                            />
                         </div>
-                        <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                        <motion.h2 
+                            className="text-3xl font-bold text-white mb-2"
+                            variants={glowVariants}
+                            initial="hidden"
+                            animate="visible"
+                        >
                             Welcome back
-                        </h2>
-                        <p className="text-gray-600">
+                        </motion.h2>
+                        <motion.p 
+                            className="text-gray-200"
+                            variants={itemVariants}
+                        >
                             Sign in to your OPOL Leave Portal account
-                        </p>
-                    </div>
+                        </motion.p>
+                    </motion.div>
 
                     {/* Status Message */}
                     {status && (
-                        <div className="rounded-lg bg-green-50 p-4 border border-green-200">
-                            <div className="flex">
-                                <div className="flex-shrink-0">
-                                    <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                    </svg>
+                        <AnimatePresence>
+                            <motion.div 
+                                className="rounded-xl bg-white bg-opacity-10 p-4 border border-white border-opacity-20 backdrop-blur-sm"
+                                variants={itemVariants}
+                                initial="hidden"
+                                animate="visible"
+                            >
+                                <div className="flex">
+                                    <div className="flex-shrink-0">
+                                        <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-3">
+                                        <p className="text-sm font-medium text-gray-200">
+                                            {status}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div className="ml-3">
-                                    <p className="text-sm font-medium text-green-800">
-                                        {status}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                            </motion.div>
+                        </AnimatePresence>
                     )}
 
                     {/* Login Form */}
-                    <form onSubmit={submit} className="mt-8 space-y-6 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+                    <motion.form 
+                        onSubmit={submit} 
+                        className="mt-8 space-y-6 bg-white bg-opacity-10 p-8 rounded-2xl shadow-2xl border border-white border-opacity-20 backdrop-blur-sm"
+                        variants={itemVariants}
+                    >
                         <div className="space-y-4">
                             {/* Email Field */}
-                            <div>
+                            <motion.div variants={itemVariants}>
                                 <InputLabel
                                     htmlFor="email"
                                     value="Email"
-                                    className="block text-sm font-medium text-gray-700 mb-2"
+                                    className="block text-sm font-medium text-white mb-2"
                                 />
                                 <div className="relative">
                                     <TextInput
@@ -181,34 +547,34 @@ export default function Login({ status, canResetPassword }) {
                                         type="email"
                                         name="email"
                                         value={data.email}
-                                        className="block w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+                                        className="block w-full px-4 py-3 bg-white bg-opacity-10 border border-white border-opacity-20 rounded-xl focus:ring-2 focus:ring-white focus:ring-opacity-50 focus:border-white focus:border-opacity-30 transition duration-150 text-white placeholder-gray-300"
                                         placeholder="Enter your email"
                                         autoComplete="email"
                                         isFocused={true}
                                         onChange={(e) => setData('email', e.target.value)}
                                     />
                                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                        <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <svg className="h-5 w-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
                                             <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
                                             <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                                         </svg>
                                     </div>
                                 </div>
-                                <InputError message={errors.email} className="mt-2 text-sm text-red-600" />
-                            </div>
+                                <InputError message={errors.email} className="mt-2 text-sm text-red-300" />
+                            </motion.div>
 
                             {/* Password Field */}
-                            <div>
+                            <motion.div variants={itemVariants}>
                                 <div className="flex items-center justify-between mb-2">
                                     <InputLabel
                                         htmlFor="password"
                                         value="Password"
-                                        className="block text-sm font-medium text-gray-700"
+                                        className="block text-sm font-medium text-white"
                                     />
                                     <button
                                         type="button"
                                         onClick={openForgotPasswordModal}
-                                        className="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors"
+                                        className="text-sm font-medium text-white hover:text-gray-200 transition-colors"
                                     >
                                         Forgot password?
                                     </button>
@@ -219,14 +585,14 @@ export default function Login({ status, canResetPassword }) {
                                         type={showPassword ? "text" : "password"}
                                         name="password"
                                         value={data.password}
-                                        className="block w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+                                        className="block w-full px-4 py-3 pr-12 bg-white bg-opacity-10 border border-white border-opacity-20 rounded-xl focus:ring-2 focus:ring-white focus:ring-opacity-50 focus:border-white focus:border-opacity-30 transition duration-150 text-white placeholder-gray-300"
                                         placeholder="Enter your password"
                                         autoComplete="current-password"
                                         onChange={(e) => setData('password', e.target.value)}
                                     />
                                     <button
                                         type="button"
-                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-300 hover:text-gray-100 transition-colors"
                                         onClick={togglePasswordVisibility}
                                     >
                                         {showPassword ? (
@@ -241,32 +607,40 @@ export default function Login({ status, canResetPassword }) {
                                         )}
                                     </button>
                                 </div>
-                                <InputError message={errors.password} className="mt-2 text-sm text-red-600" />
-                            </div>
+                                <InputError message={errors.password} className="mt-2 text-sm text-red-300" />
+                            </motion.div>
                         </div>
 
                         {/* Remember Me */}
-                        <div className="flex items-center">
+                        <motion.div 
+                            className="flex items-center"
+                            variants={itemVariants}
+                        >
                             <Checkbox
                                 name="remember"
                                 checked={data.remember}
                                 onChange={(e) => setData('remember', e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                className="h-4 w-4 text-white focus:ring-white border-white border-opacity-50 rounded"
                             />
-                            <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
+                            <label htmlFor="remember" className="ml-2 block text-sm text-gray-200">
                                 Remember me
                             </label>
-                        </div>
+                        </motion.div>
 
                         {/* Submit Button */}
-                        <div>
+                        <motion.div 
+                            variants={itemVariants}
+                            whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(255,255,255,0.3)' }}
+                            transition={{ duration: 0.3 }}
+                        >
                             <PrimaryButton
-                                className="group relative w-full flex justify-center py-3 px-4 border border-transparent rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 shadow-sm"
+                                className="group relative w-full flex justify-center py-3 px-4 border border-transparent rounded-xl text-sm font-medium text-maroon bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white focus:ring-opacity-50 transition duration-150 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                                 disabled={processing}
+                                style={{ color: '#7d0c0c' }}
                             >
                                 {processing ? (
                                     <>
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-maroon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
@@ -276,32 +650,55 @@ export default function Login({ status, canResetPassword }) {
                                     'Sign in'
                                 )}
                             </PrimaryButton>
-                        </div>
+                        </motion.div>
 
                         {/* Footer Links */}
-                        <div className="text-center pt-4 border-t border-gray-100">
-                            <p className="text-sm text-gray-600">
+                        <motion.div 
+                            className="text-center pt-4 border-t border-white border-opacity-20"
+                            variants={itemVariants}
+                        >
+                            <p className="text-sm text-gray-200">
                                 Need an account?{' '}
                                 <button
                                     type="button"
                                     onClick={openContactModal}
-                                    className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
+                                    className="font-medium text-white hover:text-gray-100 transition-colors"
                                 >
                                     Click me!
                                 </button>
                             </p>
-                        </div>
-                    </form>
+                        </motion.div>
+                    </motion.form>
 
                     {/* Security Badge */}
-                    <div className="text-center">
-                        <div className="inline-flex items-center text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-full">
-                            <svg className="w-4 h-4 mr-1 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                    <motion.div 
+                        className="text-center"
+                        variants={itemVariants}
+                    >
+                        <div className="inline-flex items-center text-xs text-gray-300 bg-white bg-opacity-10 px-3 py-2 rounded-full shadow-sm backdrop-blur-sm">
+                            <svg className="w-4 h-4 mr-1 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                             </svg>
                             Secure & encrypted connection
                         </div>
-                    </div>
+                    </motion.div>
+                </motion.div>
+
+                {/* Footer Wave Effect */}
+                <div className="absolute bottom-0 left-0 w-full overflow-hidden">
+                    <svg className="relative block w-full h-24" viewBox="0 0 1420 100" preserveAspectRatio="none">
+                        <path
+                            fill="rgba(255,255,255,0.1)"
+                            d="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
+                        >
+                            <animate
+                                attributeName="d"
+                                values="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z; M0,0 C400,50 1020,250 1420,0 L1420,100 L0,100 Z; M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
+                                dur="10s"
+                                repeatCount="indefinite"
+                            />
+                        </path>
+                    </svg>
                 </div>
             </div>
         </GuestLayout>

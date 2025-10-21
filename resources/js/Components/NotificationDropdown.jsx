@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { router } from '@inertiajs/react';
-import {Bell} from 'lucide-react';
+import { Bell } from 'lucide-react';
 
 export default function NotificationDropdown() {
     const [isOpen, setIsOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
-    const [isLoading, setIsLoading] = useState(false);
+    const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
     const dropdownRef = useRef(null);
     const audioRef = useRef(null);
 
@@ -14,7 +13,7 @@ export default function NotificationDropdown() {
     const fetchNotifications = async () => {
         try {
             const response = await fetch('/employee/notifications', {
-                credentials: 'same-origin', // Include cookies for session
+                credentials: 'include',
             });
             
             if (!response.ok) {
@@ -32,11 +31,11 @@ export default function NotificationDropdown() {
         }
     };
 
-    // Fetch only unread count (for sidebar badge)
+    // Fetch only unread count
     const fetchUnreadCount = async () => {
         try {
             const response = await fetch('/employee/notifications/unread-count', {
-                credentials: 'same-origin', // Include cookies for session
+                credentials: 'include',
             });
             
             if (!response.ok) {
@@ -46,7 +45,6 @@ export default function NotificationDropdown() {
             }
             
             const data = await response.json();
-            // Only update if the count actually changed
             if (data.unread_count !== unreadCount) {
                 console.log('Unread count updated:', { from: unreadCount, to: data.unread_count });
                 setUnreadCount(data.unread_count);
@@ -60,27 +58,34 @@ export default function NotificationDropdown() {
     const markAsRead = async (notificationId) => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            if (!csrfToken) {
+                console.error('CSRF token not found');
+                return;
+            }
+
             const response = await fetch(`/employee/notifications/${notificationId}/read`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
-                credentials: 'same-origin', // Include cookies for session
+                credentials: 'include',
             });
             
+            if (response.status === 419) {
+                window.location.reload();
+                return;
+            }
+            
             if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Response error:', errorText);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
+                throw new Error(`HTTP ${response.status}`);
             }
             
             const data = await response.json();
             if (data.success) {
-                console.log('Notification marked as read:', { notificationId, newUnreadCount: data.unread_count });
-                // Update unread count immediately
                 setUnreadCount(data.unread_count);
-                // Update the notification in the list
                 setNotifications(prev => 
                     prev.map(notif => 
                         notif.id === notificationId 
@@ -88,11 +93,12 @@ export default function NotificationDropdown() {
                             : notif
                     )
                 );
-                // Update previous count to prevent sound from playing
-                setPreviousUnreadCount(data.unread_count);
             }
         } catch (error) {
             console.error('Error marking notification as read:', error);
+            if (error.message.includes('419')) {
+                window.location.reload();
+            }
         }
     };
 
@@ -100,19 +106,30 @@ export default function NotificationDropdown() {
     const markAllAsRead = async () => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            console.log('CSRF Token:', csrfToken);
             
+            if (!csrfToken) {
+                console.error('CSRF token not found');
+                return;
+            }
+
             const response = await fetch('/employee/notifications/read-all', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
                 },
-                credentials: 'same-origin', // Include cookies for session
+                credentials: 'include',
             });
             
-            console.log('Response status:', response.status);
-            console.log('Response headers:', response.headers);
+            console.log('Mark all read response status:', response.status);
+            
+            if (response.status === 419) {
+                console.log('Session expired, reloading page...');
+                window.location.reload();
+                return;
+            }
             
             if (!response.ok) {
                 const errorText = await response.text();
@@ -126,11 +143,14 @@ export default function NotificationDropdown() {
                 setNotifications(prev => 
                     prev.map(notif => ({ ...notif, is_read: true, read_at: new Date().toISOString() }))
                 );
-                // Update previous count to prevent sound from playing
                 setPreviousUnreadCount(0);
             }
         } catch (error) {
             console.error('Error marking all notifications as read:', error);
+            
+            if (error.message.includes('419')) {
+                window.location.reload();
+            }
         }
     };
 
@@ -163,19 +183,16 @@ export default function NotificationDropdown() {
         }
     };
 
-    // Track previous unread count to detect increases
-    const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
-
     // Check for new notifications periodically
     useEffect(() => {
         fetchUnreadCount();
         
         const interval = setInterval(() => {
             fetchUnreadCount();
-        }, 30000); // Check every 30 seconds
+        }, 30000);
 
         return () => clearInterval(interval);
-    }, []); // Empty dependency array to run only once
+    }, []);
 
     // Fetch notifications when dropdown opens
     useEffect(() => {
@@ -230,11 +247,10 @@ export default function NotificationDropdown() {
         <div className="relative" ref={dropdownRef}>
             {/* Notification Bell */}
             <button
-  onClick={() => setIsOpen(!isOpen)}
-  className="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
->
-  <Bell className="w-6 h-6" />
-                
+                onClick={() => setIsOpen(!isOpen)}
+                className="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+                <Bell className="w-6 h-6" />
                 
                 {/* Unread Badge */}
                 {unreadCount > 0 && (
@@ -246,7 +262,6 @@ export default function NotificationDropdown() {
 
             {/* Audio element for notification sound */}
             <audio ref={audioRef} preload="auto">
-                
                 <source src="/sounds/mixkit-bell-notification-933.wav" type="audio/wav" />
             </audio>
 
@@ -268,7 +283,9 @@ export default function NotificationDropdown() {
                             <button
                                 onClick={() => {
                                     console.log('Current state:', { unreadCount, previousUnreadCount, notifications });
-                                    fetch('/employee/debug-notifications')
+                                    fetch('/employee/debug-notifications', {
+                                        credentials: 'include'
+                                    })
                                         .then(res => res.json())
                                         .then(data => console.log('Debug data:', data))
                                         .catch(err => console.error('Debug error:', err));
@@ -282,7 +299,7 @@ export default function NotificationDropdown() {
                                 onClick={async () => {
                                     try {
                                         const response = await fetch('/employee/test-csrf', {
-                                            credentials: 'same-origin'
+                                            credentials: 'include'
                                         });
                                         const data = await response.json();
                                         console.log('CSRF Test:', data);

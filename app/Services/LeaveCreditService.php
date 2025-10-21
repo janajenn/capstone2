@@ -155,231 +155,262 @@ class LeaveCreditService
     /**
      * Deduct VL credits for late minutes
      */
-    public function deductLateCredits($employeeId, $lateMinutes)
-    {
-        Log::info("🔍 DEBUG: deductLateCredits called", [
+   /**
+ * Deduct VL credits for late minutes with specific date
+ */
+public function deductLateCredits($employeeId, $lateMinutes, $workDate = null)
+{   
+    if (!$workDate) {
+        $workDate = now()->toDateString();
+    }
+
+    \Log::info("🔍 DEBUG: deductLateCredits called", [
+        'employee_id' => $employeeId,
+        'late_minutes' => $lateMinutes,
+        'work_date' => $workDate
+    ]);
+
+    if ($lateMinutes <= 0) {
+        \Log::info("🔍 DEBUG: No late minutes to process", [
             'employee_id' => $employeeId,
             'late_minutes' => $lateMinutes
         ]);
+        return [
+            'success' => false,
+            'message' => 'No late minutes to process'
+        ];
+    }
 
-        if ($lateMinutes <= 0) {
-            Log::info("🔍 DEBUG: No late minutes to process", [
+    try {
+        return DB::transaction(function () use ($employeeId, $lateMinutes, $workDate) { // ✅ FIXED: Added $workDate here
+            \Log::info("🔍 DEBUG: Starting transaction for late credit deduction", [
                 'employee_id' => $employeeId,
                 'late_minutes' => $lateMinutes
             ]);
-            return [
-                'success' => false,
-                'message' => 'No late minutes to process'
+
+            \Log::info("🕐 Processing late credit deduction", [
+                'employee_id' => $employeeId,
+                'late_minutes' => $lateMinutes
+            ]);
+
+            // Conversion table: minutes to day fraction
+            $conversionTable = [
+                1 => 0.002, 2 => 0.004, 3 => 0.006, 4 => 0.008, 5 => 0.010,
+                6 => 0.012, 7 => 0.015, 8 => 0.017, 9 => 0.019, 10 => 0.021,
+                11 => 0.023, 12 => 0.025, 13 => 0.027, 14 => 0.029, 15 => 0.031,
+                16 => 0.033, 17 => 0.035, 18 => 0.037, 19 => 0.040, 20 => 0.042,
+                21 => 0.044, 22 => 0.046, 23 => 0.048, 24 => 0.050, 25 => 0.052,
+                26 => 0.054, 27 => 0.056, 28 => 0.058, 29 => 0.060, 30 => 0.062,    
+                31 => 0.065, 32 => 0.067, 33 => 0.069, 34 => 0.071, 35 => 0.073,
+                36 => 0.075, 37 => 0.077, 38 => 0.079, 39 => 0.081, 40 => 0.083,
+                41 => 0.085, 42 => 0.087, 43 => 0.090, 44 => 0.092, 45 => 0.094,
+                46 => 0.096, 47 => 0.098, 48 => 0.100, 49 => 0.102, 50 => 0.104,
+                51 => 0.106, 52 => 0.108, 53 => 0.110, 54 => 0.112, 55 => 0.115,
+                56 => 0.117, 57 => 0.119, 58 => 0.121, 59 => 0.123, 60 => 0.125,
             ];
-        }
 
-        try {
-            return DB::transaction(function () use ($employeeId, $lateMinutes) {
-                Log::info("🔍 DEBUG: Starting transaction for late credit deduction", [
-                    'employee_id' => $employeeId,
-                    'late_minutes' => $lateMinutes
-                ]);
+            // Get the day fraction to deduct (cap at 60 minutes)
+            $minutesToConvert = min($lateMinutes, 60);
+            $dayFraction = $conversionTable[$minutesToConvert] ?? 0.125; // Default to max if over 60
 
-                Log::info("🕐 Processing late credit deduction", [
-                    'employee_id' => $employeeId,
-                    'late_minutes' => $lateMinutes
-                ]);
+            \Log::info("🔍 DEBUG: Late minutes conversion details", [
+                'original_late_minutes' => $lateMinutes,
+                'minutes_to_convert' => $minutesToConvert,
+                'day_fraction' => $dayFraction,
+                'conversion_table_has_key' => isset($conversionTable[$minutesToConvert]),
+                'conversion_table_value' => $conversionTable[$minutesToConvert] ?? 'not_found'
+            ]);
 
-                // Conversion table: minutes to day fraction
-                $conversionTable = [
-                    1 => 0.002, 2 => 0.004, 3 => 0.006, 4 => 0.008, 5 => 0.010,
-                    6 => 0.012, 7 => 0.015, 8 => 0.017, 9 => 0.019, 10 => 0.021,
-                    11 => 0.023, 12 => 0.025, 13 => 0.027, 14 => 0.029, 15 => 0.031,
-                    16 => 0.033, 17 => 0.035, 18 => 0.037, 19 => 0.040, 20 => 0.042,
-                    21 => 0.044, 22 => 0.046, 23 => 0.048, 24 => 0.050, 25 => 0.052,
-                    26 => 0.054, 27 => 0.056, 28 => 0.058, 29 => 0.060, 30 => 0.062,
-                    31 => 0.065, 32 => 0.067, 33 => 0.069, 34 => 0.071, 35 => 0.073,
-                    36 => 0.075, 37 => 0.077, 38 => 0.079, 39 => 0.081, 40 => 0.083,
-                    41 => 0.085, 42 => 0.087, 43 => 0.090, 44 => 0.092, 45 => 0.094,
-                    46 => 0.096, 47 => 0.098, 48 => 0.100, 49 => 0.102, 50 => 0.104,
-                    51 => 0.106, 52 => 0.108, 53 => 0.110, 54 => 0.112, 55 => 0.115,
-                    56 => 0.117, 57 => 0.119, 58 => 0.121, 59 => 0.123, 60 => 0.125,
+            \Log::info("📊 Late minutes conversion", [
+                'minutes' => $minutesToConvert,
+                'day_fraction' => $dayFraction
+            ]);
+
+            // Get leave credit record - CREATE IF NOT EXISTS
+            $leaveCredit = LeaveCredit::firstOrCreate(
+                ['employee_id' => $employeeId],
+                [
+                    'sl_balance' => 0, 
+                    'vl_balance' => 0,
+                    'last_updated' => now()
+                ]
+            );
+
+            \Log::info("🔍 DEBUG: Leave credit lookup", [
+                'employee_id' => $employeeId,
+                'leave_credit_found' => $leaveCredit ? 'yes' : 'no',
+                'leave_credit_id' => $leaveCredit ? $leaveCredit->id : null
+            ]);
+
+            if (!$leaveCredit) {
+                \Log::error("❌ No leave credits found for employee: {$employeeId}");
+                return [
+                    'success' => false,
+                    'message' => 'No leave credits found for this employee'
                 ];
+            }
 
-                // Get the day fraction to deduct (cap at 60 minutes)
-                $minutesToConvert = min($lateMinutes, 60);
-                $dayFraction = $conversionTable[$minutesToConvert] ?? 0.125; // Default to max if over 60
+            \Log::info("🔍 DEBUG: Leave credit details", [
+                'employee_id' => $employeeId,
+                'vl_balance_before' => $leaveCredit->vl_balance,
+                'sl_balance_before' => $leaveCredit->sl_balance
+            ]);
 
-                Log::info("🔍 DEBUG: Late minutes conversion details", [
-                    'original_late_minutes' => $lateMinutes,
-                    'minutes_to_convert' => $minutesToConvert,
-                    'day_fraction' => $dayFraction,
-                    'conversion_table_has_key' => isset($conversionTable[$minutesToConvert]),
-                    'conversion_table_value' => $conversionTable[$minutesToConvert] ?? 'not_found'
-                ]);
+            // Check if VL balance is sufficient
+            \Log::info("🔍 DEBUG: Balance check", [
+                'employee_id' => $employeeId,
+                'current_vl_balance' => $leaveCredit->vl_balance,
+                'required_deduction' => $dayFraction,
+                'sufficient_balance' => $leaveCredit->vl_balance >= $dayFraction
+            ]);
 
-                Log::info("📊 Late minutes conversion", [
-                    'minutes' => $minutesToConvert,
-                    'day_fraction' => $dayFraction
-                ]);
-
-                // Get leave credit record
-                $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
-
-                Log::info("🔍 DEBUG: Leave credit lookup", [
-                    'employee_id' => $employeeId,
-                    'leave_credit_found' => $leaveCredit ? 'yes' : 'no',
-                    'leave_credit_id' => $leaveCredit ? $leaveCredit->id : null
-                ]);
-
-                if (!$leaveCredit) {
-                    Log::error("❌ No leave credits found for employee: {$employeeId}");
-                    return [
-                        'success' => false,
-                        'message' => 'No leave credits found for this employee'
-                    ];
-                }
-
-                Log::info("🔍 DEBUG: Leave credit details", [
-                    'employee_id' => $employeeId,
-                    'vl_balance_before' => $leaveCredit->vl_balance,
-                    'sl_balance_before' => $leaveCredit->sl_balance
-                ]);
-
-                // Check if VL balance is sufficient
-                Log::info("🔍 DEBUG: Balance check", [
+            if ($leaveCredit->vl_balance < $dayFraction) {
+                \Log::warning("⚠️ Insufficient VL balance for late deduction", [
                     'employee_id' => $employeeId,
                     'current_vl_balance' => $leaveCredit->vl_balance,
-                    'required_deduction' => $dayFraction,
-                    'sufficient_balance' => $leaveCredit->vl_balance >= $dayFraction
+                    'required_deduction' => $dayFraction
                 ]);
-
-                if ($leaveCredit->vl_balance < $dayFraction) {
-                    Log::warning("⚠️ Insufficient VL balance for late deduction", [
-                        'employee_id' => $employeeId,
-                        'current_vl_balance' => $leaveCredit->vl_balance,
-                        'required_deduction' => $dayFraction
-                    ]);
-                    
-                    return [
-                        'success' => false,
-                        'message' => 'Insufficient VL balance for late deduction',
-                        'available_balance' => $leaveCredit->vl_balance,
-                        'required_deduction' => $dayFraction
-                    ];
-                }
-
-                // Store balance before deduction
-                $balanceBefore = $leaveCredit->vl_balance;
-
-                Log::info("🔍 DEBUG: About to deduct VL credits", [
-                    'employee_id' => $employeeId,
-                    'balance_before' => $balanceBefore,
-                    'day_fraction_to_deduct' => $dayFraction,
-                    'balance_after_will_be' => $balanceBefore - $dayFraction
-                ]);
-
-                // Deduct from VL balance
-                $leaveCredit->vl_balance -= $dayFraction;
-
-                Log::info("🔍 DEBUG: VL credits deducted successfully", [
-                    'employee_id' => $employeeId,
-                    'balance_before' => $balanceBefore,
-                    'balance_after' => $leaveCredit->vl_balance,
-                    'deducted_amount' => $dayFraction
-                ]);
-                $leaveCredit->last_updated = now();
-                $leaveCredit->save();
-
-                Log::info("✅ VL credits deducted for late arrival", [
-                    'employee_id' => $employeeId,
-                    'deducted_amount' => $dayFraction,
-                    'new_vl_balance' => $leaveCredit->vl_balance
-                ]);
-
-                // Create log entry
-                $this->createLateCreditLog($employeeId, 'VL', $dayFraction, $balanceBefore, $lateMinutes);
-
-                // Send notification to employee
-                $this->sendLateDeductionNotification($employeeId, $dayFraction, $lateMinutes);
-
+                
                 return [
-                    'success' => true,
-                    'message' => "Successfully deducted {$dayFraction} VL credits for {$lateMinutes} minutes late",
-                    'deducted_amount' => $dayFraction,
-                    'new_balance' => $leaveCredit->vl_balance
+                    'success' => false,
+                    'message' => 'Insufficient VL balance for late deduction',
+                    'available_balance' => $leaveCredit->vl_balance,
+                    'required_deduction' => $dayFraction
                 ];
-            });
-        } catch (\Exception $e) {
-            Log::error('💥 Exception in deductLateCredits: ' . $e->getMessage());
-            Log::error('📝 Stack trace: ' . $e->getTraceAsString());
-            return [
-                'success' => false,
-                'message' => 'Error processing late credit deduction: ' . $e->getMessage()
-            ];
-        }
-    }
+            }
 
+            // Store balance before deduction
+            $balanceBefore = $leaveCredit->vl_balance;
+
+            \Log::info("🔍 DEBUG: About to deduct VL credits", [
+                'employee_id' => $employeeId,
+                'balance_before' => $balanceBefore,
+                'day_fraction_to_deduct' => $dayFraction,
+                'balance_after_will_be' => $balanceBefore - $dayFraction
+            ]);
+
+            // Deduct from VL balance
+            $leaveCredit->vl_balance -= $dayFraction;
+
+            \Log::info("🔍 DEBUG: VL credits deducted successfully", [
+                'employee_id' => $employeeId,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $leaveCredit->vl_balance,
+                'deducted_amount' => $dayFraction
+            ]);
+            $leaveCredit->last_updated = now();
+            $leaveCredit->save();
+
+            \Log::info("✅ VL credits deducted for late arrival", [
+                'employee_id' => $employeeId,
+                'deducted_amount' => $dayFraction,
+                'new_vl_balance' => $leaveCredit->vl_balance
+            ]);
+
+            // Create log entry with the correct date
+            $this->createLateCreditLog($employeeId, 'VL', $dayFraction, $balanceBefore, $lateMinutes, $workDate);
+
+            // Send notification
+            $this->sendLateDeductionNotification($employeeId, $dayFraction, $lateMinutes, $workDate);
+
+            return [
+                'success' => true,
+                'message' => "Successfully deducted {$dayFraction} VL credits for {$lateMinutes} minutes late on {$workDate}",
+                'deducted_amount' => $dayFraction,
+                'new_balance' => $leaveCredit->vl_balance
+            ];
+        });
+    } catch (\Exception $e) {
+        \Log::error('💥 Exception in deductLateCredits: ' . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'Error processing late credit deduction: ' . $e->getMessage()
+        ];
+    }
+}
     /**
      * Create credit log for late deduction
      */
-    private function createLateCreditLog($employeeId, $type, $pointsDeducted, $balanceBefore, $lateMinutes)
-    {
-        try {
-            $balanceAfter = $balanceBefore - $pointsDeducted;
-            $today = now();
-    
-            LeaveCreditLog::create([
-                'employee_id'     => $employeeId,
-                'type'            => $type,
-                'date'            => $today->toDateString(),   // 📅 exact deduction date
-                'year'            => $today->year,             // 🗓️ store year
-                'month'           => $today->month,            // 🗓️ store month
-                'points_deducted' => $pointsDeducted,
-                'balance_before'  => $balanceBefore,
-                'balance_after'   => $balanceAfter,
-                'remarks'         => "Late",
-                'created_at'      => $today,
-                'updated_at'      => $today,
-            ]);
-    
-            Log::info("📝 Late credit log created", [
-                'employee_id'    => $employeeId,
-                'type'           => $type,
-                'points_deducted'=> $pointsDeducted,
-                'balance_before' => $balanceBefore,
-                'balance_after'  => $balanceAfter,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('❌ Failed to create late credit log: ' . $e->getMessage());
-            throw $e;
+    /**
+ * Create credit log for late deduction with specific date
+ */
+/**
+ * Create credit log for late deduction with specific date
+ */
+private function createLateCreditLog($employeeId, $type, $pointsDeducted, $balanceBefore, $lateMinutes, $workDate = null)
+{
+    try {
+        if (!$workDate) {
+            $workDate = now()->toDateString();
         }
-    }
 
+        $balanceAfter = $balanceBefore - $pointsDeducted;
+        $workDateCarbon = \Carbon\Carbon::parse($workDate);
+
+        LeaveCreditLog::create([
+            'employee_id'     => $employeeId,
+            'type'            => $type,
+            'date'            => $workDate,           // Use the actual work date
+            'year'            => $workDateCarbon->year,
+            'month'           => $workDateCarbon->month,
+            'points_deducted' => $pointsDeducted,
+            'balance_before'  => $balanceBefore,
+            'balance_after'   => $balanceAfter,
+            'remarks'         => "Late - {$lateMinutes} minutes",
+            'created_at'      => now(),
+            'updated_at'      => now(),
+        ]);
+
+        \Log::info("📝 Late credit log created", [
+            'employee_id'    => $employeeId,
+            'type'           => $type,
+            'work_date'      => $workDate,
+            'points_deducted'=> $pointsDeducted,
+            'balance_before' => $balanceBefore,
+            'balance_after'  => $balanceAfter,
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('❌ Failed to create late credit log: ' . $e->getMessage());
+        throw $e;
+    }
+}
     /**
      * Send notification to employee about late deduction
      */
-    private function sendLateDeductionNotification($employeeId, $dayFraction, $lateMinutes)
-    {
-        try {
-            $notificationService = new NotificationService();
-            $today = now()->format('F j, Y');
-
-            $notificationService->createLeaveRequestNotification(
-                $employeeId,
-                'late_deduction',
-                null, // No leave request ID for late deductions
-                'VL (Late Deduction)',
-                $today,
-                $today,
-                "You have been deducted {$dayFraction} VL credits on {$today} due to a late arrival of {$lateMinutes} minutes."
-            );
-
-            Log::info("📧 Late deduction notification sent", [
-                'employee_id' => $employeeId,
-                'day_fraction' => $dayFraction,
-                'late_minutes' => $lateMinutes
-            ]);
-        } catch (\Exception $e) {
-            Log::error('❌ Failed to send late deduction notification: ' . $e->getMessage());
-            // Don't throw exception here as the main deduction was successful
+   /**
+ * Send notification to employee about late deduction
+ */
+private function sendLateDeductionNotification($employeeId, $dayFraction, $lateMinutes, $workDate = null)
+{
+    try {
+        if (!$workDate) {
+            $workDate = now()->toDateString();
         }
+
+        $notificationService = new NotificationService();
+        $formattedDate = \Carbon\Carbon::parse($workDate)->format('F j, Y');
+
+        $notificationService->createLeaveRequestNotification(
+            $employeeId,
+            'late_deduction',
+            null, // No leave request ID for late deductions
+            'VL (Late Deduction)',
+            $workDate,
+            $workDate,
+            "You have been deducted {$dayFraction} VL credits on {$formattedDate} due to a late arrival of {$lateMinutes} minutes."
+        );
+
+        \Log::info("📧 Late deduction notification sent", [
+            'employee_id' => $employeeId,
+            'day_fraction' => $dayFraction,
+            'late_minutes' => $lateMinutes,
+            'work_date' => $workDate
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('❌ Failed to send late deduction notification: ' . $e->getMessage());
+        // Don't throw exception here as the main deduction was successful
     }
+}
 
     /**
      * Process late credits for all employees with late minutes
@@ -545,81 +576,170 @@ class LeaveCreditService
      * Process late credits for a specific date range
      * Useful for processing historical data
      */
-    public function processLateCreditsForDateRange($startDate, $endDate)
+    public function processLateCreditsForRecentImports()
     {
         try {
-            Log::info("🔄 Processing late credits for date range", [
-                'start_date' => $startDate,
-                'end_date' => $endDate
-            ]);
-
-            // Get all employees with late minutes in the date range
-            $lateAttendanceLogs = AttendanceLog::whereBetween('work_date', [$startDate, $endDate])
-                ->where('late_minutes', '>', 0)
+            \Log::info("🔄 Processing late credits for recent imports");
+            
+            // Get attendance logs from the last 30 days that have late minutes
+            $recentLateLogs = AttendanceLog::where('late_minutes', '>', 0)
+                ->where('work_date', '>=', now()->subDays(30))
                 ->with('employee')
                 ->get();
-
-            Log::info("📊 Found late attendance logs in date range", [
-                'count' => $lateAttendanceLogs->count(),
-                'start_date' => $startDate,
-                'end_date' => $endDate
+    
+            \Log::info("📊 Found late attendance logs to process", [
+                'count' => $recentLateLogs->count(),
+                'date_range' => 'last 30 days'
             ]);
-
+    
             $processedCount = 0;
             $failedCount = 0;
-
-            foreach ($lateAttendanceLogs as $attendanceLog) {
-                Log::info("🕐 Processing late attendance log", [
+            $alreadyProcessedCount = 0;
+    
+            foreach ($recentLateLogs as $attendanceLog) {
+                // Check if this late has already been processed
+                $alreadyProcessed = LeaveCreditLog::where('employee_id', $attendanceLog->employee_id)
+                    ->where('type', 'VL')
+                    ->where('remarks', 'like', '%Late%')
+                    ->whereDate('date', $attendanceLog->work_date)
+                    ->exists();
+    
+                if ($alreadyProcessed) {
+                    $alreadyProcessedCount++;
+                    \Log::info("⏭️ Late already processed for employee", [
+                        'employee_id' => $attendanceLog->employee_id,
+                        'work_date' => $attendanceLog->work_date
+                    ]);
+                    continue;
+                }
+    
+                \Log::info("🕐 Processing late attendance", [
                     'employee_id' => $attendanceLog->employee_id,
                     'work_date' => $attendanceLog->work_date,
                     'late_minutes' => $attendanceLog->late_minutes
                 ]);
-
+    
                 $result = $this->deductLateCredits(
                     $attendanceLog->employee_id, 
-                    $attendanceLog->late_minutes
+                    $attendanceLog->late_minutes,
+                    $attendanceLog->work_date // Pass the work date
                 );
-
+    
                 if ($result['success']) {
                     $processedCount++;
-                    Log::info("✅ Processed late credits for employee", [
+                    \Log::info("✅ Processed late credits", [
                         'employee_id' => $attendanceLog->employee_id,
-                        'work_date' => $attendanceLog->work_date,
-                        'late_minutes' => $attendanceLog->late_minutes,
                         'deducted_amount' => $result['deducted_amount']
                     ]);
                 } else {
                     $failedCount++;
-                    Log::warning("⚠️ Failed to process late credits for employee", [
+                    \Log::warning("❌ Failed to process late credits", [
                         'employee_id' => $attendanceLog->employee_id,
-                        'work_date' => $attendanceLog->work_date,
-                        'late_minutes' => $attendanceLog->late_minutes,
                         'error' => $result['message']
                     ]);
                 }
             }
-
-            Log::info("🎉 Late credits processing completed for date range", [
-                'start_date' => $startDate,
-                'end_date' => $endDate,
+    
+            \Log::info("🎉 Late credits processing completed", [
                 'processed_count' => $processedCount,
                 'failed_count' => $failedCount,
-                'total_late_logs' => $lateAttendanceLogs->count()
+                'already_processed_count' => $alreadyProcessedCount,
+                'total_found' => $recentLateLogs->count()
             ]);
-
+    
             return [
                 'success' => true,
-                'message' => "Processed late credits for {$processedCount} employees from {$startDate} to {$endDate}",
+                'message' => "Processed late credits for {$processedCount} employees. {$alreadyProcessedCount} were already processed.",
                 'processed_count' => $processedCount,
                 'failed_count' => $failedCount,
-                'total_late_logs' => $lateAttendanceLogs->count()
+                'already_processed_count' => $alreadyProcessedCount,
+                'total_found' => $recentLateLogs->count()
             ];
+    
         } catch (\Exception $e) {
-            Log::error('💥 Exception in processLateCreditsForDateRange: ' . $e->getMessage());
+            \Log::error('💥 Error processing late credits for recent imports: ' . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Error processing late credits for date range: ' . $e->getMessage()
+                'message' => 'Error processing late credits: ' . $e->getMessage()
             ];
         }
     }
+
+    /**
+ * Process late credits specifically for recently imported attendance records
+//  */
+// public function processLateCreditsForRecentImports()
+// {
+//     try {
+//         \Log::info("🔄 Processing late credits for recent imports");
+        
+//         // Get attendance logs from the last 7 days that have late minutes but haven't been processed
+//         $recentLateLogs = AttendanceLog::where('late_minutes', '>', 0)
+//             ->where('work_date', '>=', now()->subDays(7))
+//             ->whereDoesntHave('leaveCreditLogs', function($query) {
+//                 $query->where('type', 'VL')
+//                       ->where('remarks', 'like', '%Late%');
+//             })
+//             ->with('employee')
+//             ->get();
+
+//         \Log::info("📊 Found late attendance logs to process", [
+//             'count' => $recentLateLogs->count(),
+//             'date_range' => 'last 7 days'
+//         ]);
+
+//         $processedCount = 0;
+//         $failedCount = 0;
+
+//         foreach ($recentLateLogs as $attendanceLog) {
+//             \Log::info("🕐 Processing late attendance", [
+//                 'employee_id' => $attendanceLog->employee_id,
+//                 'work_date' => $attendanceLog->work_date,
+//                 'late_minutes' => $attendanceLog->late_minutes
+//             ]);
+
+//             $result = $this->deductLateCredits(
+//                 $attendanceLog->employee_id, 
+//                 $attendanceLog->late_minutes
+//             );
+
+//             if ($result['success']) {
+//                 $processedCount++;
+                
+//                 // Mark this log as processed by updating remarks or creating a relation
+//                 $attendanceLog->update([
+//                     'remarks' => $attendanceLog->remarks . 
+//                                (empty($attendanceLog->remarks) ? '' : ' | ') . 
+//                                "Late credits deducted: {$result['deducted_amount']} VL"
+//                 ]);
+                
+//                 \Log::info("✅ Processed late credits", [
+//                     'employee_id' => $attendanceLog->employee_id,
+//                     'deducted_amount' => $result['deducted_amount']
+//                 ]);
+//             } else {
+//                 $failedCount++;
+//                 \Log::warning("❌ Failed to process late credits", [
+//                     'employee_id' => $attendanceLog->employee_id,
+//                     'error' => $result['message']
+//                 ]);
+//             }
+//         }
+
+//         return [
+//             'success' => true,
+//             'message' => "Processed late credits for {$processedCount} employees",
+//             'processed_count' => $processedCount,
+//             'failed_count' => $failedCount,
+//             'total_found' => $recentLateLogs->count()
+//         ];
+
+//     } catch (\Exception $e) {
+//         \Log::error('💥 Error processing late credits for recent imports: ' . $e->getMessage());
+//         return [
+//             'success' => false,
+//             'message' => 'Error processing late credits: ' . $e->getMessage()
+//         ];
+//     }
+// }
 }
