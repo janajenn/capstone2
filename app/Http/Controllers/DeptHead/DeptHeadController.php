@@ -16,10 +16,25 @@ use App\Models\LeaveType;
 use App\Models\LeaveRequestDetail;
 use App\Models\LeaveCredit;
 use App\Models\LeaveBalance;
+use App\Models\CreditConversion;
+use App\Services\CreditConversionService;
 
 
 class DeptHeadController extends Controller
 {
+
+    protected $creditConversionService;
+
+
+    public function __construct(CreditConversionService $creditConversionService, NotificationService $notificationService)
+    {
+        $this->creditConversionService = $creditConversionService;
+        $this->notificationService = $notificationService;
+    }
+
+
+
+
     public function dashboard(Request $request)
     {
         $user = $request->user();
@@ -1034,6 +1049,308 @@ public function showEmployeeLeaveCredits(Request $request, $employee_id)
         'employee' => $employee,
         'earnableLeaveCredits' => $earnableLeaveCredits,
         'nonEarnableLeaveBalances' => $nonEarnableLeaveBalances,
+    ]);
+}
+
+
+public function creditConversions(Request $request)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return Inertia::render('DeptHead/CreditConversions', [
+            'conversions' => ['data' => [], 'links' => []],
+            'departmentName' => 'No Department Assigned',
+            'stats' => [
+                'total' => 0,
+                'pending' => 0,
+                'approved' => 0,
+                'rejected' => 0
+            ],
+            'filters' => $request->only(['status', 'employee'])
+        ]);
+    }
+
+    $perPage = 10;
+    
+    $query = CreditConversion::with([
+            'employee.department', 
+            'hrApprover', 
+            'deptHeadApprover', 
+            'adminApprover'
+        ])
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId);
+        });
+
+    // Apply status filters
+    if ($request->has('status') && $request->status !== 'all') {
+        switch ($request->status) {
+            case 'pending_dept_head':
+                $query->where('status', 'hr_approved');
+                break;
+            case 'dept_head_approved':
+                $query->where('status', 'dept_head_approved');
+                break;
+            case 'fully_approved':
+                $query->where('status', 'admin_approved');
+                break;
+            case 'rejected':
+                $query->where('status', 'rejected');
+                break;
+            default:
+                $query->where('status', 'hr_approved');
+                break;
+        }
+    } else {
+        // Default: Show only pending department head approval
+        $query->where('status', 'hr_approved');
+    }
+
+    // Employee search filter
+    if ($request->has('employee') && !empty($request->employee)) {
+        $query->whereHas('employee', function ($q) use ($request) {
+            $q->where('firstname', 'like', "%{$request->employee}%")
+              ->orWhere('lastname', 'like', "%{$request->employee}%");
+        });
+    }
+
+    $conversions = $query->orderBy('submitted_at', 'desc')
+                        ->paginate($perPage)
+                        ->withQueryString();
+
+    // Transform conversions
+    $transformedConversions = $conversions->getCollection()->map(function ($conversion) {
+        return $this->transformConversionData($conversion);
+    });
+
+    $conversions->setCollection($transformedConversions);
+
+    // UPDATED STATS: Department Head specific statistics
+    $totalRequests = CreditConversion::whereHas('employee', function($query) use ($departmentId) {
+        $query->where('department_id', $departmentId);
+    })
+    ->whereIn('status', ['hr_approved', 'dept_head_approved', 'admin_approved', 'rejected'])
+    ->count();
+
+    $pendingRequests = CreditConversion::where('status', 'hr_approved')
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId);
+        })->count();
+
+    $approvedByDeptHead = CreditConversion::where('status', 'dept_head_approved')
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId);
+        })->count();
+
+    $rejectedByDeptHead = CreditConversion::where('status', 'rejected')
+        ->where('dept_head_approved_by', $user->id) // Only count rejections by this dept head
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId);
+        })->count();
+
+    return Inertia::render('DeptHead/CreditConversions', [
+        'conversions' => $conversions,
+        'departmentName' => $user->employee->department->name ?? 'Department',
+        'stats' => [
+            'total' => $totalRequests,
+            'pending' => $pendingRequests,
+            'approved' => $approvedByDeptHead,
+            'rejected' => $rejectedByDeptHead,
+        ],
+        'filters' => $request->only(['status', 'employee']),
+    ]);
+}
+
+/**
+ * Show specific credit conversion request details
+ */
+public function showCreditConversion($id)
+{
+    $conversion = CreditConversion::with([
+        'employee.department',
+        'hrApprover',
+        'deptHeadApprover', 
+        'adminApprover'
+    ])->findOrFail($id);
+
+    $transformedConversion = $this->transformConversionData($conversion);
+
+    return Inertia::render('DeptHead/ShowCreditConversion', [
+        'conversion' => $transformedConversion,
+    ]);
+}
+
+/**
+ * Department Head approves credit conversion request
+ */
+/**
+ * Department Head approves credit conversion request
+ */
+public function approveCreditConversion(Request $request, $id)
+{
+    try {
+        \Log::info('=== DEPT HEAD APPROVAL START ===');
+        
+        $conversionBefore = CreditConversion::find($id);
+        \Log::info('Conversion before dept head approval', [
+            'id' => $conversionBefore->conversion_id,
+            'status' => $conversionBefore->status,
+        ]);
+
+        // NO REMARKS VALIDATION FOR APPROVAL
+        $conversion = $this->creditConversionService->deptHeadApproveConversion(
+            $id,
+            $request->user()->id,
+            null // No remarks for approval
+        );
+
+        // Verify the conversion was updated
+        $conversionAfter = CreditConversion::find($id);
+        \Log::info('Conversion after dept head approval', [
+            'status' => $conversionAfter->status,
+            'dept_head_approved_by' => $conversionAfter->dept_head_approved_by,
+        ]);
+
+        \Log::info('Dept Head Approval Successful');
+
+        return redirect()->route('dept_head.credit-conversions')->with('success', 'Credit conversion request approved successfully!');
+        
+    } catch (\Exception $e) {
+        \Log::error('Dept Head Approval Failed', [
+            'conversion_id' => $id,
+            'error' => $e->getMessage(),
+        ]);
+
+        return back()->with('error', 'Failed to approve conversion: ' . $e->getMessage());
+    }
+}
+/**
+ * Department Head rejects credit conversion request
+ */
+/**
+ * Department Head rejects credit conversion request
+ */
+public function rejectCreditConversion(Request $request, $id)
+{
+    // Remarks still required for rejection
+    $validated = $request->validate([
+        'remarks' => ['required', 'string', 'max:500'],
+    ]);
+
+    try {
+        $conversion = $this->creditConversionService->rejectConversion(
+            $id,
+            $request->user()->id,
+            $validated['remarks'],
+            'dept_head'
+        );
+
+        return redirect()->route('dept_head.credit-conversions')->with('success', 'Credit conversion request rejected successfully!');
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
+/**
+ * Transform conversion data for display
+ */
+private function transformConversionData($conversion)
+{
+    \Log::info('Transforming conversion:', [
+        'conversion_id' => $conversion->conversion_id,
+        'employee_id' => $conversion->employee_id,
+        'status' => $conversion->status,
+        'employee_loaded' => !is_null($conversion->employee),
+        'department_loaded' => !is_null($conversion->employee?->department)
+    ]);
+
+    $leaveTypeNames = [
+        'SL' => 'Sick Leave',
+        'VL' => 'Vacation Leave'
+    ];
+
+    // Calculate cash equivalent using the same formula as service
+    $monthlySalary = $conversion->employee->monthly_salary ?? 0;
+    $calculatedCash = $this->calculateCashEquivalent($monthlySalary, $conversion->credits_requested);
+
+    // Safe employee data
+    $employee = $conversion->employee;
+    
+    return [
+        'conversion_id' => $conversion->conversion_id,
+        'employee_id' => $conversion->employee_id,
+        'employee' => $employee ? [
+            'firstname' => $employee->firstname,
+            'lastname' => $employee->lastname,
+            'position' => $employee->position,
+            'department' => $employee->department ? [
+                'name' => $employee->department->name,
+            ] : null,
+        ] : null,
+        'employee_name' => $employee ? $employee->firstname . ' ' . $employee->lastname : 'Unknown Employee',
+        'department' => $employee && $employee->department ? $employee->department->name : 'No Department',
+        'leave_type_code' => $conversion->leave_type,
+        'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+        'credits_requested' => (float) $conversion->credits_requested,
+        'equivalent_cash' => $calculatedCash,
+        'status' => $conversion->status,
+        'status_display' => $conversion->getStatusDisplay(),
+        'submitted_at' => $conversion->submitted_at?->format('Y-m-d H:i:s'),
+        'hr_approved_at' => $conversion->hr_approved_at?->format('Y-m-d H:i:s'),
+        'dept_head_approved_at' => $conversion->dept_head_approved_at?->format('Y-m-d H:i:s'),
+        'admin_approved_at' => $conversion->admin_approved_at?->format('Y-m-d H:i:s'),
+        'employee_remarks' => $conversion->employee_remarks,
+        'hr_remarks' => $conversion->hr_remarks,
+        'dept_head_remarks' => $conversion->dept_head_remarks,
+        'admin_remarks' => $conversion->admin_remarks,
+        'hr_approver_name' => $conversion->hrApprover->name ?? null,
+        'dept_head_approver_name' => $conversion->deptHeadApprover->name ?? null,
+        'admin_approver_name' => $conversion->adminApprover->name ?? null,
+        'current_approver_role' => $conversion->getCurrentApproverRole(),
+        'created_at' => $conversion->created_at?->format('Y-m-d H:i:s'),
+        'updated_at' => $conversion->updated_at?->format('Y-m-d H:i:s'),
+    ];
+}
+
+/**
+ * Calculate cash equivalent using the same formula as CreditConversionService
+ */
+private function calculateCashEquivalent($monthlySalary, $credits)
+{
+    // Use the same formula as in CreditConversionService
+    $dailyRate = $monthlySalary / 22; // Assuming 22 working days per month
+    $cashValue = $dailyRate * $credits;
+    return round($cashValue, 2);
+}
+
+/**
+ * Get credit conversion statistics for dashboard
+ */
+public function getCreditConversionStats(Request $request)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return response()->json([
+            'pending_conversions' => 0,
+            'total_conversions' => 0
+        ]);
+    }
+
+    $pendingConversions = CreditConversion::where('status', 'hr_approved')
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId);
+        })->count();
+
+    $totalConversions = CreditConversion::whereHas('employee', function($query) use ($departmentId) {
+        $query->where('department_id', $departmentId);
+    })->count();
+
+    return response()->json([
+        'pending_conversions' => $pendingConversions,
+        'total_conversions' => $totalConversions
     ]);
 }
 }

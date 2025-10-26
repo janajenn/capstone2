@@ -18,7 +18,8 @@ import {
     UserIcon,
     CalendarIcon,
     CurrencyDollarIcon,
-    BuildingOfficeIcon
+    BuildingOfficeIcon,
+    CreditCardIcon
 } from '@heroicons/react/24/outline';
 
 export default function AdminLayout({ children }) {
@@ -64,6 +65,7 @@ export default function AdminLayout({ children }) {
     const adminNavigation = [
         { href: '/admin/dashboard', label: 'Dashboard', icon: HomeIcon },
         { href: '/admin/leave-requests', label: 'Leave Requests', icon: DocumentTextIcon },
+        { href: route('admin.credit-conversions'), label: 'Credit Conversion', icon: CurrencyDollarIcon },
         { href: '/admin/delegation', label: 'Delegate Approver', icon: UserIcon },
         { href: '/admin/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
     ];
@@ -282,6 +284,8 @@ function getAdminPageTitle(url) {
     const routes = {
         '/admin/dashboard': 'Admin Dashboard',
         '/admin/leave-requests': 'Leave Requests',
+        '/admin/credit-conversions': 'Credit Conversion Requests',
+        '/admin/credit-conversions/': 'Credit Conversion Details', // For show page
         '/admin/delegation': 'Delegate Approver',
         '/admin/leave-calendar': 'Leave Calendar',
         '/employee/dashboard': 'My Dashboard',
@@ -302,6 +306,10 @@ function getAdminPageSubtitle(url, userName) {
         return `Welcome back, ${userName}. System administration overview.`;
     } else if (url.startsWith('/admin/leave-requests')) {
         return 'Review and approve all leave requests';
+    } else if (url.startsWith('/admin/credit-conversions') && !url.includes('/admin/credit-conversions/')) {
+        return 'Review and approve credit conversion requests';
+    } else if (url.startsWith('/admin/credit-conversions/')) {
+        return 'View credit conversion request details';
     } else if (url.startsWith('/admin/delegation')) {
         return 'Manage approval delegation settings';
     } else if (url.startsWith('/admin/leave-calendar')) {

@@ -33,12 +33,12 @@ export default function WelcomePage() {
     };
 
     const glowVariants = {
-        hidden: { textShadow: '0 0 0 rgba(255, 255, 255, 0)' },
+        hidden: { textShadow: '0 0 0 rgba(0, 0, 0, 0)' },
         visible: {
             textShadow: [
-                '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)',
-                '0 0 20px rgba(255, 255, 255, 0.7), 0 0 30px rgba(255, 255, 255, 0.5)',
-                '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)'
+                '0 0 10px rgba(0, 0, 0, 0.1), 0 0 20px rgba(0, 0, 0, 0.05)',
+                '0 0 20px rgba(0, 0, 0, 0.15), 0 0 30px rgba(0, 0, 0, 0.1)',
+                '0 0 10px rgba(0, 0, 0, 0.1), 0 0 20px rgba(0, 0, 0, 0.05)'
             ],
             transition: {
                 duration: 2,
@@ -91,7 +91,7 @@ export default function WelcomePage() {
                 position: 'absolute',
                 width: `${Math.random() * 4 + 2}px`,
                 height: `${Math.random() * 4 + 2}px`,
-                background: 'rgba(255, 255, 255, 0.3)',
+                background: 'rgba(0, 0, 0, 0.05)',
                 borderRadius: '50%',
                 top: `${Math.random() * 100}%`,
                 left: `${Math.random() * 100}%`,
@@ -113,7 +113,7 @@ export default function WelcomePage() {
         <div 
             className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
             style={{ 
-                background: 'linear-gradient(135deg, #7d0c0c 0%, #a52a2a 50%, #7d0c0c 100%)',
+                background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 50%, #ffffff 100%)',
             }}
         >
             {/* Animated Background Gradient */}
@@ -122,7 +122,7 @@ export default function WelcomePage() {
                 variants={backgroundVariants}
                 animate="animate"
                 style={{
-                    background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.1) 100%)',
+                    background: 'linear-gradient(135deg, rgba(0,0,0,0.02) 0%, transparent 50%, rgba(0,0,0,0.02) 100%)',
                     backgroundSize: '200% 200%',
                 }}
             />
@@ -151,7 +151,7 @@ export default function WelcomePage() {
                         initial="hidden"
                         animate="visible"
                         style={{
-                            filter: 'drop-shadow(0 0 15px rgba(255, 255, 255, 0.6))',
+                            filter: 'drop-shadow(0 0 15px rgba(0, 0, 0, 0.1))',
                         }}
                         onError={(e) => {
                             console.error('Image load error');
@@ -161,7 +161,7 @@ export default function WelcomePage() {
                     <motion.div
                         className="absolute inset-0 rounded-full"
                         style={{
-                            boxShadow: '0 0 30px 10px rgba(255, 255, 255, 0.4)',
+                            boxShadow: '0 0 30px 10px rgba(0, 0, 0, 0.05)',
                             opacity: 0,
                         }}
                         animate={{ opacity: [0.3, 0.6, 0.3] }}
@@ -175,7 +175,7 @@ export default function WelcomePage() {
 
                 {/* Animated Title with Glowing Effect */}
                 <motion.h1
-                    className="text-5xl md:text-7xl font-extrabold text-white mb-6 leading-tight tracking-wide"
+                    className="text-5xl md:text-7xl font-extrabold text-black mb-6 leading-tight tracking-wide"
                     variants={{ ...itemVariants, ...glowVariants }}
                     initial="hidden"
                     animate="visible"
@@ -184,10 +184,10 @@ export default function WelcomePage() {
                 </motion.h1>
 
                 <motion.h2
-                    className="text-2xl md:text-4xl font-semibold text-white mb-10 opacity-90"
+                    className="text-2xl md:text-4xl font-semibold text-black mb-10 opacity-90"
                     variants={itemVariants}
                     style={{
-                        textShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                        textShadow: '0 2px 4px rgba(0,0,0,0.1)',
                     }}
                 >
                     FOR LGU - OPOL
@@ -196,7 +196,7 @@ export default function WelcomePage() {
                 {/* Subtle Tagline with Fade-In */}
                 <AnimatePresence>
                     <motion.p
-                        className="text-lg md:text-xl text-white mb-12 max-w-2xl opacity-80"
+                        className="text-lg md:text-xl text-black mb-12 max-w-2xl opacity-80"
                         variants={itemVariants}
                         initial="hidden"
                         animate="visible"
@@ -206,38 +206,16 @@ export default function WelcomePage() {
                     </motion.p>
                 </AnimatePresence>
 
-                {/* Feature Highlights with Staggered Animation */}
-                {/* <motion.div
-                    className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12"
-                    variants={containerVariants}
-                >
-                    {[
-                        { icon: '📅', text: 'Easy Scheduling' },
-                        { icon: '✅', text: 'Quick Approvals' },
-                        { icon: '📊', text: 'Real-Time Tracking' }
-                    ].map((feature, index) => (
-                        <motion.div
-                            key={index}
-                            className="flex flex-col items-center p-4 bg-white bg-opacity-10 rounded-xl backdrop-blur-sm shadow-lg"
-                            variants={itemVariants}
-                        >
-                            <span className="text-4xl mb-2">{feature.icon}</span>
-                            <p className="text-white font-medium">{feature.text}</p>
-                        </motion.div>
-                    ))}
-                </motion.div> */}
-
                 {/* Prominent Call-to-Action Button with Hover Effects */}
                 <motion.div
                     className="rounded-full -mt-4"
                     variants={itemVariants}
-                    whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(255,255,255,0.5)' }}
+                    whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(0,0,0,0.1)' }}
                     transition={{ duration: 0.3 }}
                 >
                     <Link
                         href={route('login')}
-                        className="bg-white text-maroon py-4 px-10 rounded-full hover:bg-gray-100 transition-all duration-300 font-bold text-lg shadow-2xl hover:shadow-3xl transform hover:-translate-y-2 inline-block min-w-[250px]"
-                        style={{ color: '#7d0c0c' }}
+                        className="bg-black text-white py-4 px-10 rounded-full hover:bg-gray-800 transition-all duration-300 font-bold text-lg shadow-2xl hover:shadow-3xl transform hover:-translate-y-2 inline-block min-w-[250px]"
                     >
                         Get Started Now
                     </Link>
@@ -248,7 +226,7 @@ export default function WelcomePage() {
             <div className="absolute bottom-0 left-0 w-full overflow-hidden">
                 <svg className="relative block w-full h-24" viewBox="0 0 1420 100" preserveAspectRatio="none">
                     <path
-                        fill="rgba(255,255,255,0.1)"
+                        fill="rgba(0,0,0,0.02)"
                         d="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
                     >
                         <animate

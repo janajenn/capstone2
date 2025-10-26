@@ -3,10 +3,10 @@
 namespace App\Services;
 
 use App\Models\CreditConversion;
-use App\Models\LeaveBalance;
 use App\Models\LeaveCredit;
-use App\Models\LeaveCreditLog; // Add this import
+use App\Models\LeaveCreditLog;
 use App\Models\Employee;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -25,43 +25,38 @@ class CreditConversionService
      */
     public function requestConversion($employeeId, $leaveType, $creditsRequested, $remarks = null)
     {
-        // NEW RULE: Only VL credits can be monetized
+        // Only VL credits can be monetized
         if ($leaveType !== 'VL') {
-            throw new Exception('Only Vacation Leave (VL) credits can be monetized. Sick Leave (SL) credits are not eligible for cash conversion.');
+            throw new Exception('Only Vacation Leave (VL) credits can be monetized.');
         }
 
-        // Validate employee exists
         $employee = Employee::findOrFail($employeeId);
-        
-        // Check if employee has at least 10 leave credits
         $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
         
         if (!$leaveCredit) {
             throw new Exception('Leave credit record not found for employee.');
         }
         
-        // Get the appropriate balance for the specific leave type
-        $availableBalance = 0;
-        if ($leaveType === 'VL') {
-            $availableBalance = $leaveCredit->vl_balance ?? 0;
+        $availableBalance = $leaveCredit->vl_balance ?? 0;
+        
+        // Minimum 15 credits required
+        if ($availableBalance < 15) {
+            throw new Exception('You need at least 15 VL credits to request monetization.');
         }
         
-        // NEW RULE: Minimum 10 credits required
-        if ($availableBalance < 10) {
-            throw new Exception('You need at least 10 VL credits to request monetization.');
-        }
-        
-        // NEW RULE: Minimum conversion is 10 days (even if requesting fewer)
+        // Validate credits requested (minimum 10, maximum available balance)
         $effectiveCredits = max($creditsRequested, 10);
+        if ($effectiveCredits < 10) {
+            throw new Exception('Minimum 10 credits required for conversion.');
+        }
         
-        // Check if requested credits exceed available balance
         if ($effectiveCredits > $availableBalance) {
             throw new Exception('Requested credits exceed available VL balance.');
         }
         
-        // Check if employee has already converted maximum days this year
+        // Check annual quota
         $totalConvertedThisYear = CreditConversion::where('employee_id', $employeeId)
-            ->where('status', 'approved')
+            ->where('status', 'admin_approved')
             ->forYear()
             ->sum('credits_requested');
             
@@ -69,234 +64,270 @@ class CreditConversionService
             throw new Exception('Maximum of 10 VL days can be monetized per year. Already converted: ' . $totalConvertedThisYear . ' days.');
         }
         
-        // Calculate cash equivalent using new formula
+        // Calculate cash equivalent
         $equivalentCash = $this->calculateCashEquivalent($employee->monthly_salary, $effectiveCredits);
         
-        // Create conversion request
+        // Create conversion request - start with HR approval
         $conversion = CreditConversion::create([
             'employee_id' => $employeeId,
             'leave_type' => $leaveType,
             'credits_requested' => $effectiveCredits,
             'equivalent_cash' => $equivalentCash,
-            'status' => 'pending',
+            'status' => 'pending', // Start with HR approval
             'submitted_at' => Carbon::now(),
-            'remarks' => $remarks,
+            'employee_remarks' => $remarks,
         ]);
 
-        // 🔔 Send notification to HR about new conversion request
-        try {
-            $this->notifyHRAboutConversionRequest($conversion, $employee);
-        } catch (\Exception $e) {
-            \Log::error('Failed to send HR notification for conversion request: ' . $e->getMessage());
-        }
+        // Notify HR (you can implement this later)
+        // $this->notifyHRAboutConversionRequest($conversion, $employee);
         
         return $conversion;
     }
 
     /**
-     * 🔔 Notify HR about new conversion request
+     * HR approves the conversion request
      */
-    private function notifyHRAboutConversionRequest($conversion, $employee)
+    public function hrApproveConversion($conversionId, $approvedBy, $remarks = null)
     {
-        $employeeName = $employee->firstname . ' ' . $employee->lastname;
-        $creditsRequested = $conversion->credits_requested;
-        $cashEquivalent = $conversion->equivalent_cash;
+        \Log::info('=== SERVICE: HR APPROVAL START ===');
         
-        $title = 'New VL Credit Conversion Request';
-        $message = "{$employeeName} has submitted a request to convert {$creditsRequested} VL credits (₱" . number_format($cashEquivalent, 2) . ").";
-        
-        // Get all HR users
-        $hrUsers = \App\Models\User::where('role', 'hr')->get();
-        
-        foreach ($hrUsers as $hrUser) {
-            $hrEmployeeId = $this->notificationService->getEmployeeIdFromUserId($hrUser->id);
-            if ($hrEmployeeId) {
-                $this->notificationService->createHRNotification(
-                    $hrEmployeeId,
-                    'credit_conversion_submission',
-                    $title,
-                    $message,
-                    [
-                        'conversion_id' => $conversion->conversion_id,
-                        'employee_name' => $employeeName,
-                        'employee_id' => $employee->employee_id,
-                        'credits_requested' => $creditsRequested,
-                        'cash_equivalent' => $cashEquivalent,
-                        'submitted_at' => $conversion->submitted_at,
-                    ]
-                );
-            }
-        }
-        
-        \Log::info("HR notifications sent for conversion request #{$conversion->conversion_id}");
-    }
-    
-    /**
-     * Calculate cash equivalent for leave credits using new formula
-     * cash_value = monthly_salary × 10 × 0.0481927
-     */
-    private function calculateCashEquivalent($monthlySalary, $creditsRequested)
-    {
-        // NEW FORMULA: monthly_salary × 10 × 0.0481927
-        // For minimum 10 days conversion
-        $cashValue = $monthlySalary * 10 * 0.0481927;
-        
-        // Round to 2 decimal places
-        return round($cashValue, 2);
-    }
-    
-    /**
-     * Approve leave credit to cash conversion
-     */
-    public function approveConversion($conversionId, $approvedBy, $remarks = null)
-{
-    return DB::transaction(function () use ($conversionId, $approvedBy, $remarks) {
-        $conversion = CreditConversion::with('employee')->findOrFail($conversionId);
-        
-        \Log::info("=== STARTING CONVERSION APPROVAL ===");
-
-        if ($conversion->status !== 'pending') {
-            throw new Exception('Conversion request is not pending.');
-        }
-
-        // Get current balance
-        $leaveCredit = LeaveCredit::where('employee_id', $conversion->employee_id)->first();
-        if (!$leaveCredit) {
-            throw new Exception('Leave credit record not found for employee.');
-        }
-
-        $currentBalance = $leaveCredit->vl_balance;
-        $creditsToDeduct = $conversion->credits_requested;
-        $newBalance = $currentBalance - $creditsToDeduct;
-
-        // Validate sufficient balance
-        if ($newBalance < 0) {
-            throw new Exception("Insufficient VL credits. Current balance: {$currentBalance}, Requested: {$creditsToDeduct}");
-        }
-
-        // Update conversion status
-        $conversion->update([
-            'status' => 'approved',
-            'approved_by' => $approvedBy,
-            'approved_at' => Carbon::now(),
-            'remarks' => $remarks,
-        ]);
-
-        \Log::info("Conversion status updated to 'approved'");
-
-        // ✅ Update the balance FIRST
-        $leaveCredit->update(['vl_balance' => $newBalance]);
-        \Log::info("Leave credit balance updated from {$currentBalance} to {$newBalance}");
-
-        // ✅ THEN create the log with correct balances
-        $this->createLeaveCreditLog($conversion, $currentBalance, $newBalance);
-
-        // Send notifications
-        $this->notifyAccountingAboutApprovedConversion($conversion);
-        $this->notificationService->notifyCreditConversionStatus($conversion);
-
-        \Log::info("=== CONVERSION APPROVAL COMPLETED ===");
-
-        return $conversion;
-    });
-}
-
-private function createLeaveCreditLog(CreditConversion $conversion, $currentBalance, $newBalance)
-{
-    try {
-        \Log::info("Creating leave credit log for conversion #{$conversion->conversion_id}");
-
-        $log = LeaveCreditLog::create([
-            'employee_id' => $conversion->employee_id,
-            'type' => 'VL',
-            'date' => now(),
-            'year' => now()->year,
-            'month' => now()->month,
-            'points_deducted' => $conversion->credits_requested,
-            'balance_before' => $currentBalance,
-            'balance_after' => $newBalance,
-            'remarks' => "Monetization of {$conversion->credits_requested} VL credits (Conversion #{$conversion->conversion_id})",
-        ]);
-
-        \Log::info("Leave credit log created successfully. Log ID: " . $log->id);
-
-    } catch (\Exception $e) {
-        \Log::error("Failed to create leave credit log for conversion #{$conversion->conversion_id}: " . $e->getMessage());
-        throw new Exception("Failed to create leave credit log: " . $e->getMessage());
-    }
-}
-    /**
-     * ✅ NEW: Notify Accounting about approved conversion
-     */
-    private function notifyAccountingAboutApprovedConversion($conversion)
-    {
-        try {
-            $employee = $conversion->employee;
-            $employeeName = $employee->firstname . ' ' . $employee->lastname;
-            $creditsRequested = $conversion->credits_requested;
-            $cashEquivalent = $conversion->equivalent_cash;
-            
-            $title = 'VL Conversion Approved - Requires Accounting Processing';
-            $message = "VL conversion request from {$employeeName} has been approved. {$creditsRequested} VL credits converted to ₱" . number_format($cashEquivalent, 2) . ". Please process the cash release.";
-            
-            // Get Accounting users (assuming they have role 'accounting' or use admin role)
-            $accountingUsers = \App\Models\User::where('role', 'admin')->get(); // Adjust role as needed
-            
-            foreach ($accountingUsers as $accountingUser) {
-                $accountingEmployeeId = $this->notificationService->getEmployeeIdFromUserId($accountingUser->id);
-                if ($accountingEmployeeId) {
-                    $this->notificationService->createAdminNotification(
-                        $accountingEmployeeId,
-                        'credit_conversion_approved',
-                        $title,
-                        $message,
-                        [
-                            'conversion_id' => $conversion->conversion_id,
-                            'employee_name' => $employeeName,
-                            'employee_id' => $employee->employee_id,
-                            'credits_requested' => $creditsRequested,
-                            'cash_equivalent' => $cashEquivalent,
-                            'approved_at' => $conversion->approved_at,
-                            'approved_by' => $conversion->approved_by,
-                        ]
-                    );
+        return DB::transaction(function () use ($conversionId, $approvedBy, $remarks) {
+            try {
+                $conversion = CreditConversion::with('employee.department')->find($conversionId);
+                
+                if (!$conversion) {
+                    \Log::error('Service: Conversion not found', ['conversion_id' => $conversionId]);
+                    throw new Exception('Conversion request not found.');
                 }
+    
+                \Log::info('Service: Found conversion', [
+                    'conversion_id' => $conversion->conversion_id,
+                    'current_status' => $conversion->status,
+                    'employee_id' => $conversion->employee_id,
+                    'employee_name' => $conversion->employee ? $conversion->employee->firstname . ' ' . $conversion->employee->lastname : 'N/A'
+                ]);
+    
+                // Check if conversion is pending
+                if ($conversion->status !== 'pending') {
+                    \Log::warning('Service: Conversion not in pending status', [
+                        'current_status' => $conversion->status,
+                        'required_status' => 'pending'
+                    ]);
+                    throw new Exception("Conversion request is not pending HR approval. Current status: {$conversion->status}");
+                }
+    
+                // Check if it's VL (should be enforced by frontend, but double-check)
+                if ($conversion->leave_type !== 'VL') {
+                    \Log::warning('Service: Non-VL conversion attempt', [
+                        'leave_type' => $conversion->leave_type
+                    ]);
+                    throw new Exception('Only Vacation Leave (VL) credits can be monetized.');
+                }
+    
+                \Log::info('Service: Updating conversion status to hr_approved');
+                
+                // Update to HR approved status
+                $updateResult = $conversion->update([
+                    'status' => 'hr_approved',
+                    'hr_approved_by' => $approvedBy,
+                    'hr_approved_at' => Carbon::now(),
+                    'hr_remarks' => $remarks,
+                ]);
+    
+                \Log::info('Service: Update result', ['success' => $updateResult]);
+    
+                // Reload to verify changes
+                $conversion->refresh();
+                
+                \Log::info('Service: HR Approval Completed Successfully', [
+                    'new_status' => $conversion->status,
+                    'hr_approved_by' => $conversion->hr_approved_by,
+                    'hr_approved_at' => $conversion->hr_approved_at
+                ]);
+    
+                return $conversion;
+    
+            } catch (\Exception $e) {
+                \Log::error('Service: HR Approval Failed', [
+                    'conversion_id' => $conversionId,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                throw $e; // Re-throw to be caught by controller
             }
-            
-            \Log::info("Accounting notifications sent for approved conversion #{$conversion->conversion_id}");
-            
-        } catch (\Exception $e) {
-            \Log::error("Failed to send accounting notification for conversion #{$conversion->conversion_id}: " . $e->getMessage());
-        }
+        });
+    }
+    /**
+     * Department Head approves the conversion request
+     */
+    public function deptHeadApproveConversion($conversionId, $approvedBy, $remarks = null)
+    {
+        return DB::transaction(function () use ($conversionId, $approvedBy, $remarks) {
+            $conversion = CreditConversion::with('employee.department')->findOrFail($conversionId);
+
+            if (!$conversion->isHrApproved()) {
+                throw new Exception('Conversion request is not pending Department Head approval.');
+            }
+
+            // Update to Dept Head approved status - NO DEDUCTION HERE
+            $conversion->update([
+                'status' => 'dept_head_approved',
+                'dept_head_approved_by' => $approvedBy,
+                'dept_head_approved_at' => Carbon::now(),
+                'dept_head_remarks' => $remarks,
+            ]);
+
+            // Notify Admin (you can implement this later)
+            // $this->notifyAdminAboutConversion($conversion);
+
+            return $conversion;
+        });
     }
 
     /**
-     * Reject leave credit to cash conversion
+     * Admin approves the conversion request (FINAL APPROVAL - DEDUCTION HAPPENS HERE)
      */
-    public function rejectConversion($conversionId, $rejectedBy, $remarks = null)
+
+
+  
+   
+
+     /**
+      * Admin approves the conversion request (FINAL APPROVAL - DEDUCTION HAPPENS HERE)
+      */
+     public function adminApproveConversion($conversionId, $approvedBy, $remarks = null)
+     {
+         \Log::info('=== SIMPLIFIED ADMIN APPROVAL START ===');
+     
+         return DB::transaction(function () use ($conversionId, $approvedBy, $remarks) {
+             try {
+                 // Get conversion
+                 $conversion = CreditConversion::with('employee')->findOrFail($conversionId);
+                 \Log::info('Conversion found', ['id' => $conversion->conversion_id, 'status' => $conversion->status]);
+     
+                 // Simple status check
+                 if ($conversion->status !== 'dept_head_approved') {
+                     throw new Exception('Conversion must be dept_head_approved for admin approval. Current: ' . $conversion->status);
+                 }
+     
+                 // Get leave credit
+                 $leaveCredit = LeaveCredit::where('employee_id', $conversion->employee_id)->firstOrFail();
+                 \Log::info('Leave credit found', ['employee_id' => $conversion->employee_id, 'current_balance' => $leaveCredit->vl_balance]);
+     
+                 // Store balance before deduction
+                 $balanceBefore = (float) $leaveCredit->vl_balance;
+                 $creditsToDeduct = (float) $conversion->credits_requested;
+                 $balanceAfter = $balanceBefore - $creditsToDeduct;
+                 
+                 if ($balanceAfter < 0) {
+                     throw new Exception("Insufficient credits. Current: {$balanceBefore}, Needed: {$creditsToDeduct}");
+                 }
+     
+                 // Update leave credit
+                 $leaveCredit->vl_balance = $balanceAfter;
+                 $leaveCredit->save();
+     
+                 // Update conversion
+                 $conversion->status = 'admin_approved';
+                 $conversion->admin_approved_by = $approvedBy;
+                 $conversion->admin_approved_at = Carbon::now();
+                 $conversion->admin_remarks = $remarks;
+                 $conversion->save();
+     
+                 // ✅ AUTOMATICALLY CREATE LEAVE CREDITS LOG ENTRY
+                 $this->createLeaveCreditLogEntry(
+                     $conversion->employee_id,
+                     $conversion->leave_type,
+                     $creditsToDeduct,
+                     $balanceBefore,
+                     $balanceAfter,
+                     $conversion
+                 );
+     
+                 \Log::info('Admin approval successful');
+     
+                 return $conversion;
+     
+             } catch (\Exception $e) {
+                 \Log::error('Admin approval failed', [
+                     'conversion_id' => $conversionId,
+                     'error' => $e->getMessage()
+                 ]);
+                 throw $e;
+             }
+         });
+     }
+     
+     /**
+      * Create leave credit log entry with the specified structure
+      */
+     private function createLeaveCreditLogEntry($employeeId, $leaveType, $pointsDeducted, $balanceBefore, $balanceAfter, $conversion)
+     {
+         $now = Carbon::now();
+         
+         LeaveCreditLog::create([
+             'employee_id' => $employeeId,
+             'type' => $leaveType, // 'VL' or 'SL'
+             'date' => $now->toDateString(), // Current date
+             'year' => $now->year, // Current year
+             'month' => $now->month, // Current month (1-12)
+             'points_deducted' => $pointsDeducted,
+             'balance_before' => $balanceBefore,
+             'balance_after' => $balanceAfter,
+             'remarks' => "Credit conversion to cash approved - Request #{$conversion->conversion_id}",
+             'created_at' => $now,
+             'updated_at' => $now,
+         ]);
+     
+         \Log::info('Leave credit log entry created', [
+             'employee_id' => $employeeId,
+             'points_deducted' => $pointsDeducted,
+             'balance_before' => $balanceBefore,
+             'balance_after' => $balanceAfter
+         ]);
+     }
+    /**
+     * Reject conversion request at any stage
+     */
+    public function rejectConversion($conversionId, $rejectedBy, $remarks, $rejectedByRole)
     {
         $conversion = CreditConversion::findOrFail($conversionId);
-        
-        if ($conversion->status !== 'pending') {
-            throw new Exception('Conversion request is not pending.');
-        }
-        
-        $conversion->update([
-            'status' => 'rejected',
-            'approved_at' => Carbon::now(),
-            'approved_by' => $rejectedBy,
-            'remarks' => $remarks,
-        ]);
 
-        // Send notification to employee about rejection
-        $notificationService = new NotificationService();
-        $notificationService->notifyCreditConversionStatus($conversion);
-        
+        if ($conversion->isRejected() || $conversion->isFullyApproved()) {
+            throw new Exception('Conversion request cannot be rejected in its current status.');
+        }
+
+        $updateData = [
+            'status' => 'rejected',
+        ];
+
+        // Track who rejected it
+        switch ($rejectedByRole) {
+            case 'hr':
+                $updateData['hr_approved_by'] = $rejectedBy;
+                $updateData['hr_approved_at'] = Carbon::now();
+                $updateData['hr_remarks'] = $remarks;
+                break;
+            case 'dept_head':
+                $updateData['dept_head_approved_by'] = $rejectedBy;
+                $updateData['dept_head_approved_at'] = Carbon::now();
+                $updateData['dept_head_remarks'] = $remarks;
+                break;
+            case 'admin':
+                $updateData['admin_approved_by'] = $rejectedBy;
+                $updateData['admin_approved_at'] = Carbon::now();
+                $updateData['admin_remarks'] = $remarks;
+                break;
+        }
+
+        $conversion->update($updateData);
+
+        // Send notification (you can implement this later)
+        // $this->notificationService->notifyCreditConversionStatus($conversion);
+
         return $conversion;
     }
 
-    // ... rest of your existing methods remain the same ...
-    
     /**
      * Get conversion statistics for an employee
      */
@@ -305,17 +336,17 @@ private function createLeaveCreditLog(CreditConversion $conversion, $currentBala
         $year = $year ?? Carbon::now()->year;
         
         $totalConverted = CreditConversion::where('employee_id', $employeeId)
-            ->where('status', 'approved')
+            ->where('status', 'admin_approved') // Only count fully approved conversions
             ->forYear($year)
             ->sum('credits_requested');
             
         $totalCashReceived = CreditConversion::where('employee_id', $employeeId)
-            ->where('status', 'approved')
+            ->where('status', 'admin_approved') // Only count fully approved conversions
             ->forYear($year)
             ->sum('equivalent_cash');
             
         $pendingRequests = CreditConversion::where('employee_id', $employeeId)
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'hr_approved', 'dept_head_approved']) // All pending stages
             ->forYear($year)
             ->count();
             
@@ -337,7 +368,7 @@ private function createLeaveCreditLog(CreditConversion $conversion, $currentBala
      */
     public function checkEligibility($employeeId, $leaveType)
     {
-        // NEW RULE: Only VL credits can be monetized
+        // Only VL credits can be monetized
         if ($leaveType !== 'VL') {
             return [
                 'eligible' => false,
@@ -346,7 +377,6 @@ private function createLeaveCreditLog(CreditConversion $conversion, $currentBala
             ];
         }
 
-        // Use LeaveCredit table instead of LeaveBalance to match the system
         $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
         
         if (!$leaveCredit) {
@@ -357,20 +387,19 @@ private function createLeaveCreditLog(CreditConversion $conversion, $currentBala
             ];
         }
         
-        // Get the appropriate balance for the specific leave type
         $availableBalance = $leaveCredit->vl_balance ?? 0;
         
-        // NEW RULE: Minimum 10 credits required
-        if ($availableBalance < 10) {
+        // Minimum 15 credits required
+        if ($availableBalance < 15) {
             return [
                 'eligible' => false,
-                'reason' => 'You need at least 10 VL credits to request monetization',
+                'reason' => 'You need at least 15 VL credits to request monetization',
                 'available_balance' => $availableBalance
             ];
         }
         
         $totalConvertedThisYear = CreditConversion::where('employee_id', $employeeId)
-            ->where('status', 'approved')
+            ->where('status', 'admin_approved') // Only count fully approved conversions
             ->forYear()
             ->sum('credits_requested');
             
@@ -391,13 +420,37 @@ private function createLeaveCreditLog(CreditConversion $conversion, $currentBala
     }
 
     /**
-     * Calculate potential cash value for display
+     * Calculate cash equivalent
      */
-    public function calculatePotentialCash($monthlySalary)
+    private function calculateCashEquivalent($monthlySalary, $credits)
     {
-        // Calculate using the new formula: monthly_salary × 10 × 0.0481927
-        $cashValue = $monthlySalary * 10 * 0.0481927;
-        
+        // Simple calculation: daily rate * credits
+        $dailyRate = $monthlySalary / 22; // Assuming 22 working days per month
+        $cashValue = $dailyRate * $credits;
         return round($cashValue, 2);
     }
+
+    /**
+     * Create leave credit log for the deduction
+     */
+    private function createLeaveCreditLog($conversion, $currentBalance, $newBalance)
+    {
+        LeaveCreditLog::create([
+            'employee_id' => $conversion->employee_id,
+            'leave_type' => $conversion->leave_type,
+            'previous_balance' => $currentBalance,
+            'new_balance' => $newBalance,
+            'change_amount' => -$conversion->credits_requested,
+            'reason' => 'Credit conversion to cash - Admin approved',
+            'reference_id' => $conversion->conversion_id,
+            'reference_type' => CreditConversion::class,
+            'created_at' => Carbon::now(),
+        ]);
+    }
+
+    // Placeholder notification methods - implement these when ready
+    private function notifyHRAboutConversionRequest($conversion, $employee) {}
+    private function notifyDeptHeadAboutConversion($conversion) {}
+    private function notifyAdminAboutConversion($conversion) {}
+    private function notifyAccountingAboutApprovedConversion($conversion) {}
 }

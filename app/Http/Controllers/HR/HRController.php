@@ -23,6 +23,9 @@ use App\Models\LeaveCreditLog;
 use App\Exports\EmployeeRecordingsExport;
 use Maatwebsite\Excel\Facades\Excel;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use App\Models\Holiday;
 
 
 class HRController extends Controller
@@ -32,6 +35,7 @@ class HRController extends Controller
 
     protected $creditConversionService;
     protected $notificationService;
+    
 
     // ADD THIS CONSTRUCTOR
     public function __construct(CreditConversionService $creditConversionService, NotificationService $notificationService)
@@ -41,34 +45,51 @@ class HRController extends Controller
     }
 
     //EMPLOYEE MANAGEMENT
-    public function employees(Request $request)
-    {
-        $perPage = 10;
-        
-        $employees = Employee::with('department')
-            ->when($request->filled('search'), function ($query) use ($request) {
-                return $query->where(function ($q) use ($request) {
-                    $q->where('firstname', 'like', "%{$request->search}%")
-                      ->orWhere('lastname', 'like', "%{$request->search}%")
-                      ->orWhere('position', 'like', "%{$request->search}%")
-                      ->orWhereHas('department', function ($q) use ($request) {
-                          $q->where('name', 'like', "%{$request->search}%");
-                      });
-                });
-            })
-            ->when($request->filled('department'), function ($query) use ($request) {
-                return $query->where('department_id', $request->department);
-            })
-            ->latest()
-            ->paginate($perPage)
-            ->withQueryString();
+   // In HRController - update the employees method
+// In HRController - update the employees method
+public function employees(Request $request)
+{
+    $perPage = 10;
     
-        return Inertia::render('HR/Employees', [
-            'employees' => $employees,
-            'departments' => Department::all(),
-            'filters' => $request->only(['search', 'department']),
-        ]);
-    }
+    $employees = Employee::with('department')
+        ->when($request->filled('search'), function ($query) use ($request) {
+            return $query->where(function ($q) use ($request) {
+                $q->where('firstname', 'like', "%{$request->search}%")
+                  ->orWhere('lastname', 'like', "%{$request->search}%")
+                  ->orWhere('position', 'like', "%{$request->search}%")
+                  ->orWhereHas('department', function ($q) use ($request) {
+                      $q->where('name', 'like', "%{$request->search}%");
+                  });
+            });
+        })
+        ->when($request->filled('department'), function ($query) use ($request) {
+            return $query->where('department_id', $request->department);
+        })
+        ->orderBy('firstname')
+        ->paginate($perPage)
+        ->withQueryString();
+
+    // Get departments with their heads
+    $departmentsWithHeads = Department::with('head')->get()->map(function($department) {
+        return [
+            'id' => $department->id,
+            'name' => $department->name,
+            'head_employee_id' => $department->head_employee_id,
+            'head' => $department->head ? [
+                'employee_id' => $department->head->employee_id,
+                'firstname' => $department->head->firstname,
+                'lastname' => $department->head->lastname,
+                'position' => $department->head->position,
+            ] : null
+        ];
+    });
+
+    return Inertia::render('HR/Employees', [
+        'employees' => $employees,
+        'departments' => $departmentsWithHeads,
+        'filters' => $request->only(['search', 'department']),
+    ]);
+}
 
     public function storeEmployee(Request $request)
     {
@@ -350,32 +371,13 @@ public function leaveCredits(Request $request)
         ->paginate($perPage)
         ->withQueryString();
 
-    $now = Carbon::now();
-    $year = $now->year;
-    $month = $now->month;
-
-    $alreadyCredited = MonthlyCreditLog::where('year', $year)
-        ->where('month', $month)
-        ->exists();
-
-    // Check if we should show warning modal
-    $showWarning = session('show_credit_warning', false);
-    $warningMonth = session('warning_month');
-    $warningYear = session('warning_year');
-
     return Inertia::render('HR/LeaveCredits', [
         'employees' => $employees,
-        'alreadyCredited' => $alreadyCredited,
-        'creditedMonth' => $now->format('F'),
-        'creditedYear' => $year,
         'departments' => Department::all(),
         'filters' => $request->only(['search', 'department']),
-        'showCreditWarning' => $showWarning,
-        'warningMonth' => $warningMonth,
-        'warningYear' => $warningYear,
+        // Remove monthly credit related props
     ]);
 }
-
 
 
 public function update(Request $request, $employee_id)
@@ -429,60 +431,7 @@ public function update(Request $request, $employee_id)
 
 
 
-public function addMonthlyCredits()
-{
-    $now = Carbon::now();
-    $year = $now->year;
-    $month = $now->month;
 
-    // Check if already added this month
-    $alreadyCredited = MonthlyCreditLog::where('year', $year)
-        ->where('month', $month)
-        ->exists();
-
-    if ($alreadyCredited) {
-        return redirect()->back()->with([
-            'alreadyCredited' => true,
-            'creditedMonth' => $now->format('F'),
-            'creditedYear' => $year
-        ]);
-    }
-
-    // Get all employees with their associated users for roles that should receive leave credits
-    $employees = Employee::whereHas('user', function ($query) {
-        $query->whereIn('role', ['employee', 'admin', 'hr', 'dept_head']);
-    })->get();
-
-    foreach ($employees as $employee) {
-        $credit = LeaveCredit::firstOrCreate(
-            ['employee_id' => $employee->employee_id],
-            [
-                'sl_balance' => 0,
-                'vl_balance' => 0,
-                'last_updated' => now()
-            ]
-        );
-    
-        // Only start auto-adding credits AFTER import date
-        if ($credit->imported_at && $credit->imported_at > $now->startOfMonth()) {
-            continue; // skip this month, since they were imported after
-        }
-    
-        $credit->increment('sl_balance', 1.25);
-        $credit->increment('vl_balance', 1.25);
-    }
-    
-    MonthlyCreditLog::create([
-        'year' => $year,
-        'month' => $month,
-    ]);
-
-    return redirect()->back()->with([
-        'success' => 'Monthly leave credits added successfully.',
-        'creditedMonth' => $now->format('F'),
-        'creditedYear' => $year
-    ]);
-}
 
 
 public function showLeaveCredit($employee_id)
@@ -645,44 +594,245 @@ public function deleteLeaveType(LeaveType $leaveType)
 }
 
 // DEPARTMENT MANAGEMENT
-// Display page
+// In HRController - update the departments method
+// In HRController - update the departments method
+
+
 public function departments(Request $request)
 {
-    $perPage = 7; // Number of departments per page
+    $perPage = 7;
     
-    $departments = Department::with('head')
+    $departments = Department::with(['head', 'employees.user'])
         ->paginate($perPage)
         ->withQueryString();
 
+    // Get ALL active employees regardless of role
+    $employees = Employee::with(['user', 'department'])
+        ->where('status', 'active')
+        ->get()
+        ->map(function($employee) {
+            $currentHeadDepartment = Department::where('head_employee_id', $employee->employee_id)->first();
+            
+            return [
+                'employee_id' => $employee->employee_id,
+                'name' => $employee->firstname . ' ' . $employee->lastname,
+                'firstname' => $employee->firstname,
+                'lastname' => $employee->lastname,
+                'position' => $employee->position,
+                'department_id' => $employee->department_id,
+                'current_department' => $employee->department ? $employee->department->name : 'No Department',
+                'role' => $employee->user ? $employee->user->role : 'employee',
+                'is_current_dept_head' => $currentHeadDepartment ? true : false,
+                'current_head_department' => $currentHeadDepartment ? $currentHeadDepartment->name : null,
+                'current_head_department_id' => $currentHeadDepartment ? $currentHeadDepartment->id : null,
+            ];
+        });
+
     return Inertia::render('HR/Departments', [
         'departments' => $departments,
+        'employees' => $employees,
     ]);
 }
 
-// Store
-public function storeDepartment(Request $request)
-{
-    $request->validate(['name' => 'required|unique:departments,name']);
-    Department::create($request->only('name'));
-
-    return redirect()->back()->with('success', 'Department added!');
-}
-
-// Update
 public function updateDepartment(Request $request, $id)
 {
-    $request->validate(['name' => 'required']);
-    $dept = Department::findOrFail($id);
-    $dept->update($request->only('name'));
+    $request->validate([
+        'name' => 'required|unique:departments,name,' . $id,
+        'head_employee_id' => 'nullable|exists:employees,employee_id',
+        'transfer_from' => 'nullable|exists:departments,id',
+        'transfer_employee_id' => 'nullable|exists:employees,employee_id'
+    ]);
 
-    return redirect()->back()->with('success', 'Department updated!');
+    DB::beginTransaction();
+    try {
+        $department = Department::findOrFail($id);
+        $department->update(['name' => $request->name]);
+
+        $transferFrom = $request->input('transfer_from');
+        $transferEmployeeId = $request->input('transfer_employee_id');
+        $isTransferRequest = !empty($transferFrom) && !empty($transferEmployeeId);
+
+        if ($isTransferRequest) {
+            $this->transferDepartmentHead($transferFrom, $department->id, $transferEmployeeId);
+        } else if ($request->has('head_employee_id')) {
+            $employeeId = $request->head_employee_id;
+            if (!empty($employeeId)) {
+                $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId, $department->id);
+                
+                if ($existingHeadDepartment) {
+                    throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
+                }
+                
+                $this->assignDepartmentHead($department->id, $employeeId);
+            } else {
+                if ($department->head_employee_id) {
+                    $this->removeDepartmentHead($department->id);
+                }
+            }
+        } else {
+            if ($department->head_employee_id) {
+                $this->removeDepartmentHead($department->id);
+            }
+        }
+
+        DB::commit();
+        return redirect()->back()->with('success', 'Department updated successfully!');
+
+    } catch (\Exception $e) {
+        DB::rollback();
+        return redirect()->back()->withErrors(['error' => 'Failed to update department: ' . $e->getMessage()]);
+    }
 }
 
-// Delete
+public function storeDepartment(Request $request)
+{
+    $request->validate([
+        'name' => 'required|unique:departments,name',
+        'head_employee_id' => 'nullable|exists:employees,employee_id',
+        'transfer_from' => 'nullable|exists:departments,id',
+        'transfer_employee_id' => 'nullable|exists:employees,employee_id'
+    ]);
+
+    DB::beginTransaction();
+    try {
+        $department = Department::create($request->only('name'));
+
+        $transferFrom = $request->input('transfer_from');
+        $transferEmployeeId = $request->input('transfer_employee_id');
+        $isTransferRequest = !empty($transferFrom) && !empty($transferEmployeeId);
+
+        if ($isTransferRequest) {
+            $this->transferDepartmentHead($transferFrom, $department->id, $transferEmployeeId);
+        } else if ($request->has('head_employee_id') && !empty($request->head_employee_id)) {
+            $employeeId = $request->head_employee_id;
+            $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId);
+            
+            if ($existingHeadDepartment) {
+                throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
+            }
+            
+            $this->assignDepartmentHead($department->id, $employeeId);
+        }
+
+        DB::commit();
+        return redirect()->back()->with('success', 'Department created successfully!');
+
+    } catch (\Exception $e) {
+        DB::rollback();
+        return redirect()->back()->withErrors(['error' => 'Failed to create department: ' . $e->getMessage()]);
+    }
+}
+
+private function isEmployeeAlreadyDeptHead($employeeId, $excludingDepartmentId = null)
+{
+    $query = Department::where('head_employee_id', $employeeId);
+    
+    if ($excludingDepartmentId) {
+        $query->where('id', '!=', $excludingDepartmentId);
+    }
+    
+    return $query->first();
+}
+
+private function transferDepartmentHead($fromDepartmentId, $toDepartmentId, $employeeId)
+{
+    $fromDepartment = Department::findOrFail($fromDepartmentId);
+    $toDepartment = Department::findOrFail($toDepartmentId);
+    $employee = Employee::with('user')->findOrFail($employeeId);
+
+    if ($fromDepartment->head_employee_id != $employeeId) {
+        throw new \Exception("Employee is not the department head of {$fromDepartment->name}");
+    }
+
+    if ($toDepartment->head_employee_id && $toDepartment->head_employee_id != $employeeId) {
+        throw new \Exception("The target department already has a department head. Please remove them first.");
+    }
+
+    $fromDepartment->update(['head_employee_id' => null]);
+    $toDepartment->update(['head_employee_id' => $employeeId]);
+    $employee->update(['department_id' => $toDepartment->id]);
+    
+    if ($employee->user) {
+        $employee->user->update(['role' => 'dept_head']);
+    }
+}
+
+private function assignDepartmentHead($departmentId, $employeeId)
+{
+    $department = Department::findOrFail($departmentId);
+    $employee = Employee::with('user')->findOrFail($employeeId);
+
+    $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId, $departmentId);
+    
+    if ($existingHeadDepartment) {
+        throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
+    }
+
+    if ($department->head_employee_id && $department->head_employee_id != $employeeId) {
+        throw new \Exception("This department already has a department head. Please remove the current head first.");
+    }
+
+    $currentHead = $department->head_employee_id ? Employee::with('user')->find($department->head_employee_id) : null;
+
+    if ($currentHead && $currentHead->user && $currentHead->employee_id != $employeeId) {
+        $originalRole = $this->getOriginalRole($currentHead);
+        $currentHead->user->update(['role' => $originalRole]);
+    }
+
+    if ($employee->user) {
+        $employee->user->update(['role' => 'dept_head']);
+    }
+
+    $department->update(['head_employee_id' => $employeeId]);
+
+    if ($employee->department_id != $departmentId) {
+        $employee->update(['department_id' => $departmentId]);
+    }
+}
+
+private function getOriginalRole($employee)
+{
+    $currentRole = $employee->user->role;
+    
+    if (in_array($currentRole, ['admin', 'hr'])) {
+        return $currentRole;
+    }
+    
+    return 'employee';
+}
+
+private function removeDepartmentHead($departmentId)
+{
+    $department = Department::with('head.user')->findOrFail($departmentId);
+
+    if ($department->head && $department->head->user) {
+        $originalRole = $this->getOriginalRole($department->head);
+        $department->head->user->update(['role' => $originalRole]);
+    }
+
+    $department->update(['head_employee_id' => null]);
+}
+
 public function deleteDepartment($id)
 {
-    Department::findOrFail($id)->delete();
-    return redirect()->back()->with('success', 'Department deleted!');
+    DB::beginTransaction();
+    try {
+        $department = Department::with('head.user')->findOrFail($id);
+
+        if ($department->head && $department->head->user) {
+            $originalRole = $this->getOriginalRole($department->head);
+            $department->head->user->update(['role' => $originalRole]);
+        }
+
+        $department->delete();
+
+        DB::commit();
+        return redirect()->back()->with('success', 'Department deleted successfully!');
+
+    } catch (\Exception $e) {
+        DB::rollback();
+        return redirect()->back()->withErrors(['error' => 'Failed to delete department: ' . $e->getMessage()]);
+    }
 }
 
 // LEAVE REQUEST APPROVAL METHODS
@@ -695,7 +845,7 @@ public function dashboard(Request $request)
     // Get available years for filter dropdown
     $availableYears = $this->getAvailableYears();
 
-    // Get pending leave requests count with filters
+    // Get pending leave requests count with filters    
     $pendingQuery = LeaveRequest::where('status', 'pending');
     if ($month) {
         $pendingQuery->whereMonth('created_at', $month)->whereYear('created_at', $year);
@@ -969,24 +1119,23 @@ public function leaveRequests(Request $request)
             $q->where('firstname', 'like', "%{$search}%")
               ->orWhere('lastname', 'like', "%{$search}%");
         });
+    }
 
-        // ADD DEPARTMENT FILTER
+    // ADD DEPARTMENT FILTER - FIXED POSITION
     if ($request->filled('department')) {
         $query->whereHas('employee', function ($q) use ($request) {
             $q->where('department_id', $request->department);
         });
-    }
     }
 
     $leaveRequests = $query->paginate($perPage)->withQueryString();
 
     return Inertia::render('HR/LeaveRequests', [
         'leaveRequests' => $leaveRequests,
-        'departments' => Department::all(), // ADD THIS LINE - Pass departments to the view
-        'filters' => $request->only(['status', 'date_from', 'date_to', 'search','department']),
+        'departments' => Department::all(),
+        'filters' => $request->only(['status', 'date_from', 'date_to', 'search', 'department']),
     ]);
 }
-
 
 public function showLeaveRequest($id)
 {
@@ -1467,72 +1616,92 @@ private function getLeaveTypeColor($leaveTypeCode)
     /**
      * Show credit conversion requests for HR approval
      */
-    public function creditConversions(Request $request)
-    {
-        $perPage = 10;
-        
-        $query = CreditConversion::with(['employee.department', 'approver'])
-            ->when($request->status, function ($query, $status) {
-                return $query->where('status', $status);
-            })
-            ->when($request->employee, function ($query, $employee) {
-                return $query->whereHas('employee', function ($q) use ($employee) {
-                    $q->where('firstname', 'like', "%{$employee}%")
-                      ->orWhere('lastname', 'like', "%{$employee}%");
-                });
-            })
-            ->orderBy('created_at', 'desc');
-    
-        $conversions = $query->paginate($perPage)->withQueryString();
-    
-        // Transform conversions with consistent data structure
-        $transformedConversions = $conversions->getCollection()->map(function ($conversion) {
-            return $this->transformConversionData($conversion);
-        });
-    
-        $conversions->setCollection($transformedConversions);
-    
-        // Get statistics
-        $currentYear = now()->year;
-        $totalRequests = CreditConversion::count();
-        $pendingRequests = CreditConversion::where('status', 'pending')->count();
-        $approvedRequests = CreditConversion::where('status', 'approved')
-            ->whereYear('created_at', $currentYear)
-            ->count();
-        $rejectedRequests = CreditConversion::where('status', 'rejected')->count();
-    
-        return Inertia::render('HR/CreditConversions', [
-            'conversions' => $conversions,
-            'stats' => [
-                'total' => $totalRequests,
-                'pending' => $pendingRequests,
-                'approved' => $approvedRequests,
-                'rejected' => $rejectedRequests,
-            ],
-            'filters' => $request->only(['status', 'employee']),
-        ]);
-    }
 
-    /**
-     * Show specific credit conversion request
-     */
-    public function showCreditConversion($id)
+     public function showCreditConversion($id)
     {
-        $conversion = CreditConversion::with(['employee.department', 'approver'])
-            ->findOrFail($id);
+        $conversion = CreditConversion::with([
+            'employee.department',
+            'hrApprover',
+            'deptHeadApprover', 
+            'adminApprover'
+        ])->findOrFail($id);
 
-        $flattenedConversion = $this->transformConversionData($conversion);
+        $transformedConversion = $this->transformConversionData($conversion);
 
         return Inertia::render('HR/ShowCreditConversion', [
-            'conversion' => $flattenedConversion,
+            'conversion' => $transformedConversion,
         ]);
     }
 
-    /**
-     * Transform conversion data with consistent structure
-     */
-   /**
- * Transform conversion data with consistent structure
+    // In HRController - update the credit conversion methods
+
+/**
+ * Show credit conversion requests for HR approval
+ */
+public function creditConversions(Request $request)
+{
+    $perPage = 10;
+    
+    $query = CreditConversion::with(['employee.department', 'hrApprover', 'deptHeadApprover', 'adminApprover'])
+        ->when($request->status, function ($query, $status) {
+            if ($status === 'pending_hr') {
+                return $query->where('status', 'pending');
+            } elseif ($status === 'hr_approved') {
+                return $query->where('status', 'hr_approved');
+            } elseif ($status === 'dept_head_approved') {
+                return $query->where('status', 'dept_head_approved');
+            } elseif ($status === 'fully_approved') {
+                return $query->where('status', 'admin_approved');
+            } elseif ($status === 'rejected') {
+                return $query->where('status', 'rejected');
+            }
+            return $query;
+        })
+        ->when($request->employee, function ($query, $employee) {
+            return $query->whereHas('employee', function ($q) use ($employee) {
+                $q->where('firstname', 'like', "%{$employee}%")
+                  ->orWhere('lastname', 'like', "%{$employee}%");
+            });
+        })
+        ->orderBy('submitted_at', 'desc');
+
+    $conversions = $query->paginate($perPage)->withQueryString();
+
+    // Transform conversions with new status mapping
+    $transformedConversions = $conversions->getCollection()->map(function ($conversion) {
+        return $this->transformConversionData($conversion);
+    });
+
+    $conversions->setCollection($transformedConversions);
+
+    // Get statistics
+    $currentYear = now()->year;
+    $totalRequests = CreditConversion::count();
+    $pendingHrRequests = CreditConversion::where('status', 'pending')->count();
+    $hrApprovedRequests = CreditConversion::where('status', 'hr_approved')->count();
+    $deptHeadApprovedRequests = CreditConversion::where('status', 'dept_head_approved')->count();
+    $fullyApprovedRequests = CreditConversion::where('status', 'admin_approved')->count();
+    $rejectedRequests = CreditConversion::where('status', 'rejected')->count();
+
+    return Inertia::render('HR/CreditConversions', [
+        'conversions' => $conversions,
+        'stats' => [
+            'total' => $totalRequests,
+            'pending' => $pendingHrRequests,
+            'hr_approved' => $hrApprovedRequests,
+            'dept_head_approved' => $deptHeadApprovedRequests,
+            'approved' => $fullyApprovedRequests,
+            'rejected' => $rejectedRequests,
+        ],
+        'filters' => $request->only(['status', 'employee']),
+    ]);
+}
+
+/**
+ * Transform conversion data for display
+ */
+/**
+ * Transform conversion data for display
  */
 private function transformConversionData($conversion)
 {
@@ -1541,102 +1710,142 @@ private function transformConversionData($conversion)
         'VL' => 'Vacation Leave'
     ];
 
-    // Update status mapping to use existing ENUM values
-    $statusDisplay = [
-        'pending' => 'Pending HR Review',
-        'approved' => 'Approved - Forwarded to Accounting', // Updated display text
-        'rejected' => 'Rejected'
-    ];
-
-    // Use the same formula as employee side for consistency
+    // Calculate cash equivalent using the same formula as service
     $monthlySalary = $conversion->employee->monthly_salary ?? 0;
-    $calculatedCash = $this->calculateCashEquivalent($monthlySalary);
+    $calculatedCash = $this->calculateCashEquivalent($monthlySalary, $conversion->credits_requested);
 
+    // Safe employee data
+    $employee = $conversion->employee;
+    
     return [
         'conversion_id' => $conversion->conversion_id,
         'employee_id' => $conversion->employee_id,
-        'leave_type_code' => $conversion->leave_type,
-        'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
-        'credits_requested' => $conversion->credits_requested,
-        'equivalent_cash' => $calculatedCash,
-        'status' => $conversion->status,
-        'status_display' => $statusDisplay[$conversion->status] ?? $conversion->status,
-        'submitted_at' => $conversion->submitted_at,
-        'approved_at' => $conversion->approved_at,
-        'approved_by' => $conversion->approved_by,
-        'remarks' => $conversion->remarks,
-        'created_at' => $conversion->created_at,
-        'updated_at' => $conversion->updated_at,
-        'employee' => $conversion->employee ? [
-            'employee_id' => $conversion->employee->employee_id,
-            'firstname' => $conversion->employee->firstname,
-            'lastname' => $conversion->employee->lastname,
-            'position' => $conversion->employee->position,
-            'monthly_salary' => $conversion->employee->monthly_salary,
-            'department' => $conversion->employee->department ? [
-                'id' => $conversion->employee->department->id,
-                'name' => $conversion->employee->department->name,
+        'employee' => $employee ? [
+            'firstname' => $employee->firstname,
+            'lastname' => $employee->lastname,
+            'position' => $employee->position,
+            'department' => $employee->department ? [
+                'name' => $employee->department->name,
             ] : null,
         ] : null,
-        'approver' => $conversion->approver ? [
-            'id' => $conversion->approver->id,
-            'name' => $conversion->approver->name,
-        ] : null,
+        'employee_name' => $employee ? $employee->firstname . ' ' . $employee->lastname : 'Unknown Employee',
+        'department' => $employee && $employee->department ? $employee->department->name : 'No Department',
+        'leave_type_code' => $conversion->leave_type,
+        'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+        'credits_requested' => (float) $conversion->credits_requested,
+        'equivalent_cash' => $calculatedCash,
+        'status' => $conversion->status,
+        'status_display' => $conversion->getStatusDisplay(),
+        'submitted_at' => $conversion->submitted_at?->format('Y-m-d H:i:s'),
+        'hr_approved_at' => $conversion->hr_approved_at?->format('Y-m-d H:i:s'),
+        'dept_head_approved_at' => $conversion->dept_head_approved_at?->format('Y-m-d H:i:s'),
+        'admin_approved_at' => $conversion->admin_approved_at?->format('Y-m-d H:i:s'),
+        'employee_remarks' => $conversion->employee_remarks,
+        'hr_remarks' => $conversion->hr_remarks,
+        'dept_head_remarks' => $conversion->dept_head_remarks,
+        'admin_remarks' => $conversion->admin_remarks,
+        'hr_approver_name' => $conversion->hrApprover->name ?? null,
+        'dept_head_approver_name' => $conversion->deptHeadApprover->name ?? null,
+        'admin_approver_name' => $conversion->adminApprover->name ?? null,
+        'current_approver_role' => $conversion->getCurrentApproverRole(),
+        'created_at' => $conversion->created_at?->format('Y-m-d H:i:s'),
+        'updated_at' => $conversion->updated_at?->format('Y-m-d H:i:s'),
     ];
+}
+/**
+ * Calculate cash equivalent using the same formula as CreditConversionService
+ */
+private function calculateCashEquivalent($monthlySalary, $credits)
+{
+    // Use the same formula as in CreditConversionService
+    $dailyRate = $monthlySalary / 22; // Assuming 22 working days per month
+    $cashValue = $dailyRate * $credits;
+    return round($cashValue, 2);
 }
 
 /**
- * Calculate cash equivalent using the same formula as employee side
+ * HR approves credit conversion request
  */
-private function calculateCashEquivalent($monthlySalary)
+public function approveCreditConversion(Request $request, $id)
 {
-    // Same formula as used in CreditConversionService
-    $cashValue = $monthlySalary * 10 * 0.0481927;
-    return round($cashValue, 2);
-}
-    /**
-     * Calculate cash equivalent using the same formula as employee side
-     */
+    \Log::info('=== HR APPROVAL START ===');
+    \Log::info('HR Approval Attempt', [
+        'conversion_id' => $id,
+        'user_id' => $request->user()->id,
+        'user_name' => $request->user()->name,
+        'user_role' => $request->user()->role,
+        'ip' => $request->ip()
+    ]);
 
+    // Validate the request
+    $validated = $request->validate([
+        'remarks' => ['nullable', 'string', 'max:500'],
+    ]);
 
-    /**
-     * Approve credit conversion request
-     */
-    public function approveCreditConversion(Request $request, $id)
-    {
-        $validated = $request->validate([
-            'remarks' => ['nullable', 'string', 'max:500'],
+    \Log::info('Validation passed', ['remarks' => $validated['remarks'] ?? 'No remarks']);
+
+    try {
+        \Log::info('Calling credit conversion service...');
+        
+        // Find the conversion first to check its current state
+        $conversionBefore = CreditConversion::find($id);
+        \Log::info('Conversion before approval', [
+            'id' => $conversionBefore->conversion_id,
+            'status' => $conversionBefore->status,
+            'employee_id' => $conversionBefore->employee_id,
+            'leave_type' => $conversionBefore->leave_type
         ]);
-    
-        try {
-            // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
-            $conversion = $this->creditConversionService->approveConversion(
-                $id,
-                $request->user()->id,
-                $validated['remarks']
-            );
-    
-            return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request approved and forwarded to Accounting Office!');
-        } catch (\Exception $e) {
-            return back()->withErrors(['error' => $e->getMessage()]);
-        }
-    }
 
-    /**
-     * Reject credit conversion request
-     */
-    public function rejectCreditConversion(Request $request, $id)
+        $conversion = $this->creditConversionService->hrApproveConversion(
+            $id,
+            $request->user()->id,
+            $validated['remarks'] ?? null
+        );
+
+        // Verify the conversion was updated
+        $conversionAfter = CreditConversion::find($id);
+        \Log::info('Conversion after approval', [
+            'status' => $conversionAfter->status,
+            'hr_approved_by' => $conversionAfter->hr_approved_by,
+            'hr_approved_at' => $conversionAfter->hr_approved_at
+        ]);
+
+        \Log::info('HR Approval Successful - Redirecting to credit conversions list');
+
+        return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request approved and forwarded to Department Head!');
+        
+    } catch (\Exception $e) {
+        \Log::error('HR Approval Failed', [
+            'conversion_id' => $id,
+            'error' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        return back()->with('error', 'Failed to approve conversion: ' . $e->getMessage());
+    }
+}
+/**
+ * HR approves credit conversion request
+ */
+
+
+/**
+ * Reject credit conversion request
+ */
+public function rejectCreditConversion(Request $request, $id)
 {
     $validated = $request->validate([
         'remarks' => ['required', 'string', 'max:500'],
     ]);
 
     try {
-        // USE THE INJECTED SERVICE INSTEAD OF CREATING NEW
         $conversion = $this->creditConversionService->rejectConversion(
             $id,
             $request->user()->id,
-            $validated['remarks']
+            $validated['remarks'],
+            'hr' // Rejected by HR
         );
 
         return redirect()->route('hr.credit-conversions')->with('success', 'Credit conversion request rejected successfully!');
@@ -1644,6 +1853,14 @@ private function calculateCashEquivalent($monthlySalary)
         return back()->withErrors(['error' => $e->getMessage()]);
     }
 }
+
+
+
+    /**
+     * Approve credit conversion request
+     */
+// HR approves credit conversion request
+
     // LEAVE RECALL REQUESTS MANAGEMENT
     
     /**
@@ -2064,6 +2281,7 @@ private function calculateImportedBalance($employeeId, $type, $importedAt)
  * Get monthly used leaves from logs (excluding late deductions)
  */
 /**
+ * 
  * Get monthly used leaves from logs (INCLUDING all deductions)
  */
 private function getMonthlyUsed($employeeId, $type, $year, $month)
@@ -2755,6 +2973,104 @@ public function exportAllRecordings(Request $request)
 //         return back()->with('error', 'Failed to generate PDF: ' . $e->getMessage());
 //     }
 // }
+
+
+public function holidays(Request $request)
+{
+    $perPage = 10;
+    
+    $holidays = Holiday::orderBy('date', 'asc')
+        ->when($request->search, function ($query, $search) {
+            return $query->where('name', 'like', "%{$search}%");
+        })
+        ->when($request->year, function ($query, $year) {
+            return $query->whereYear('date', $year);
+        })
+        ->when($request->type, function ($query, $type) {
+            return $query->where('type', $type);
+        })
+        ->paginate($perPage)
+        ->withQueryString();
+
+    // Get available years for filter
+    $availableYears = Holiday::selectRaw('YEAR(date) as year')
+        ->distinct()
+        ->orderBy('year', 'desc')
+        ->pluck('year');
+
+    return Inertia::render('HR/Holidays', [
+        'holidays' => $holidays,
+        'filters' => $request->only(['search', 'year', 'type']),
+        'availableYears' => $availableYears,
+    ]);
+}
+
+/**
+ * Store a newly created holiday
+ */
+public function storeHoliday(Request $request)
+{
+    $validated = $request->validate([
+        'name' => 'required|string|max:255',
+        'date' => 'required|date|unique:holidays,date',
+        'type' => 'required|in:Regular Holiday,Special Non-working Holiday',
+    ]);
+
+    try {
+        Holiday::create($validated);
+        
+        return redirect()->back()->with('success', 'Holiday created successfully!');
+    } catch (\Exception $e) {
+        \Log::error('Error creating holiday: ' . $e->getMessage());
+        return redirect()->back()->withErrors(['error' => 'Failed to create holiday: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Update the specified holiday
+ */
+public function updateHoliday(Request $request, Holiday $holiday)
+{
+    $validated = $request->validate([
+        'name' => 'required|string|max:255',
+        'date' => 'required|date|unique:holidays,date,' . $holiday->id,
+        'type' => 'required|in:Regular Holiday,Special Non-working Holiday',
+    ]);
+
+    try {
+        $holiday->update($validated);
+        
+        return redirect()->back()->with('success', 'Holiday updated successfully!');
+    } catch (\Exception $e) {
+        \Log::error('Error updating holiday: ' . $e->getMessage());
+        return redirect()->back()->withErrors(['error' => 'Failed to update holiday: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Remove the specified holiday
+ */
+public function destroyHoliday(Holiday $holiday)
+{
+    try {
+        $holiday->delete();
+        
+        return redirect()->back()->with('success', 'Holiday deleted successfully!');
+    } catch (\Exception $e) {
+        \Log::error('Error deleting holiday: ' . $e->getMessage());
+        return redirect()->back()->withErrors(['error' => 'Failed to delete holiday: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Get holiday dates for date picker
+ */
+public function getHolidayDates()
+{
+    $holidays = Holiday::select('date', 'type')->get();
+    
+    return response()->json($holidays);
+}
 
 
 }

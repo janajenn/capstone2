@@ -12,12 +12,12 @@ import {
     ChartBarIcon,
     ChevronLeftIcon,
     ChevronRightIcon,
-    XMarkIcon,
+    ArrowRightOnRectangleIcon,
     ArrowPathIcon,
     CalendarIcon,
     CurrencyDollarIcon,
     BuildingOfficeIcon,
-    Cog6ToothIcon
+    ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 
 export default function DeptHeadLayout({ children }) {
@@ -35,27 +35,21 @@ export default function DeptHeadLayout({ children }) {
 
     const handleLogout = () => {
         Swal.fire({
-            title: 'Are you sure?',
-            text: "You will be logged out of your account.",
+            title: 'Confirm Logout',
+            text: "Are you sure you want to log out of your Department Head account?",
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#3085d6',
-            cancelButtonColor: '#d33',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
             confirmButtonText: 'Yes, Logout',
             cancelButtonText: 'Cancel',
             background: '#ffffff',
-            backdrop: `
-                rgba(0, 0, 0, 0.4)
-                url("/images/nyan-cat.gif")
-                left top
-                no-repeat
-            `,
             customClass: {
-                popup: 'rounded-xl shadow-2xl',
-                title: 'text-xl font-semibold text-gray-800',
+                popup: 'rounded-2xl shadow-2xl border border-gray-200',
+                title: 'text-xl font-bold bg-gradient-to-r from-gray-800 to-yellow-800 bg-clip-text text-transparent',
                 htmlContainer: 'text-gray-600',
-                confirmButton: 'px-6 py-2 rounded-lg font-medium',
-                cancelButton: 'px-6 py-2 rounded-lg font-medium'
+                confirmButton: 'px-6 py-2 rounded-xl font-medium bg-gradient-to-r from-rose-500 to-red-600 text-white hover:shadow-lg transition-all duration-300',
+                cancelButton: 'px-6 py-2 rounded-xl font-medium bg-gradient-to-r from-gray-500 to-gray-600 text-white hover:shadow-lg transition-all duration-300'
             },
             buttonsStyling: false,
             reverseButtons: true
@@ -71,8 +65,7 @@ export default function DeptHeadLayout({ children }) {
         { href: '/dept-head/leave-requests', label: 'Leave Approvals', icon: DocumentTextIcon },
         { href: '/dept-head/employees', label: 'Team Management', icon: UserGroupIcon },
         { href: '/dept-head/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
-        // { href: '/dept-head/recall-requests', label: 'Recall Requests', icon: ArrowPathIcon },
-        // { href: '/dept-head/chart-data', label: 'Analytics', icon: ChartBarIcon },
+        { href: '/dept-head/credit-conversions', label: 'Credit Conversion', icon: CurrencyDollarIcon }, // Add this line
     ];
 
     const employeeNavigation = [
@@ -80,56 +73,63 @@ export default function DeptHeadLayout({ children }) {
         { href: '/employee/my-leave-requests', label: 'My Leave Requests', icon: DocumentTextIcon },
         { href: '/employee/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
         { href: '/employee/credit-conversion', label: 'Credit Conversion', icon: CurrencyDollarIcon },
+        { href: '/employee/attendance-logs', label: 'Attendance Logs', icon: ChartBarIcon },
     ];
 
     const currentNavigation = mode === "dept_head" ? deptHeadNavigation : employeeNavigation;
 
     return (
-        <div className="flex min-h-screen bg-gray-50">
-            {/* Modern Sidebar */}
-            <div className={`fixed inset-y-0 left-0 transition-all duration-300 flex flex-col z-50 ${
-                collapsed ? 'w-20' : 'w-72'
+        <div className="flex min-h-screen bg-gradient-to-br from-slate-50 via-yellow-50 to-amber-100">
+            {/* Enhanced Modern Sidebar */}
+            <div className={`fixed inset-y-0 left-0 transition-all duration-500 flex flex-col z-50 ${
+                collapsed ? 'w-16' : 'w-64'
             }`}>
-                {/* Sidebar with gradient background */}
-                <div className="flex-1 flex flex-col bg-gradient-to-b from-gray-900 to-gray-800 border-r border-gray-700/50 shadow-2xl">
+                {/* Sidebar with glass morphism effect */}
+                <div className="flex-1 flex flex-col bg-white/80 backdrop-blur-xl border-r border-white/20 shadow-2xl">
                     
-                    {/* Header Section */}
-                    <div className="p-6 border-b border-gray-700/50">
+                    {/* Header Section with Gradient */}
+                    <div className="p-4 border-b border-white/30">
                         <div className={`flex items-center justify-between transition-all duration-300 ${
                             collapsed ? 'flex-col space-y-3' : 'space-x-3'
                         }`}>
                             {!collapsed ? (
                                 <>
                                     <div className="flex items-center space-x-3">
-                                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                                            <BuildingOfficeIcon className="h-6 w-6 text-white" />
+                                        <div className="relative">
+                                            <div className="w-10 h-10 bg-gradient-to-br from-yellow-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
+                                                <BuildingOfficeIcon className="h-5 w-5 text-white" />
+                                            </div>
+                                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-r from-emerald-400 to-green-500 rounded-full border-2 border-white"></div>
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <h1 className="font-bold text-lg text-white truncate">
-                                                {mode === "dept_head" ? "Department Head" : "Employee"}
+                                            <h1 className="font-bold text-sm bg-gradient-to-r from-gray-800 to-yellow-800 bg-clip-text text-transparent">
+                                                {mode === "dept_head" ? "Dept Head Portal" : "Employee"}
                                             </h1>
-                                            <p className="text-xs text-gray-400 truncate">
-                                                {props.auth.user.name}
+                                            <p className="text-sm text-gray-600 truncate mt-0.5">
+                                                Department Leadership
                                             </p>
                                         </div>
                                     </div>
                                     <button 
                                         onClick={toggleSidebar}
-                                        className="p-2 rounded-xl bg-gray-700/50 hover:bg-gray-600/50 transition-all duration-200 group"
+                                        className="p-1.5 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all duration-300 group hover:scale-105 hover:shadow-lg"
                                     >
-                                        <ChevronLeftIcon className="h-4 w-4 text-gray-300 group-hover:text-white" />
+                                        <ChevronLeftIcon className="h-3 w-3 text-gray-700 group-hover:text-yellow-600 transition-colors" />
                                     </button>
                                 </>
                             ) : (
                                 <>
-                                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                                        <BuildingOfficeIcon className="h-6 w-6 text-white" />
+                                    <div className="relative">
+                                        <div className="w-10 h-10 bg-gradient-to-br from-yellow-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
+                                            <BuildingOfficeIcon className="h-5 w-5 text-white" />
+                                        </div>
+                                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-gradient-to-r from-emerald-400 to-green-500 rounded-full border-2 border-white"></div>
                                     </div>
                                     <button 
                                         onClick={toggleSidebar}
-                                        className="p-2 rounded-xl bg-gray-700/50 hover:bg-gray-600/50 transition-all duration-200 group"
+                                        className="p-1.5 rounded-lg bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all duration-300 group hover:scale-105 hover:shadow-lg"
                                     >
-                                        <ChevronRightIcon className="h-4 w-4 text-gray-300 group-hover:text-white" />
+                                        <ChevronRightIcon className="h-3 w-3 text-gray-700 group-hover:text-yellow-600 transition-colors" />
                                     </button>
                                 </>
                             )}
@@ -137,7 +137,7 @@ export default function DeptHeadLayout({ children }) {
                     </div>
 
                     {/* Navigation Menu */}
-                    <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+                    <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
                         {currentNavigation.map((item) => {
                             const IconComponent = item.icon;
                             const isActive = isActiveLink(item.href);
@@ -146,173 +146,208 @@ export default function DeptHeadLayout({ children }) {
                                 <Link 
                                     key={item.href}
                                     href={item.href} 
-                                    className={`flex items-center p-3 rounded-xl transition-all duration-200 group relative overflow-hidden ${
+                                    className={`group relative flex items-center p-2 rounded-xl transition-all duration-300 overflow-hidden ${
                                         isActive 
-                                            ? 'bg-white/10 text-white shadow-lg shadow-blue-500/25 backdrop-blur-sm' 
-                                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                                            ? 'bg-gradient-to-r from-yellow-500 to-amber-600 text-white shadow-lg transform scale-105' 
+                                            : 'text-gray-700 hover:bg-white/60 hover:shadow-md hover:scale-105 backdrop-blur-sm'
                                     }`}
                                 >
-                                    {/* Active indicator */}
+                                    {/* Animated background for active state */}
                                     {isActive && (
-                                        <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-blue-400 to-purple-500 rounded-r-full"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-r from-yellow-500 to-amber-600 opacity-100"></div>
                                     )}
                                     
-                                    <div className={`relative flex items-center ${
-                                        collapsed ? 'justify-center' : 'space-x-3'
+                                    {/* Hover gradient effect */}
+                                    <div className={`absolute inset-0 bg-gradient-to-r from-yellow-500 to-amber-600 opacity-0 transition-opacity duration-300 group-hover:opacity-100 ${
+                                        isActive ? 'opacity-100' : ''
+                                    }`}></div>
+                                    
+                                    <div className={`relative flex items-center z-10 ${
+                                        collapsed ? 'justify-center' : 'space-x-2'
                                     }`}>
-                                        <div className={`p-2 rounded-lg transition-all duration-200 ${
+                                        <div className={`p-1.5 rounded-lg transition-all duration-300 ${
                                             isActive 
-                                                ? 'bg-white/20' 
-                                                : 'bg-gray-700/50 group-hover:bg-white/10'
+                                                ? 'bg-white/20 text-white' 
+                                                : 'bg-white/80 text-gray-700 group-hover:bg-white group-hover:text-yellow-600'
                                         }`}>
-                                            <IconComponent className={`h-5 w-5 ${
-                                                isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
+                                            <IconComponent className={`h-4 w-4 ${
+                                                isActive ? 'text-white' : 'text-gray-600 group-hover:text-yellow-600'
                                             }`} />
                                         </div>
                                         
                                         {!collapsed && (
-                                            <span className={`font-medium transition-all duration-200 ${
-                                                isActive ? 'text-white' : 'text-gray-300 group-hover:text-white'
+                                            <span className={`text-sm font-medium transition-all duration-300 ${
+                                                isActive ? 'text-white' : 'text-gray-700 group-hover:text-gray-900'
                                             }`}>
                                                 {item.label}
                                             </span>
                                         )}
                                     </div>
 
-                                    {/* Tooltip for collapsed state */}
+                                    {/* Active indicator bar */}
+                                    {isActive && !collapsed && (
+                                        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 w-1 h-6 bg-white/40 rounded-full"></div>
+                                    )}
+
+                                    {/* Enhanced Tooltip for collapsed state */}
                                     {collapsed && (
-                                        <div className="absolute left-full ml-3 px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-xl z-50 border border-gray-700">
+                                        <div className="absolute left-full ml-2 px-2 py-1.5 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10">
                                             {item.label}
                                             {/* Tooltip arrow */}
-                                            <div className="absolute right-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-r-gray-900"></div>
+                                            <div className="absolute right-full top-1/2 transform -translate-y-1/2 border-3 border-transparent border-r-gray-900/95"></div>
                                         </div>
                                     )}
                                 </Link>
                             );
                         })}
 
-                        {/* Role Switch Button */}
+                        {/* Enhanced Role Switch Button */}
                         {(userRole === "dept_head" || userRole === "hr" || userRole === "admin") && (
-                            <div className="pt-4 mt-4 border-t border-gray-700/50">
-                                <RoleSwitchButton 
-                                    collapsed={collapsed} 
-                                    currentMode={mode} 
-                                    modernDesign={true}
-                                />
+                            <div className="pt-4 mt-2 border-t border-white/30">
+                                <div className={`p-2 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 ${
+                                    collapsed ? 'text-center' : ''
+                                }`}>
+                                    <RoleSwitchButton 
+                                        collapsed={collapsed} 
+                                        currentMode={mode} 
+                                        modernDesign={true}
+                                        colorScheme="gradient"
+                                    />
+                                </div>
                             </div>
                         )}
                     </nav>
 
-                    {/* Footer Section */}
-                    <div className="p-4 border-t border-gray-700/50">
+                    {/* Enhanced Footer Section - Removed Logout */}
+                    <div className="p-3 border-t border-white/30">
                         {/* User Info */}
                         {!collapsed && (
-                            <div className="flex items-center space-x-3 p-3 rounded-xl bg-gray-700/30 mb-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                                    {props.auth.user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-white truncate">
-                                        {props.auth.user.name}
-                                    </p>
-                                    <p className="text-xs text-gray-400 truncate">
-                                        {props.auth.role?.toUpperCase()}
-                                    </p>
+                            <div className="p-2 rounded-xl bg-gradient-to-r from-slate-100 to-yellow-100/50 backdrop-blur-sm border border-white/40">
+                                <div className="flex items-center space-x-2">
+                                    <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-lg flex items-center justify-center shadow-md">
+                                        <span className="text-white font-bold text-xs">
+                                            {props.auth.user.name.split(' ').map(n => n[0]).join('')}
+                                        </span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-semibold text-gray-800 truncate">
+                                            {props.auth.user.name}
+                                        </p>
+                                        <p className="text-xs text-gray-600 truncate">
+                                            {userRole === 'dept_head' ? 'Department Head' : userRole === 'admin' ? 'Administrator' : 'HR Manager'}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         )}
-
-                        {/* Logout Button */}
-                        <button
-                            onClick={handleLogout}
-                            className={`flex items-center w-full p-3 rounded-xl transition-all duration-200 group relative overflow-hidden ${
-                                collapsed ? 'justify-center' : ''
-                            } bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-white border border-red-500/20 hover:border-red-500/30`}
-                        >
-                            <XMarkIcon className="h-5 w-5 flex-shrink-0" />
-                            {!collapsed && (
-                                <span className="ml-3 font-medium">Logout</span>
-                            )}
-                            {collapsed && (
-                                <div className="absolute left-full ml-3 px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-xl z-50 border border-gray-700">
-                                    Logout
-                                    <div className="absolute right-full top-1/2 transform -translate-y-1/2 border-4 border-transparent border-r-gray-900"></div>
-                                </div>
-                            )}
-                        </button>
                     </div>
                 </div>
             </div>
 
             {/* Main Content Area */}
-            <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${
-                collapsed ? 'ml-20' : 'ml-72'
+            <div className={`flex-1 flex flex-col min-h-screen transition-all duration-500 ${
+                collapsed ? 'ml-16' : 'ml-64'
             }`}>
-                {/* Modern Header */}
-                <header className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm z-10 sticky top-0">
-                    <div className="flex items-center justify-between px-8 py-4">
+                {/* Enhanced Header with Logout */}
+                <header className="bg-white/80 backdrop-blur-xl border-b border-white/20 shadow-lg z-10 sticky top-0">
+                    <div className="flex items-center justify-between px-6 py-3">
                         <div>
-                            <h2 className="text-xl font-bold text-gray-800">
-                                {getPageTitle(url)}
+                            <h2 className="text-xl font-bold bg-gradient-to-r from-gray-800 to-yellow-800 bg-clip-text text-transparent">
+                                {getDeptHeadPageTitle(url)}
                             </h2>
-                            <p className="text-sm text-gray-500 mt-1">
-                                {getPageSubtitle(url, props.auth.user.name)}
+                            <p className="text-sm text-gray-600 mt-0.5">
+                                {getDeptHeadPageSubtitle(url, props.auth.user.name)}
                             </p>
                         </div>
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3">
                             <DeptHeadNotificationDropdown />
-                            <span className={`px-4 py-2 rounded-full text-sm font-medium ${
+                            
+                            {/* User Info and Logout in Header */}
+                            <div className="flex items-center space-x-3">
+                                {/* Logout Button in Header */}
+                                <button
+                                    onClick={handleLogout}
+                                    className="group relative flex items-center p-2 rounded-xl bg-gradient-to-r from-rose-100 to-red-100/50 hover:from-rose-200 hover:to-red-200 backdrop-blur-sm border border-rose-200/50 hover:border-rose-300 hover:shadow-lg transition-all duration-300"
+                                    title="Logout"
+                                >
+                                    {/* Animated background */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500 to-red-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl"></div>
+                                    
+                                    <div className="relative z-10 flex items-center">
+                                        <div className="p-1.5 rounded-lg bg-white/80 group-hover:bg-white/20 transition-all duration-300">
+                                            <ArrowRightOnRectangleIcon className="h-4 w-4 text-rose-600 group-hover:text-white transition-colors" />
+                                        </div>
+                                    </div>
+
+                                    {/* Tooltip */}
+                                    <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 px-2 py-1.5 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10">
+                                        Logout
+                                        <div className="absolute left-1/2 -top-1 transform -translate-x-1/2 border-3 border-transparent border-b-gray-900/95"></div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            <span className={`px-3 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r ${
                                 mode === "dept_head" 
-                                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' 
-                                    : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
-                            } shadow-lg`}>
-                                {mode === "dept_head" ? "👑 Department Head" : "💼 Employee Mode"}
+                                    ? 'from-yellow-500 to-amber-600 text-white' 
+                                    : 'from-cyan-500 to-blue-600 text-white'
+                            } shadow-lg backdrop-blur-sm`}>
+                                {mode === "dept_head" ? "👑 Dept Head" : "💼 Employee"}
                             </span>
                         </div>
                     </div>
                 </header>
                 
                 {/* Page Content */}
-                <main className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-blue-50/30">
+                <main className="flex-1 overflow-auto">
                     <PageTransition animation="fade-slide-up" duration={400} delay={100} className="p-6">
                         {children}
                     </PageTransition>
                 </main>
             </div>
+
+            {/* Animated Background Elements */}
+            <div className="fixed inset-0 -z-10 overflow-hidden">
+                <div className="absolute -top-40 -right-32 w-80 h-80 bg-gradient-to-r from-yellow-200 to-amber-200 rounded-full blur-3xl opacity-30 animate-pulse"></div>
+                <div className="absolute -bottom-40 -left-32 w-80 h-80 bg-gradient-to-r from-amber-200 to-orange-200 rounded-full blur-3xl opacity-30 animate-pulse delay-1000"></div>
+            </div>
         </div>
     );
 }
 
-// Helper function to get page title based on URL
-function getPageTitle(url) {
+// Helper function to get Department Head page title based on URL
+function getDeptHeadPageTitle(url) {
     const routes = {
-        '/dept-head/dashboard': 'Dashboard Overview',
+        '/dept-head/dashboard': 'Department Analytics Dashboard',
         '/dept-head/leave-requests': 'Leave Approvals',
         '/dept-head/employees': 'Team Management',
         '/dept-head/leave-calendar': 'Leave Calendar',
-        '/dept-head/recall-requests': 'Recall Requests',
+        '/dept-head/credit-conversions': 'Credit Conversion Approvals', // Add this line
         '/employee/dashboard': 'My Dashboard',
         '/employee/my-leave-requests': 'My Leave Requests',
         '/employee/leave-calendar': 'Leave Calendar',
-        '/employee/credit-conversion': 'Credit Conversion'
+        '/employee/credit-conversion': 'Credit Conversion',
+        '/employee/attendance-logs': 'Attendance Logs'
     };
     
     for (const [route, title] of Object.entries(routes)) {
         if (url.startsWith(route)) return title;
     }
-    return 'Dashboard';
+    return 'Department Analytics Dashboard';
 }
 
-// Helper function to get page subtitle
-function getPageSubtitle(url, userName) {
+// Helper function to get Department Head page subtitle
+function getDeptHeadPageSubtitle(url, userName) {
     if (url.startsWith('/dept-head/dashboard')) {
-        return `Welcome back, ${userName}. Here's your team overview.`;
+        return `Welcome back, ${userName}. Comprehensive department insights and analytics.`;
     } else if (url.startsWith('/dept-head/leave-requests')) {
         return 'Review and approve leave requests from your team';
     } else if (url.startsWith('/dept-head/employees')) {
-        return 'Manage your team members and their information';
+        return 'Manage team members and department structure';
     } else if (url.startsWith('/dept-head/leave-calendar')) {
-        return 'View scheduled leaves across your department';
+        return 'Visualize and manage department leave schedule';
+    } else if (url.startsWith('/dept-head/credit-conversions')) {
+        return 'Approve credit conversion requests from your team members'; // Add this line
     }
-    return `Hello, ${userName}`;
+    return `Welcome, ${userName}. Streamlined employee self-service portal.`;
 }

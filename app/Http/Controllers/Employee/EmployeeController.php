@@ -17,6 +17,7 @@ use App\Models\User;
 use Illuminate\Pagination\Paginator;
 use App\Services\NotificationService;
 use App\Models\LeaveApproval;
+use App\Models\Holiday;
 
 
 
@@ -100,6 +101,19 @@ public function showLeaveRequest(Request $request)
             });
     }
 
+    // Fetch holidays from the database
+    $holidays = \App\Models\Holiday::select('date', 'name', 'type')
+        ->where('date', '>=', now()->startOfYear())
+        ->orderBy('date')
+        ->get()
+        ->map(function ($holiday) {
+            return [
+                'date' => $holiday->date,
+                'name' => $holiday->name,
+                'type' => $holiday->type,
+            ];
+        });
+
     return Inertia::render('Employee/RequestLeave', [
         'leaveTypes' => $leaveTypes,
         'existingRequests' => $existingRequests,
@@ -108,7 +122,8 @@ public function showLeaveRequest(Request $request)
             'vl' => $leaveCredit->vl_balance ?? 0,
         ],
         'leaveBalances' => $leaveBalances,
-        'employeeGender' => $user->employee->gender ?? null, // Add this line
+        'employeeGender' => $user->employee->gender ?? null,
+        'holidays' => $holidays, // Add holidays to the props
     ]);
 }
 
@@ -122,10 +137,13 @@ public function submitLeaveRequest(Request $request)
         abort(400, 'Employee profile not found for user.');
     }
 
+    // Updated validation to handle selectedDates array
     $validated = $request->validate([
         'leave_type_id' => ['required', 'exists:leave_types,id'],
-        'date_from' => ['required', 'date'],
-        'date_to' => ['required', 'date', 'after_or_equal:date_from'],
+        'selectedDates' => ['required', 'array', 'min:1'],
+        'selectedDates.*' => ['required', 'date'],
+        'date_from' => ['sometimes', 'date'], // Keep for compatibility
+        'date_to' => ['sometimes', 'date'],   // Keep for compatibility
         'reason' => ['required', 'string'],
         'details' => ['required', 'string'],
         'attachment' => ['nullable', 'file', 'max:10240'],
@@ -136,16 +154,22 @@ public function submitLeaveRequest(Request $request)
     $leaveType = LeaveType::findOrFail($validated['leave_type_id']);
     $code = strtoupper($leaveType->code);
 
-    // Get working days
+    // Use selectedDates array to calculate date range and working days
+    $selectedDates = $validated['selectedDates'];
+    sort($selectedDates); // Ensure dates are in order
+    
+    // Set date_from and date_to from the selected dates
+    $dateFrom = min($selectedDates);
+    $dateTo = max($selectedDates);
+
+    // Calculate working days (excluding weekends)
     $workingDays = $request->input('working_days') ?? 0;
     if ($workingDays === 0) {
-        $startDate = new \DateTime($validated['date_from']);
-        $endDate = new \DateTime($validated['date_to']);
         $workingDays = 0;
-
-        for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
-            $dayOfWeek = $date->format('N');
-            if ($dayOfWeek < 6) {
+        foreach ($selectedDates as $date) {
+            $dateObj = new \DateTime($date);
+            $dayOfWeek = $dateObj->format('N'); // 1-7 (Monday-Sunday)
+            if ($dayOfWeek < 6) { // 1-5 are weekdays
                 $workingDays++;
             }
         }
@@ -199,22 +223,22 @@ public function submitLeaveRequest(Request $request)
         }
     }
 
-    // Check for overlapping requests (still block overlapping requests)
+    // Check for overlapping requests using the date range
     $overlappingRequest = LeaveRequest::where('employee_id', $employeeId)
         ->whereIn('status', ['pending', 'approved'])
-        ->where(function ($query) use ($validated) {
-            $query->whereBetween('date_from', [$validated['date_from'], $validated['date_to']])
-                ->orWhereBetween('date_to', [$validated['date_from'], $validated['date_to']])
-                ->orWhere(function ($q) use ($validated) {
-                    $q->where('date_from', '<=', $validated['date_from'])
-                        ->where('date_to', '>=', $validated['date_to']);
+        ->where(function ($query) use ($dateFrom, $dateTo) {
+            $query->whereBetween('date_from', [$dateFrom, $dateTo])
+                ->orWhereBetween('date_to', [$dateFrom, $dateTo])
+                ->orWhere(function ($q) use ($dateFrom, $dateTo) {
+                    $q->where('date_from', '<=', $dateFrom)
+                        ->where('date_to', '>=', $dateTo);
                 });
         })
         ->first();
 
     if ($overlappingRequest) {
         return back()->withErrors([
-            'date_from' => 'The selected dates overlap with an existing leave request.',
+            'selectedDates' => 'The selected dates overlap with an existing leave request.',
         ])->withInput();
     }
 
@@ -260,8 +284,8 @@ public function submitLeaveRequest(Request $request)
     $leaveRequest = LeaveRequest::create([
         'employee_id' => $employeeId,
         'leave_type_id' => $validated['leave_type_id'],
-        'date_from' => $validated['date_from'],
-        'date_to' => $validated['date_to'],
+        'date_from' => $dateFrom,
+        'date_to' => $dateTo,
         'reason' => $validated['reason'],
         'status' => $status, // Use special status for dept heads
         'attachment_path' => $attachmentPath,
@@ -269,6 +293,7 @@ public function submitLeaveRequest(Request $request)
         'days_without_pay' => $daysWithoutPay,
         'total_days' => $workingDays,
         'is_dept_head_request' => $isDeptHead, // Add this flag
+        'selected_dates' => json_encode($selectedDates), // Store the actual selected dates
     ]);
 
     // Save details
@@ -286,34 +311,34 @@ public function submitLeaveRequest(Request $request)
     }
 
     // 🔔 Send notifications to HR, Department Head, and Admin
-        try {
-            $this->notificationService->notifyLeaveRequestSubmission($leaveRequest);
-        } catch (\Exception $e) {
-            \Log::error('Failed to send leave request notifications: ' . $e->getMessage());
-        }
+    try {
+        $this->notificationService->notifyLeaveRequestSubmission($leaveRequest);
+    } catch (\Exception $e) {
+        \Log::error('Failed to send leave request notifications: ' . $e->getMessage());
+    }
 
-        // 🔔 Create employee notification for the requester
-        try {
-            $employeeName = $user->employee->firstname . ' ' . $user->employee->lastname;
-            $leaveTypeName = $leaveRequest->leaveType->name;
-            $dateFromFormatted = \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y');
-            $dateToFormatted = \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y');
+    // 🔔 Create employee notification for the requester
+    try {
+        $employeeName = $user->employee->firstname . ' ' . $user->employee->lastname;
+        $leaveTypeName = $leaveRequest->leaveType->name;
+        $dateFromFormatted = \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y');
 
-            $this->notificationService->createEmployeeNotification(
-                $employeeId,
-                'leave_request_submitted',
-                'Leave Request Submitted',
-                "Your {$leaveTypeName} leave request from {$dateFromFormatted} to {$dateToFormatted} has been submitted successfully and is pending approval.",
-                [
-                    'request_id' => $leaveRequest->id,
-                    'leave_type' => $leaveTypeName,
-                    'date_from' => $leaveRequest->date_from,
-                    'date_to' => $leaveRequest->date_to,
-                ]
-            );
-        } catch (\Exception $e) {
-            \Log::error('Failed to create employee notification: ' . $e->getMessage());
-        }
+        $this->notificationService->createEmployeeNotification(
+            $employeeId,
+            'leave_request_submitted',
+            'Leave Request Submitted',
+            "Your {$leaveTypeName} leave request from {$dateFromFormatted} to {$dateToFormatted} has been submitted successfully and is pending approval.",
+            [
+                'request_id' => $leaveRequest->id,
+                'leave_type' => $leaveTypeName,
+                'date_from' => $leaveRequest->date_from,
+                'date_to' => $leaveRequest->date_to,
+            ]
+        );
+    } catch (\Exception $e) {
+        \Log::error('Failed to create employee notification: ' . $e->getMessage());
+    }
 
     return redirect()->route('employee.my-leave-requests')->with('success', 'Leave request submitted successfully!');
 }
@@ -919,6 +944,9 @@ private function calculateCashEquivalent($monthlySalary)
     $cashValue = $monthlySalary * 10 * 0.0481927;
     return round($cashValue, 2);
 }
+
+
+
 
     /**
  * Update leave request status based on approvals

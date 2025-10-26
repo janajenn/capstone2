@@ -9,7 +9,13 @@ class LeaveRequest extends Model
 {
     use HasFactory;
 
-     protected $fillable = ['employee_id', 'leave_type_id', 'date_from', 'date_to', 'reason', 'status', 'attachment_path', 'days_with_pay', 'days_without_pay'];
+     protected $fillable = ['employee_id', 'leave_type_id', 'date_from', 'date_to','selected_days', 'reason', 'status', 'attachment_path', 'days_with_pay', 'days_without_pay'];
+
+
+     protected $casts = [
+        'selected_dates' => 'array'
+
+     ];
 
     public function employee()
     {

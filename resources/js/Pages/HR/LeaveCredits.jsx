@@ -4,6 +4,92 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 
+// Avatar component matching the design system
+const EmployeeAvatar = ({ employee, className = "w-10 h-10" }) => {
+    const getInitials = () => {
+        if (!employee) return '??';
+        const firstInitial = employee.firstname ? employee.firstname[0] : '';
+        const lastInitial = employee.lastname ? employee.lastname[0] : '';
+        return (firstInitial + lastInitial).toUpperCase();
+    };
+
+    const getFullName = () => {
+        if (!employee) return 'Unknown Employee';
+        return `${employee.firstname || ''} ${employee.lastname || ''}`.trim();
+    };
+
+    return (
+        <div className={`${className} bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-bold text-sm shadow-lg`}>
+            {getInitials()}
+        </div>
+    );
+};
+
+// Status badge for leave credits
+const LeaveBalanceBadge = ({ balance, type }) => {
+    const getConfig = (type) => {
+        const configs = {
+            sl: {
+                gradient: 'from-blue-500 to-indigo-600',
+                label: 'SL'
+            },
+            vl: {
+                gradient: 'from-emerald-500 to-green-600',
+                label: 'VL'
+            }
+        };
+        return configs[type] || configs.sl;
+    };
+
+    const config = getConfig(type);
+
+    return (
+        <div className={`bg-gradient-to-r ${config.gradient} text-white rounded-2xl px-4 py-3 text-center shadow-lg`}>
+            <div className="text-xs font-medium opacity-90">{config.label}</div>
+            <div className="text-xl font-bold mt-1">{balance || 0}</div>
+            <div className="text-xs opacity-80">days</div>
+        </div>
+    );
+};
+
+// Modal component for consistent styling
+const Modal = ({ isOpen, onClose, title, children, actions }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+            
+            <div className="relative bg-white/95 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl w-full max-w-md transform transition-all">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
+                    <button
+                        onClick={onClose}
+                        className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="px-6 py-4">
+                    {children}
+                </div>
+
+                {/* Actions */}
+                {actions && (
+                    <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+                        {actions}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 export default function LeaveCredits({ 
     employees, 
     alreadyCredited, 
@@ -23,21 +109,18 @@ export default function LeaveCredits({
     const [searchTerm, setSearchTerm] = useState(filters?.search || '');
     const searchInputRef = useRef(null);
 
-    // Use the form hook
     const { data, setData, put, reset, processing } = useForm({
         sl_balance: '',
         vl_balance: '',
         imported_at: '',
     });
 
-    // Auto-show warning modal when component loads with showCreditWarning
     useEffect(() => {
         if (showCreditWarning) {
             setIsWarningModalOpen(true);
         }
     }, [showCreditWarning]);
 
-    // Debounced search function
     const debouncedSearch = useCallback(
         debounce((term, department) => {
             router.get(route('hr.leave-credits'), {
@@ -53,13 +136,11 @@ export default function LeaveCredits({
         []
     );
 
-    // Handle search input change
     const handleSearchChange = (term) => {
         setSearchTerm(term);
         debouncedSearch(term, selectedDepartment);
     };
 
-    // Handle department filter change
     const handleFilterChange = (departmentId) => {
         setSelectedDepartment(departmentId);
         router.get(route('hr.leave-credits'), {
@@ -73,7 +154,6 @@ export default function LeaveCredits({
         });
     };
 
-    // Handle pagination
     const handlePageChange = (page) => {
         router.get(route('hr.leave-credits'), {
             search: searchTerm || null,
@@ -86,7 +166,6 @@ export default function LeaveCredits({
         });
     };
 
-    // Clear all filters
     const clearAllFilters = () => {
         setSearchTerm('');
         setSelectedDepartment('');
@@ -101,31 +180,18 @@ export default function LeaveCredits({
     };
 
     const openModal = (employee) => {
-        console.log('Opening modal for employee:', {
-            employeeId: employee.employee_id,
-            employeeName: getFullName(employee),
-            leave_credit: employee.leave_credit,
-            imported_at: employee.leave_credit?.imported_at
-        });
-        
         setSelectedEmployee(employee);
         
         const leaveCredit = employee.leave_credit || {};
         
-        // Convert the ISO date to YYYY-MM-DD format for the date input
         const formatDateForInput = (dateString) => {
             if (!dateString) return '';
-            
-            // If it's already in YYYY-MM-DD format, return as is
             if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
                 return dateString;
             }
-            
-            // If it's an ISO string like "2025-08-01T00:00:00.000000Z"
             if (typeof dateString === 'string') {
                 return dateString.split('T')[0];
             }
-            
             return '';
         };
         
@@ -154,8 +220,6 @@ export default function LeaveCredits({
         put(route('hr.leave-credits.update', selectedEmployee.employee_id), {
             onSuccess: () => {
                 closeModal();
-                
-                // Refresh the page data to get updated employee information
                 router.reload({ 
                     only: ['employees'],
                     preserveScroll: true,
@@ -167,7 +231,11 @@ export default function LeaveCredits({
                     title: 'Success',
                     text: 'Leave credits updated successfully.',
                     timer: 3000,
-                    showConfirmButton: false
+                    showConfirmButton: false,
+                    background: '#ffffff',
+                    customClass: {
+                        popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                    }
                 });
             },
             onError: (errors) => {
@@ -175,53 +243,17 @@ export default function LeaveCredits({
                     icon: 'error',
                     title: 'Error',
                     text: 'Failed to update leave credits. Please try again.',
-                    confirmButtonText: 'OK'
+                    confirmButtonText: 'OK',
+                    background: '#ffffff',
+                    customClass: {
+                        popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                    }
                 });
             }
         });
     };
 
-    const handleMonthlyCredit = () => {
-        if (alreadyCredited) {
-            const monthYear = `${creditedMonth} ${creditedYear}`;
-            Swal.fire({
-                icon: 'warning',
-                title: 'Already Added',
-                text: `Leave credits for ${monthYear} have already been added.`,
-                confirmButtonText: 'OK'
-            });
-            return;
-        }
-
-        router.post(route('hr.leave-credits.monthly-add'), {}, {
-            preserveScroll: true,
-            onSuccess: (page) => {
-                const { creditedMonth, creditedYear } = page.props;
-                const monthYear = `${creditedMonth} ${creditedYear}`;
-
-                // Close warning modal if it's open
-                setIsWarningModalOpen(false);
-
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success',
-                    text: `Monthly leave credits for ${monthYear} were successfully added.`,
-                    timer: 3000,
-                    showConfirmButton: false
-                });
-            },
-            onError: (errors) => {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Failed to add monthly credits. Please try again.',
-                    confirmButtonText: 'OK'
-                });
-            }
-        });
-    };
-
-    // Generate pagination links
+   
     const renderPagination = () => {
         if (!employees.links || employees.links.length <= 3) return null;
 
@@ -236,12 +268,13 @@ export default function LeaveCredits({
                             key={index}
                             onClick={() => link.url && handlePageChange(link.url.split('page=')[1])}
                             disabled={!link.url}
-                            className={`px-3 py-1 rounded-md text-sm font-medium ${link.active
-                                    ? 'bg-blue-600 text-white'
+                            className={`px-3 py-1 rounded-xl text-sm font-medium ${
+                                link.active
+                                    ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white'
                                     : link.url
-                                        ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                                        : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                                }`}
+                                    ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                            }`}
                             dangerouslySetInnerHTML={{ __html: link.label }}
                         />
                     ))}
@@ -250,15 +283,6 @@ export default function LeaveCredits({
         );
     };
 
-    // Get initials safely
-    const getInitials = (employee) => {
-        if (!employee) return '??';
-        const firstInitial = employee.firstname ? employee.firstname[0] : '';
-        const lastInitial = employee.lastname ? employee.lastname[0] : '';
-        return (firstInitial + lastInitial).toUpperCase();
-    };
-
-    // Get full name safely
     const getFullName = (employee) => {
         if (!employee) return 'Unknown Employee';
         return `${employee.firstname || ''} ${employee.lastname || ''}`.trim();
@@ -267,49 +291,34 @@ export default function LeaveCredits({
     return (
         <HRLayout>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                <div className="md:flex md:items-center md:justify-between mb-8">
-                    <div className="flex-1 min-w-0">
-                        <h1 className="text-2xl font-bold text-gray-900">Manage Leave Credits</h1>
-                        <p className="mt-1 text-sm text-gray-600">
-                            View and manage employee leave credits
-                        </p>
-                    </div>
-                    <div className="mt-4 flex md:mt-0 md:ml-4">
-                    <button
-    onClick={handleMonthlyCredit}
-    className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${alreadyCredited ? 'bg-gray-400 ' : 'bg-blue-600 hover:bg-blue-700'}`}
->
-    {alreadyCredited ? (
-        <>
-            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            Monthly Credits Added for {creditedMonth} {creditedYear}
-        </>
-    ) : (
-        <>
-            <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-            </svg>
-            Add {creditedMonth} {creditedYear} Credits (+1.25)
-        </>
-    )}
-</button>
+                {/* Header Section */}
+                <div className="mb-8">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                        <div className="relative">
+                            <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-indigo-900 bg-clip-text text-transparent mb-2">
+                                Leave Credits Management
+                            </h1>
+                            <p className="text-gray-600 text-lg">Manage and track employee leave balances</p>
+                            <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"></div>
+                        </div>
+                        
                     </div>
                 </div>
 
                 {/* Success Message */}
                 {flash?.success && (
-                    <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 flex items-center">
-                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
+                    <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-700 p-4 rounded-2xl mb-6 flex items-center shadow-lg">
+                        <div className="p-2 rounded-xl bg-emerald-500 text-white mr-3">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                        </div>
                         {flash.success}
                     </div>
                 )}
 
                 {/* Filters Section */}
-                <div className="mb-6 bg-white rounded-xl shadow-sm p-4">
+                <div className="mb-6 bg-white/80 backdrop-blur-sm border border-white/20 rounded-3xl shadow-xl p-6">
                     <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4">
                         {/* Search Bar */}
                         <div className="flex-1">
@@ -327,20 +336,20 @@ export default function LeaveCredits({
                                     placeholder="Search employees by name, position, or department..."
                                     defaultValue={searchTerm}
                                     onChange={(e) => handleSearchChange(e.target.value)}
-                                    className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                    className="block w-full pl-10 pr-3 py-3 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
                                 />
                             </div>
                         </div>
 
                         {/* Department Filter */}
                         <div className="flex items-center space-x-4">
-                            <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                            <label className="text-sm font-semibold text-gray-700 whitespace-nowrap">
                                 Department:
                             </label>
                             <select
                                 value={selectedDepartment}
                                 onChange={(e) => handleFilterChange(e.target.value)}
-                                className="w-full md:w-48 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                                className="w-full md:w-48 border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
                             >
                                 <option value="">All Departments</option>
                                 {departments.map(dept => (
@@ -355,7 +364,7 @@ export default function LeaveCredits({
                         {(searchTerm || selectedDepartment) && (
                             <button
                                 onClick={clearAllFilters}
-                                className="px-4 py-2.5 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition whitespace-nowrap"
+                                className="px-4 py-3 text-sm text-gray-600 hover:text-gray-800 border-2 border-gray-200 rounded-2xl hover:bg-gray-50 transition whitespace-nowrap bg-white/50 backdrop-blur-sm"
                             >
                                 Clear Filters
                             </button>
@@ -363,7 +372,8 @@ export default function LeaveCredits({
                     </div>
                 </div>
 
-                <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                {/* Employees Table */}
+                <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-3xl shadow-xl overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                         <h2 className="text-lg font-semibold text-gray-800">Employee Leave Credits</h2>
                         <span className="text-sm text-gray-500">
@@ -374,80 +384,62 @@ export default function LeaveCredits({
                     </div>
 
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Employee Name
-                                    </th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Department
-                                    </th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        SL Balance
-                                    </th>
-                                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        VL Balance
-                                    </th>
-                                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Actions
-                                    </th>
+                        <table className="w-full table-auto">
+                            <thead>
+                                <tr className="bg-gray-50 text-left text-sm">
+                                    <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Employee</th>
+                                    <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                                    <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Sick Leave</th>
+                                    <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Vacation Leave</th>
+                                    <th className="p-4 font-medium text-gray-500 uppercase tracking-wider text-right">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody>
                                 {employees.data && employees.data.map((employee) => (
                                     <tr 
                                         key={employee.employee_id} 
-                                        className="hover:bg-gray-50 cursor-pointer"
+                                        className="border-t hover:bg-gray-50/50 transition-colors cursor-pointer"
                                         onClick={() => router.visit(route('hr.leave-credits.show', employee.employee_id))}
                                     >
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center">
-                                                <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                                    <span className="font-medium text-blue-800">
-                                                        {getInitials(employee)}
-                                                    </span>
-                                                </div>
-                                                <div className="ml-4">
-                                                    <div className="text-sm font-medium text-gray-900">
+                                        <td className="p-4">
+                                            <div className="flex items-center space-x-3">
+                                                <EmployeeAvatar employee={employee} />
+                                                <div>
+                                                    <div className="font-medium text-gray-900">
                                                         {getFullName(employee)}
                                                     </div>
                                                     <div className="text-sm text-gray-500">{employee.position}</div>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900">
+                                        <td className="p-4">
+                                            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                                                 {employee.department?.name || 'No Department'}
+                                            </span>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className={`text-lg font-bold ${
+                                                employee.leave_credit?.sl_balance ? 'text-blue-600' : 'text-gray-400 italic'
+                                            }`}>
+                                                {employee.leave_credit ? employee.leave_credit.sl_balance : 'To be updated by HR'}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900 font-medium">
-                                                {employee.leave_credit ? (
-                                                    employee.leave_credit.sl_balance
-                                                ) : (
-                                                    <span className="text-gray-400 italic">To be updated by HR</span>
-                                                )}
+                                        <td className="p-4">
+                                            <div className={`text-lg font-bold ${
+                                                employee.leave_credit?.vl_balance ? 'text-green-600' : 'text-gray-400 italic'
+                                            }`}>
+                                                {employee.leave_credit ? employee.leave_credit.vl_balance : 'To be updated by HR'}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="text-sm text-gray-900 font-medium">
-                                                {employee.leave_credit ? (
-                                                    employee.leave_credit.vl_balance
-                                                ) : (
-                                                    <span className="text-gray-400 italic">To be updated by HR</span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <td className="p-4 text-right">
                                             <button
-                                                className="text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
+                                                className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 text-sm"
                                                 onClick={(e) => {
-                                                    e.stopPropagation(); // Prevent row click when clicking button
+                                                    e.stopPropagation();
                                                     openModal(employee);
                                                 }}
                                             >
-                                                Override
+                                                Override Credits
                                             </button>
                                         </td>
                                     </tr>
@@ -455,10 +447,18 @@ export default function LeaveCredits({
                                 
                                 {(!employees.data || employees.data.length === 0) && (
                                     <tr>
-                                        <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
-                                            No employees found
-                                            {searchTerm && ` matching "${searchTerm}"`}
-                                            {selectedDepartment && !searchTerm && ` in this department`}.
+                                        <td colSpan="5" className="p-8 text-center text-gray-500">
+                                            <div className="flex flex-col items-center">
+                                                <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <p className="text-lg font-medium text-gray-600">No employees found</p>
+                                                <p className="text-gray-500 mt-2">
+                                                    {searchTerm && `No results matching "${searchTerm}"`}
+                                                    {selectedDepartment && !searchTerm && `No employees in this department`}
+                                                    {!searchTerm && !selectedDepartment && 'No employees available'}
+                                                </p>
+                                            </div>
                                         </td>
                                     </tr>
                                 )}
@@ -471,157 +471,92 @@ export default function LeaveCredits({
                 </div>
 
                 {/* Edit Credits Modal */}
-                {isModalOpen && selectedEmployee && (
-                    <div className="fixed inset-0 overflow-y-auto z-50">
-                        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-                                <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={closeModal}></div>
+                <Modal
+                    isOpen={isModalOpen}
+                    onClose={closeModal}
+                    title="Edit Leave Credits"
+                    actions={
+                        <>
+                            <button
+                                type="button"
+                                onClick={closeModal}
+                                className="px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-2xl hover:bg-gray-50 transition"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSubmit}
+                                disabled={processing}
+                                className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-2xl hover:shadow-lg transition disabled:opacity-50"
+                            >
+                                {processing ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </>
+                    }
+                >
+                    {selectedEmployee && (
+                        <div className="space-y-4">
+                            <p className="text-gray-600">
+                                Update leave credits for <span className="font-semibold text-gray-800">{getFullName(selectedEmployee)}</span>
+                            </p>
+                            
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                <LeaveBalanceBadge balance={selectedEmployee.leave_credit?.sl_balance} type="sl" />
+                                <LeaveBalanceBadge balance={selectedEmployee.leave_credit?.vl_balance} type="vl" />
                             </div>
 
-                            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-                            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                                    <div className="sm:flex sm:items-start">
-                                        <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                                            <svg className="h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                            </svg>
-                                        </div>
-                                        <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                                            <h3 className="text-lg leading-6 font-medium text-gray-900">
-                                                Edit Leave Credits
-                                            </h3>
-                                            <div className="mt-2">
-                                                <p className="text-sm text-gray-500">
-                                                    Update leave credits for {getFullName(selectedEmployee)}
-                                                </p>
-                                            </div>
-                                            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-                                                <div>
-                                                    <label htmlFor="sl_balance" className="block text-sm font-medium text-gray-700">
-                                                        Sick Leave Balance
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        id="sl_balance"
-                                                        value={data.sl_balance}
-                                                        onChange={(e) => setData('sl_balance', e.target.value)}
-                                                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                        disabled={processing}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label htmlFor="vl_balance" className="block text-sm font-medium text-gray-700">
-                                                        Vacation Leave Balance
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        id="vl_balance"
-                                                        value={data.vl_balance}
-                                                        onChange={(e) => setData('vl_balance', e.target.value)}
-                                                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                        disabled={processing}
-                                                    />
-                                                </div>
-
-                                                <div>
-                                                    <label htmlFor="imported_at" className="block text-sm font-medium text-gray-700">
-                                                        Imported At (if migrated from old record)
-                                                    </label>
-                                                    <input
-                                                        type="date"
-                                                        id="imported_at"
-                                                        value={data.imported_at || ''}
-                                                        onChange={(e) => setData('imported_at', e.target.value)}
-                                                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 
-                                                                focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                        disabled={processing}
-                                                    />
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                                    <button
-                                        type="button"
-                                        onClick={handleSubmit}
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Sick Leave Balance
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={data.sl_balance}
+                                        onChange={(e) => setData('sl_balance', e.target.value)}
+                                        className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
                                         disabled={processing}
-                                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 sm:ml-3 sm:w-auto sm:text-sm"
-                                    >
-                                        {processing ? 'Saving...' : 'Save Changes'}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={closeModal}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Vacation Leave Balance
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={data.vl_balance}
+                                        onChange={(e) => setData('vl_balance', e.target.value)}
+                                        className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
                                         disabled={processing}
-                                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                                    >
-                                        Cancel
-                                    </button>
+                                    />
                                 </div>
-                            </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Import Date (Optional)
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={data.imported_at || ''}
+                                        onChange={(e) => setData('imported_at', e.target.value)}
+                                        className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
+                                        disabled={processing}
+                                    />
+                                </div>
+                            </form>
                         </div>
-                    </div>
-                )}
+                    )}
+                </Modal>
 
-                {/* Monthly Credit Warning Modal */}
-                {isWarningModalOpen && (
-                    <div className="fixed inset-0 overflow-y-auto z-50">
-                        <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-                                <div className="absolute inset-0 bg-gray-500 opacity-75" onClick={closeWarningModal}></div>
-                            </div>
+               
+            </div>
 
-                            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-                            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                                    <div className="sm:flex sm:items-start">
-                                        <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
-                                            <svg className="h-6 w-6 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                                            </svg>
-                                        </div>
-                                        <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                                            <h3 className="text-lg leading-6 font-medium text-gray-900">
-                                                Monthly Credit Reminder
-                                            </h3>
-                                            <div className="mt-2">
-                                                <p className="text-sm text-gray-500">
-                                                    The month is about to end. You need to add monthly credits now. 
-                                                    If you skip this, you won't be able to go back and add them later.
-                                                </p>
-                                                <p className="text-sm text-gray-700 mt-2 font-medium">
-                                                    Current Month: {warningMonth} {warningYear}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                                    <button
-                                        type="button"
-                                        onClick={handleMonthlyCredit}
-                                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                                    >
-                                        Add Monthly Credits Now
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={closeWarningModal}
-                                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                                    >
-                                        Remind Me Later
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+            {/* Animated Background Elements */}
+            <div className="fixed inset-0 -z-10 overflow-hidden">
+                <div className="absolute -top-40 -right-32 w-80 h-80 bg-gradient-to-r from-indigo-200 to-purple-200 rounded-full blur-3xl opacity-30 animate-pulse"></div>
+                <div className="absolute -bottom-40 -left-32 w-80 h-80 bg-gradient-to-r from-blue-200 to-cyan-200 rounded-full blur-3xl opacity-30 animate-pulse delay-1000"></div>
             </div>
         </HRLayout>
     );

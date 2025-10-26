@@ -152,6 +152,11 @@ export default function LeaveCalendar({ events, leavesByMonth, departments, leav
         });
     };
 
+    // NEW: Function to navigate to Holidays page
+    const navigateToHolidays = () => {
+        router.get(route('hr.holidays'));
+    };
+
     const renderEventContent = (eventInfo) => {
         return (
             <div className="fc-event-main-frame">
@@ -207,6 +212,26 @@ export default function LeaveCalendar({ events, leavesByMonth, departments, leav
                 <div className="flex justify-between items-center mb-4">
                     <h1 className="text-2xl font-bold text-gray-900">Leave Calendar</h1>
                     <div className="flex space-x-2">
+                        {/* NEW: Manage Holidays Button */}
+                        <button
+                            onClick={navigateToHolidays}
+                            className="px-4 py-2 bg-green-600 text-white rounded-md font-medium text-sm hover:bg-green-700 transition-colors flex items-center"
+                        >
+                            <svg 
+                                className="w-4 h-4 mr-2" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                            >
+                                <path 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    strokeWidth={2} 
+                                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" 
+                                />
+                            </svg>
+                            Manage Holidays
+                        </button>
                         <button
                             onClick={() => setActiveView('list')}
                             className={`px-3 py-1.5 rounded-md font-medium text-sm ${

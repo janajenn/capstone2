@@ -19,6 +19,9 @@ class AttendanceImportController extends Controller
         $this->importService = $importService;
     }
 
+
+
+
     /**
      * Show the attendance import page
      */
@@ -39,7 +42,7 @@ class AttendanceImportController extends Controller
             'all_input' => $request->all(),
             'content_type' => $request->header('Content-Type')
         ]);
-
+    
         $validator = Validator::make($request->all(), [
             'file' => 'required|file|max:10240', // 10MB max
             'overwrite' => 'boolean'
@@ -48,7 +51,7 @@ class AttendanceImportController extends Controller
             'file.file' => 'The uploaded file is not valid.',
             'file.max' => 'The file may not be greater than 10MB.'
         ]);
-
+    
         // Custom validation for file extension
         if ($request->hasFile('file')) {
             $file = $request->file('file');
@@ -59,7 +62,7 @@ class AttendanceImportController extends Controller
                 $validator->errors()->add('file', 'The file must be a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
             }
         }
-
+    
         if ($validator->fails()) {
             return response()->json([
                 'success' => false,
@@ -76,7 +79,7 @@ class AttendanceImportController extends Controller
                 ]
             ], 422);
         }
-
+    
         try {
             $file = $request->file('file');
             $overwrite = $request->boolean('overwrite', false);
@@ -94,25 +97,51 @@ class AttendanceImportController extends Controller
             Storage::delete($filePath);
     
             if ($result['success']) {
+                if ($result['success_count'] === 0) {
+                    \Log::warning('Import completed but 0 records were imported', $result);
+                    
+                    // FIX: Use Inertia redirect with data
+                    return redirect()->back()->with([
+                        'warning' => 'No records were imported. This could be because:',
+                        'importResult' => $result,
+                        'reasons' => [
+                            'The file format may not match the expected template',
+                            'All records in the file may already exist in the system',
+                            'The file may contain invalid or duplicate data',
+                            'No valid employee records were found in the file'
+                        ]
+                    ]);
+                }
+    
                 // ✅ CRITICAL: Process late credits IMMEDIATELY after successful import
                 $leaveCreditService = new LeaveCreditService();
                 $lateCreditResult = $leaveCreditService->processLateCreditsForRecentImports();
                 
                 \Log::info("✅ Automatic late credit processing completed", $lateCreditResult);
     
-                return redirect()->back()->with([
-                    'success' => "Successfully imported {$result['success_count']} records. " . 
-                               "Processed late credits for {$lateCreditResult['processed_count']} employees.",
-                    'importResult' => $result,
-                    'lateCreditResult' => $lateCreditResult
-                ]);
-            }
-    
-        } catch (\Exception $e) {
-            \Log::error('Import failed: ' . $e->getMessage());
-            return redirect()->back()->withErrors(['error' => 'Import failed: ' . $e->getMessage()]);
+                 // FIX: Use Inertia redirect with data
+            return redirect()->back()->with([
+                'success' => "Successfully imported {$result['success_count']} records. " . 
+                           "Processed late credits for {$lateCreditResult['processed_count']} employees.",
+                'importResult' => $result,
+                'lateCreditResult' => $lateCreditResult
+            ]);
+        } else {
+            // FIX: Use Inertia redirect with error
+            return redirect()->back()->with([
+                'error' => 'Import failed: ' . ($result['message'] ?? 'Unknown error occurred'),
+                'importResult' => $result
+            ]);
         }
+
+    } catch (\Exception $e) {
+        // FIX: Use Inertia redirect with error
+        return redirect()->back()->with([
+            'error' => 'Import failed: ' . $e->getMessage()
+        ]);
     }
+}
+
     /**
      * Get attendance import template
      */
@@ -169,7 +198,8 @@ class AttendanceImportController extends Controller
                     'earliest_log_date' => $logs->min('work_date')
                 ];
             });
-
+    
+        // FIX: Make sure this path matches your actual file structure
         return \Inertia\Inertia::render('HR/AttendanceLogs', [
             'initialLogs' => $employees,
             'employees' => \App\Models\Employee::select('employee_id', 'firstname', 'lastname')->get()
@@ -179,76 +209,136 @@ class AttendanceImportController extends Controller
     /**
      * Get attendance logs with pagination
      */
-    public function getAttendanceLogs(Request $request)
-    {
-        // Get unique employees who have attendance logs
-        $query = \App\Models\Employee::with('department')
-            ->whereHas('attendanceLogs')
-            ->orderBy('firstname')
-            ->orderBy('lastname');
+   /**
+ * Get attendance logs with advanced filtering
+ */
+public function getAttendanceLogs(Request $request)
+{
+    // Get unique employees who have attendance logs
+    $query = \App\Models\Employee::with('department')
+        ->whereHas('attendanceLogs')
+        ->orderBy('firstname')
+        ->orderBy('lastname');
 
-        // Filter by department if specified
-        if ($request->filled('department_id')) {
-            $query->where('department_id', $request->department_id);
-        }
-
-        // Filter by employee name if specified
-        if ($request->filled('employee_name')) {
-            $query->where(function($q) use ($request) {
-                $q->where('firstname', 'like', '%' . $request->employee_name . '%')
-                  ->orWhere('lastname', 'like', '%' . $request->employee_name . '%');
-            });
-        }
-
-        $employees = $query->get();
-
-        // Add attendance summary for each employee
-        $employeesWithSummary = $employees->map(function($employee) use ($request) {
-            $logsQuery = $employee->attendanceLogs();
-            
-            // Apply date filters if provided
-            if ($request->filled('start_date')) {
-                $logsQuery->where('work_date', '>=', $request->start_date);
-            }
-            if ($request->filled('end_date')) {
-                $logsQuery->where('work_date', '<=', $request->end_date);
-            }
-
-            $logs = $logsQuery->get();
-            
-            return [
-                'employee_id' => $employee->employee_id,
-                'firstname' => $employee->firstname,
-                'lastname' => $employee->lastname,
-                'department' => $employee->department->name ?? 'No Department',
-                'biometric_id' => $employee->biometric_id,
-                'total_logs' => $logs->count(),
-                'working_days' => $logs->where('absent', false)->count(),
-                'absent_days' => $logs->where('absent', true)->count(),
-                'total_hours' => round($logs->sum('hrs_worked_minutes') / 60, 2),
-                'latest_log_date' => $logs->max('work_date'),
-                'earliest_log_date' => $logs->min('work_date')
-            ];
-        });
-
-        return response()->json([
-            'data' => $employeesWithSummary,
-            'total' => $employeesWithSummary->count()
-        ]);
+    // Filter by department if specified
+    if ($request->filled('department_id')) {
+        $query->where('department_id', $request->department_id);
     }
+
+    // Filter by employee name if specified
+    if ($request->filled('employee_name')) {
+        $query->where(function($q) use ($request) {
+            $q->where('firstname', 'like', '%' . $request->employee_name . '%')
+              ->orWhere('lastname', 'like', '%' . $request->employee_name . '%');
+        });
+    }
+
+    $employees = $query->get();
+
+    // Add attendance summary for each employee with advanced metrics
+    $employeesWithSummary = $employees->map(function($employee) use ($request) {
+        $logsQuery = $employee->attendanceLogs();
+        
+        // Apply date filters if provided
+        if ($request->filled('start_date')) {
+            $logsQuery->where('work_date', '>=', $request->start_date);
+        }
+        if ($request->filled('end_date')) {
+            $logsQuery->where('work_date', '<=', $request->end_date);
+        }
+
+        $logs = $logsQuery->get();
+        
+        // Calculate advanced metrics
+        $lateCount = $logs->where('late_minutes', '>', 0)->count();
+        
+        // Check for missing time in/out
+        $hasMissingTimeIn = $logs->where('time_in', null)->where('time_out', '!=', null)->count() > 0;
+        $hasMissingTimeOut = $logs->where('time_out', null)->where('time_in', '!=', null)->count() > 0;
+        
+        $totalHours = round($logs->sum('hrs_worked_minutes') / 60, 2);
+        
+        return [
+            'employee_id' => $employee->employee_id,
+            'firstname' => $employee->firstname,
+            'lastname' => $employee->lastname,
+            'department' => $employee->department->name ?? 'No Department',
+            'biometric_id' => $employee->biometric_id,
+            'total_logs' => $logs->count(),
+            'working_days' => $logs->where('absent', false)->count(),
+            'absent_days' => $logs->where('absent', true)->count(),
+            'total_hours' => $totalHours,
+            'late_count' => $lateCount,
+            'has_missing_time_in' => $hasMissingTimeIn,
+            'has_missing_time_out' => $hasMissingTimeOut,
+            'latest_log_date' => $logs->max('work_date'),
+            'earliest_log_date' => $logs->min('work_date')
+        ];
+    });
+
+    // Apply advanced filtering based on attendance issues
+    if ($request->filled('attendance_issue')) {
+        $employeesWithSummary = $employeesWithSummary->filter(function($employee) use ($request) {
+            switch ($request->attendance_issue) {
+                case 'late':
+                    return $employee['late_count'] > 0;
+                    
+                case 'missing_time_out':
+                    return $employee['has_missing_time_out'];
+                    
+                case 'missing_time_in':
+                    return $employee['has_missing_time_in'];
+                    
+                case 'multiple_lates':
+                    $threshold = $request->filled('late_threshold') ? $request->late_threshold : 10;
+                    return $employee['late_count'] >= $threshold;
+                    
+                case 'insufficient_hours':
+                    $threshold = $request->filled('hours_threshold') ? $request->hours_threshold : 8;
+                    return $employee['total_hours'] < $threshold;
+                    
+                default:
+                    return true;
+            }
+        })->values();
+    }
+
+    return response()->json([
+        'data' => $employeesWithSummary,
+        'total' => $employeesWithSummary->count()
+    ]);
+}
 
     /**
      * View individual employee attendance logs
      */
-    public function viewEmployeeLogs($employeeId, Request $request)
-    {
-        $employee = \App\Models\Employee::with('department')->findOrFail($employeeId);
-        
-        // Get query parameters
-        $month = $request->get('month', \Carbon\Carbon::now()->format('Y-m'));
-        $period = $request->get('period', 'full'); // 'first_half', 'second_half', 'full'
-        
-        // Parse month and year
+    /**
+ * View individual employee attendance logs with advanced filtering
+ */
+/**
+ * View individual employee attendance logs with advanced filtering - FIXED
+ */
+public function viewEmployeeLogs($employeeId, Request $request)
+{
+    $employee = \App\Models\Employee::with('department')->findOrFail($employeeId);
+    
+    // Get query parameters for filtering
+    $month = $request->get('month', \Carbon\Carbon::now()->format('Y-m'));
+    $period = $request->get('period', 'full');
+    $startDate = $request->get('start_date');
+    $endDate = $request->get('end_date');
+    
+    // Advanced filtering parameters
+    $attendanceIssue = $request->get('attendance_issue');
+    $lateThreshold = $request->get('late_threshold', 10);
+    $hoursThreshold = $request->get('hours_threshold', 8);
+    
+    // If custom date range is provided, use it instead of month/period
+    if ($startDate && $endDate) {
+        $startDate = \Carbon\Carbon::parse($startDate)->startOfDay();
+        $endDate = \Carbon\Carbon::parse($endDate)->endOfDay();
+    } else {
+        // Parse month and year (existing logic)
         $startDate = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $endDate = $startDate->copy()->endOfMonth();
         
@@ -258,124 +348,205 @@ class AttendanceImportController extends Controller
         } elseif ($period === 'second_half') {
             $startDate = $startDate->copy()->addDays(15); // 16-end
         }
-
-        // Get ALL attendance logs for the employee
-        $allAttendanceLogs = \App\Models\AttendanceLog::where('employee_id', $employeeId)
-            ->orderBy('work_date', 'desc')
-            ->get();
-
-        // If we have data but it's not in the current month, adjust the date range to show the actual data
-        if ($allAttendanceLogs->isNotEmpty()) {
-            $earliestDate = $allAttendanceLogs->min('work_date');
-            $latestDate = $allAttendanceLogs->max('work_date');
-            
-            // If the requested month doesn't contain any data, adjust to show the actual data range
-            $requestedStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-            $requestedEnd = $requestedStart->copy()->endOfMonth();
-            
-            if ($latestDate < $requestedStart || $earliestDate > $requestedEnd) {
-                // No data in requested month, adjust to show the actual data range
-                $month = $earliestDate->format('Y-m');
-            }
-        }
-
-        // Recalculate dates with adjusted month
-        $startDate = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
-        $endDate = $startDate->copy()->endOfMonth();
-        
-        // Adjust date range based on period filter
-        if ($period === 'first_half') {
-            $endDate = $startDate->copy()->addDays(14); // 1-15
-        } elseif ($period === 'second_half') {
-            $startDate = $startDate->copy()->addDays(15); // 16-end
-        }
-
-        // Filter by date range
-        $attendanceLogs = $allAttendanceLogs->filter(function ($log) use ($startDate, $endDate) {
-            return $log->work_date >= $startDate && $log->work_date <= $endDate;
-        });
-        
-        // Generate all days in the selected period for complete view
-        $allDaysInPeriod = collect();
-        $currentDate = $startDate->copy();
-        while ($currentDate <= $endDate) {
-            $allDaysInPeriod->push($currentDate->copy());
-            $currentDate->addDay();
-        }
-        
-        // Create a complete view with all days, filling in missing days
-        $completeAttendanceView = $allDaysInPeriod->map(function ($date) use ($attendanceLogs) {
-            // Convert date to Carbon for proper comparison
-            $dateString = $date->format('Y-m-d');
-            
-            $log = $attendanceLogs->first(function ($log) use ($dateString) {
-                return $log->work_date->format('Y-m-d') === $dateString;
-            });
-            
-            if ($log) {
-                return [
-                    'date' => $dateString,
-                    'date_formatted' => $date->format('M d, Y'),
-                    'day_of_week' => $date->format('l'),
-                    'has_log' => true,
-                    'log_data' => $this->formatLogData($log)
-                ];
-            } else {
-                // No log for this day - determine if it's a rest day or absent
-                $isWeekend = $date->isWeekend();
-                $isRestDay = $isWeekend; // You can add more logic here for holidays, etc.
-                
-                return [
-                    'date' => $dateString,
-                    'date_formatted' => $date->format('M d, Y'),
-                    'day_of_week' => $date->format('l'),
-                    'has_log' => false,
-                    'status' => $isRestDay ? 'Rest Day' : 'Absent',
-                    'log_data' => null
-                ];
-            }
-        });
-
-        // Calculate summary statistics
-        $totalDays = $startDate->diffInDays($endDate) + 1;
-        $workingDays = $attendanceLogs->where('absent', false)->count();
-        $absentDays = $attendanceLogs->where('absent', true)->count();
-        $restDays = $totalDays - $workingDays - $absentDays;
-        
-        $totalHoursWorked = $attendanceLogs->sum('hrs_worked_minutes') / 60;
-        $totalLateMinutes = $attendanceLogs->sum('late_minutes');
-        
-        // Get available months for dropdown from all logs
-        $availableMonths = $allAttendanceLogs->map(function ($log) {
-            return $log->work_date->format('Y-m');
-        })->unique()->sort()->values();
-
-        return \Inertia\Inertia::render('HR/EmployeeAttendanceLogs', [
-            'employee' => [
-                'employee_id' => $employee->employee_id,
-                'firstname' => $employee->firstname,
-                'lastname' => $employee->lastname,
-                'department' => $employee->department->name ?? 'No Department',
-                'biometric_id' => $employee->biometric_id
-            ],
-            'attendanceLogs' => $completeAttendanceView->values(),
-            'summary' => [
-                'total_days' => $totalDays,
-                'working_days' => $workingDays,
-                'absent_days' => $absentDays,
-                'rest_days' => $restDays,
-                'total_hours_worked' => round($totalHoursWorked, 2),
-                'total_late_minutes' => $totalLateMinutes,
-                'average_hours_per_day' => $workingDays > 0 ? round($totalHoursWorked / $workingDays, 2) : 0
-            ],
-            'filters' => [
-                'month' => $month,
-                'period' => $period,
-                'available_months' => $availableMonths
-            ]
-        ]);
     }
 
+    // Get ALL attendance logs for the employee
+    $allAttendanceLogs = \App\Models\AttendanceLog::where('employee_id', $employeeId)
+        ->orderBy('work_date', 'desc')
+        ->get();
+
+    // If we have data but it's not in the current range, adjust the date range to show the actual data
+    if ($allAttendanceLogs->isNotEmpty() && !$request->has('start_date')) {
+        $earliestDate = $allAttendanceLogs->min('work_date');
+        $latestDate = $allAttendanceLogs->max('work_date');
+        
+        // If the requested month doesn't contain any data, adjust to show the actual data range
+        $requestedStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $requestedEnd = $requestedStart->copy()->endOfMonth();
+        
+        if ($latestDate < $requestedStart || $earliestDate > $requestedEnd) {
+            // No data in requested month, adjust to show the actual data range
+            $month = $earliestDate->format('Y-m');
+        }
+    }
+
+    // Generate all days in the selected period for complete view
+    $allDaysInPeriod = collect();
+    $currentDate = $startDate->copy();
+    while ($currentDate <= $endDate) {
+        $allDaysInPeriod->push($currentDate->copy());
+        $currentDate->addDay();
+    }
+    
+    // Create a complete view with all days, filling in missing days
+    $completeAttendanceView = $allDaysInPeriod->map(function ($date) use ($allAttendanceLogs) {
+        // Convert date to Carbon for proper comparison
+        $dateString = $date->format('Y-m-d');
+        
+        $log = $allAttendanceLogs->first(function ($log) use ($dateString) {
+            return $log->work_date->format('Y-m-d') === $dateString;
+        });
+        
+        if ($log) {
+            return [
+                'date' => $dateString,
+                'date_formatted' => $date->format('M d, Y'),
+                'day_of_week' => $date->format('l'),
+                'has_log' => true,
+                'log_data' => $this->formatLogData($log)
+            ];
+        } else {
+            // No log for this day - determine if it's a rest day or absent
+            $isWeekend = $date->isWeekend();
+            $isRestDay = $isWeekend; // You can add more logic here for holidays, etc.
+            
+            return [
+                'date' => $dateString,
+                'date_formatted' => $date->format('M d, Y'),
+                'day_of_week' => $date->format('l'),
+                'has_log' => false,
+                'status' => $isRestDay ? 'Rest Day' : 'Absent',
+                'log_data' => null
+            ];
+        }
+    });
+
+    // Apply advanced filtering based on attendance issues - FIXED LOGIC
+    $filteredAttendanceLogs = $completeAttendanceView;
+
+    if ($attendanceIssue) {
+        $filteredAttendanceLogs = $filteredAttendanceLogs->filter(function ($day) use ($attendanceIssue, $lateThreshold, $hoursThreshold) {
+            // Skip days without logs for most filters (except absent)
+            if (!$day['has_log'] || !$day['log_data']) {
+                // For absent filter, include days marked as absent
+                if ($attendanceIssue === 'absent' && isset($day['status']) && $day['status'] === 'Absent') {
+                    return true;
+                }
+                return false;
+            }
+
+            $logData = $day['log_data'];
+
+            switch ($attendanceIssue) {
+                case 'late':
+                    return $logData['late_minutes'] > 0;
+                    
+                case 'missing_time_out':
+                    // Check if time_out is missing/null/empty but time_in exists
+                    $hasTimeIn = !empty($logData['time_in']) && $logData['time_in'] !== 'No time in';
+                    $hasTimeOut = !empty($logData['time_out']) && $logData['time_out'] !== 'No time out';
+                    return $hasTimeIn && !$hasTimeOut;
+                    
+                case 'missing_time_in':
+                    // Check if time_in is missing/null/empty but time_out exists
+                    $hasTimeIn = !empty($logData['time_in']) && $logData['time_in'] !== 'No time in';
+                    $hasTimeOut = !empty($logData['time_out']) && $logData['time_out'] !== 'No time out';
+                    return !$hasTimeIn && $hasTimeOut;
+                    
+                case 'absent':
+                    return $logData['absent'] === true;
+                    
+                case 'insufficient_hours':
+                    // Convert hours worked to decimal hours for comparison
+                    $hoursWorked = $logData['hrs_worked_minutes'] / 60;
+                    return $hoursWorked < $hoursThreshold;
+                    
+                default:
+                    return true;
+            }
+        })->values();
+    }
+
+    // Calculate summary statistics based on FILTERED data
+    $totalDays = $startDate->diffInDays($endDate) + 1;
+    
+    // Count working/absent days from filtered logs
+    $workingDays = $filteredAttendanceLogs->filter(function($day) {
+        return $day['has_log'] && $day['log_data'] && !$day['log_data']['absent'];
+    })->count();
+    
+    $absentDays = $filteredAttendanceLogs->filter(function($day) {
+        return ($day['has_log'] && $day['log_data'] && $day['log_data']['absent']) || 
+               (!$day['has_log'] && isset($day['status']) && $day['status'] === 'Absent');
+    })->count();
+    
+    $restDays = $totalDays - $workingDays - $absentDays;
+    
+    // Calculate hours and late minutes from filtered logs with actual data
+    $totalHoursWorked = $filteredAttendanceLogs->sum(function($day) {
+        if ($day['has_log'] && $day['log_data']) {
+            return $day['log_data']['hrs_worked_minutes'] / 60;
+        }
+        return 0;
+    });
+    
+    $totalLateMinutes = $filteredAttendanceLogs->sum(function($day) {
+        if ($day['has_log'] && $day['log_data']) {
+            return $day['log_data']['late_minutes'];
+        }
+        return 0;
+    });
+
+    // Calculate filtered counts
+    $lateCount = $filteredAttendanceLogs->filter(function($day) {
+        return $day['has_log'] && $day['log_data'] && $day['log_data']['late_minutes'] > 0;
+    })->count();
+
+    $missingTimeInCount = $filteredAttendanceLogs->filter(function($day) {
+        if (!$day['has_log'] || !$day['log_data']) return false;
+        $logData = $day['log_data'];
+        $hasTimeIn = !empty($logData['time_in']) && $logData['time_in'] !== 'No time in';
+        $hasTimeOut = !empty($logData['time_out']) && $logData['time_out'] !== 'No time out';
+        return !$hasTimeIn && $hasTimeOut;
+    })->count();
+
+    $missingTimeOutCount = $filteredAttendanceLogs->filter(function($day) {
+        if (!$day['has_log'] || !$day['log_data']) return false;
+        $logData = $day['log_data'];
+        $hasTimeIn = !empty($logData['time_in']) && $logData['time_in'] !== 'No time in';
+        $hasTimeOut = !empty($logData['time_out']) && $logData['time_out'] !== 'No time out';
+        return $hasTimeIn && !$hasTimeOut;
+    })->count();
+
+    // Get available months for dropdown from all logs
+    $availableMonths = $allAttendanceLogs->map(function ($log) {
+        return $log->work_date->format('Y-m');
+    })->unique()->sort()->values();
+
+    return \Inertia\Inertia::render('HR/EmployeeAttendanceLogs', [
+        'employee' => [
+            'employee_id' => $employee->employee_id,
+            'firstname' => $employee->firstname,
+            'lastname' => $employee->lastname,
+            'department' => $employee->department->name ?? 'No Department',
+            'biometric_id' => $employee->biometric_id
+        ],
+        'attendanceLogs' => $filteredAttendanceLogs->values(),
+        'summary' => [
+            'total_days' => $totalDays,
+            'working_days' => $workingDays,
+            'absent_days' => $absentDays,
+            'rest_days' => $restDays,
+            'total_hours_worked' => round($totalHoursWorked, 2),
+            'total_late_minutes' => $totalLateMinutes,
+            'average_hours_per_day' => $workingDays > 0 ? round($totalHoursWorked / $workingDays, 2) : 0,
+            'filtered_count' => $filteredAttendanceLogs->count(),
+            'late_count' => $lateCount,
+            'missing_time_in_count' => $missingTimeInCount,
+            'missing_time_out_count' => $missingTimeOutCount,
+        ],
+        'filters' => [
+            'month' => $month,
+            'period' => $period,
+            'available_months' => $availableMonths,
+            'attendance_issue' => $attendanceIssue,
+            'late_threshold' => $lateThreshold,
+            'hours_threshold' => $hoursThreshold,
+            'start_date' => $request->get('start_date'),
+            'end_date' => $request->get('end_date'),
+        ]
+    ]);
+}
     /**
      * Format log data for display
      */
@@ -528,6 +699,75 @@ class AttendanceImportController extends Controller
     }
 
 
+    /**
+     * Preview attendance file before import
+     */
+   /**
+ * Preview attendance file before import
+ */
+public function preview(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'file' => 'required|file|max:10240', // 10MB max
+    ], [
+        'file.required' => 'Please select a file to upload.',
+        'file.file' => 'The uploaded file is not valid.',
+        'file.max' => 'The file may not be greater than 10MB.'
+    ]);
+
+    // Custom validation for file extension
+    if ($request->hasFile('file')) {
+        $file = $request->file('file');
+        $extension = strtolower($file->getClientOriginalExtension());
+        $allowedExtensions = ['xlsx', 'xls', 'csv'];
+        
+        if (!in_array($extension, $allowedExtensions)) {
+            $validator->errors()->add('file', 'The file must be a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
+        }
+    }
+
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    try {
+        $file = $request->file('file');
+        
+        // Store file temporarily for preview
+        $filePath = $file->store('temp/attendance-previews');
+        $fullPath = storage_path('app/' . $filePath);
+
+        // Get preview data - FIXED: Use previewExcel instead of previewWithSimulation
+        $previewResult = $this->importService->previewExcel($fullPath);
+
+        // Clean up temporary file
+        Storage::delete($filePath);
+
+        return response()->json($previewResult);
+
+    } catch (\Exception $e) {
+        \Log::error('Preview failed: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Preview failed: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+    /**
+     * Process the actual import after confirmation
+     */
+    public function processImport(Request $request)
+    {
+        // This is your existing import method, but renamed
+        return $this->import($request);
+    }
+
+
 
     private function formatLogData($log)
     {
@@ -605,6 +845,60 @@ public function processLateCreditsAfterImport($processedRows)
             'failed_lates' => 0,
             'error' => $e->getMessage()
         ];
+    }
+}
+
+
+public function visualPreview(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'file' => 'required|file|max:10240',
+    ], [
+        'file.required' => 'Please select a file to upload.',
+        'file.file' => 'The uploaded file is not valid.',
+        'file.max' => 'The file may not be greater than 10MB.'
+    ]);
+
+    // File extension validation
+    if ($request->hasFile('file')) {
+        $file = $request->file('file');
+        $extension = strtolower($file->getClientOriginalExtension());
+        $allowedExtensions = ['xlsx', 'xls', 'csv'];
+        
+        if (!in_array($extension, $allowedExtensions)) {
+            $validator->errors()->add('file', 'The file must be a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
+        }
+    }
+
+    if ($validator->fails()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    try {
+        $file = $request->file('file');
+        
+        // Store file temporarily
+        $filePath = $file->store('temp/attendance-previews');
+        $fullPath = storage_path('app/' . $filePath);
+
+        // Generate visual preview
+        $previewResult = $this->importService->generateVisualPreview($fullPath);
+
+        // Clean up temporary file
+        Storage::delete($filePath);
+
+        return response()->json($previewResult);
+
+    } catch (\Exception $e) {
+        \Log::error('Visual preview failed: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Preview failed: ' . $e->getMessage()
+        ], 500);
     }
 }
 }

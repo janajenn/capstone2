@@ -28,7 +28,7 @@ return new class extends Migration
             $table->json('raw_row')->nullable();
             $table->timestamps();
         
-            $table->foreign('employee_id')->references('id')->on('employees')->onDelete('cascade');
+            $table->foreign('employee_id')->references('employee_id')->on('employees')->onDelete('cascade');
         });
     }
 

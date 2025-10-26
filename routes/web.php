@@ -108,6 +108,13 @@ Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
             
             return $routes;
         });
+
+
+        // Admin Credit Conversion Routes
+Route::get('/admin/credit-conversions', [AdminController::class, 'creditConversions'])->name('admin.credit-conversions');
+Route::get('/admin/credit-conversions/{id}', [AdminController::class, 'showCreditConversion'])->name('admin.credit-conversions.show');
+Route::post('/admin/credit-conversions/{id}/approve', [AdminController::class, 'approveCreditConversion'])->name('admin.credit-conversions.approve');
+Route::post('/admin/credit-conversions/{id}/reject', [AdminController::class, 'rejectCreditConversion'])->name('admin.credit-conversions.reject');
 });
     
 
@@ -183,14 +190,32 @@ Route::post('/hr/credit-conversions/{id}/approve', [HRController::class, 'approv
 Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectCreditConversion'])->name('hr.credit-conversions.reject');
 
     // Attendance Import Routes (HR)
-    Route::get('/hr/attendance/import', [AttendanceImportController::class, 'index'])->name('hr.attendance.import');
-    Route::post('/hr/attendance/import', [AttendanceImportController::class, 'import'])->name('hr.attendance.import.process');
-    Route::get('/hr/attendance/template', [AttendanceImportController::class, 'downloadTemplate'])->name('hr.attendance.template');
-    Route::get('/hr/attendance/logs', [AttendanceImportController::class, 'attendanceLogs'])->name('hr.attendance.logs.index');
-    Route::get('/hr/attendance/logs/api', [AttendanceImportController::class, 'getAttendanceLogs'])->name('hr.attendance.logs');
-    Route::get('/hr/attendance/logs/employee/{employeeId}', [AttendanceImportController::class, 'viewEmployeeLogs'])->name('hr.attendance.logs.employee');
-    Route::delete('/hr/attendance/logs/{id}', [AttendanceImportController::class, 'deleteLog'])->name('hr.attendance.logs.delete');
-    Route::post('/hr/attendance/logs/bulk-delete', [AttendanceImportController::class, 'bulkDelete'])->name('hr.attendance.logs.bulk-delete');
+    
+    // Attendance Import Routes
+    Route::prefix('hr/attendance')->group(function () {
+        Route::get('/import', [AttendanceImportController::class, 'index'])->name('hr.attendance.import');
+        Route::post('/visual-preview', [AttendanceImportController::class, 'visualPreview'])->name('hr.attendance.visual-preview');
+        Route::post('/preview', [AttendanceImportController::class, 'preview'])->name('hr.attendance.preview');
+        Route::post('/process-import', [AttendanceImportController::class, 'processImport'])->name('hr.attendance.process-import');
+        Route::get('/template', [AttendanceImportController::class, 'downloadTemplate'])->name('hr.attendance.template');
+    
+    // Existing routes...
+    Route::get('/logs', [AttendanceImportController::class, 'attendanceLogs'])->name('hr.attendance.logs');
+    Route::get('/logs/api', [AttendanceImportController::class, 'getAttendanceLogs'])->name('hr.attendance.logs.api');
+    Route::get('/logs/employee/{employeeId}', [AttendanceImportController::class, 'viewEmployeeLogs'])->name('hr.attendance.logs.employee');
+    Route::delete('/logs/{id}', [AttendanceImportController::class, 'deleteLog'])->name('hr.attendance.logs.delete');
+    Route::post('/logs/bulk-delete', [AttendanceImportController::class, 'bulkDelete'])->name('hr.attendance.logs.bulk-delete');
+}); 
+
+//holidays
+
+Route::get('/holidays', [HRController::class, 'holidays'])->name('hr.holidays');
+Route::post('/holidays', [HRController::class, 'storeHoliday'])->name('hr.holidays.store');
+Route::put('/holidays/{holiday}', [HRController::class, 'updateHoliday'])->name('hr.holidays.update');
+Route::delete('/holidays/{holiday}', [HRController::class, 'destroyHoliday'])->name('hr.holidays.destroy');
+
+// Public route for holiday dates (for date picker)
+Route::get('/holiday-dates', [HRController::class, 'getHolidayDates'])->name('holiday.dates');
 
 
      //notification routes - FIXED: Add /hr prefix
@@ -259,6 +284,14 @@ Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduc
    Route::post('/dept-head/notifications/mark-all-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAllAsRead'])->name('dept-head.notifications.mark-all-read');
    Route::get('/dept-head/notifications/unread-count', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'getUnreadCount'])->name('dept-head.notifications.unread-count');
    Route::get('/employees/{employee_id}/leave-credits', [DeptHeadController::class, 'showEmployeeLeaveCredits'])->name('employees.leave-credits');
+
+
+   // Add these to your existing dept_head routes
+Route::get('/dept-head/credit-conversions', [DeptHeadController::class, 'creditConversions'])->name('dept_head.credit-conversions');
+Route::get('/dept-head/credit-conversions/{id}', [DeptHeadController::class, 'showCreditConversion'])->name('dept_head.credit-conversions.show');
+Route::post('/dept-head/credit-conversions/{id}/approve', [DeptHeadController::class, 'approveCreditConversion'])->name('dept_head.credit-conversions.approve');
+Route::post('/dept-head/credit-conversions/{id}/reject', [DeptHeadController::class, 'rejectCreditConversion'])->name('dept_head.credit-conversions.reject');
+Route::get('/dept-head/credit-conversions-stats', [DeptHeadController::class, 'getCreditConversionStats'])->name('dept_head.credit-conversions.stats');
     });
     //Route::middleware(['auth', 'role:dept_head'])->group(function () {
     //    Route::get('/dept-head/dashboard', [App\Http\Controllers\DeptHead\DeptHeadController::class, 'dashboard']);

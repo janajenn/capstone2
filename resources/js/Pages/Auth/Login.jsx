@@ -83,12 +83,12 @@ export default function Login({ status, canResetPassword }) {
     };
 
     const glowVariants = {
-        hidden: { textShadow: '0 0 0 rgba(255, 255, 255, 0)' },
+        hidden: { textShadow: '0 0 0 rgba(0, 0, 0, 0)' },
         visible: {
             textShadow: [
-                '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)',
-                '0 0 20px rgba(255, 255, 255, 0.7), 0 0 30px rgba(255, 255, 255, 0.5)',
-                '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)'
+                '0 0 10px rgba(0, 0, 0, 0.1), 0 0 20px rgba(0, 0, 0, 0.05)',
+                '0 0 20px rgba(0, 0, 0, 0.15), 0 0 30px rgba(0, 0, 0, 0.1)',
+                '0 0 10px rgba(0, 0, 0, 0.1), 0 0 20px rgba(0, 0, 0, 0.05)'
             ],
             transition: {
                 duration: 2,
@@ -141,7 +141,7 @@ export default function Login({ status, canResetPassword }) {
                 position: 'absolute',
                 width: `${Math.random() * 4 + 2}px`,
                 height: `${Math.random() * 4 + 2}px`,
-                background: 'rgba(255, 255, 255, 0.1)',
+                background: 'rgba(0, 0, 0, 0.05)',
                 borderRadius: '50%',
                 top: `${Math.random() * 100}%`,
                 left: `${Math.random() * 100}%`,
@@ -175,7 +175,7 @@ export default function Login({ status, canResetPassword }) {
         >
             {/* Blurred Backdrop */}
             <motion.div
-                className="fixed inset-0 bg-red-900/40 backdrop-blur-md"
+                className="fixed inset-0 bg-black/20 backdrop-blur-md"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -192,23 +192,23 @@ export default function Login({ status, canResetPassword }) {
                 onClick={(e) => e.stopPropagation()}
             >
                 <motion.div 
-                    className="p-6 bg-blue-950 backdrop-blur-sm rounded-2xl border border-blue-800/50 shadow-2xl"
+                    className="p-6 bg-white backdrop-blur-sm rounded-2xl border border-gray-200 shadow-2xl"
                     variants={containerVariants}
                 >
                     <motion.div
-                        className="flex items-center justify-center w-16 h-16 mx-auto bg-blue-800/50 rounded-full mb-6 relative overflow-hidden"
+                        className="flex items-center justify-center w-16 h-16 mx-auto bg-gray-100 rounded-full mb-6 relative overflow-hidden"
                         variants={pulseVariants}
                         initial="hidden"
                         animate="visible"
                     >
-                        <svg className="w-8 h-8 text-white relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-8 h-8 text-black relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
                         {/* Subtle Glow Ring */}
                         <motion.div
                             className="absolute inset-0 rounded-full"
                             style={{
-                                boxShadow: '0 0 30px 10px rgba(255, 255, 255, 0.6)',
+                                boxShadow: '0 0 30px 10px rgba(0, 0, 0, 0.05)',
                             }}
                             animate={{ opacity: [0.5, 1, 0.5] }}
                             transition={{
@@ -219,12 +219,12 @@ export default function Login({ status, canResetPassword }) {
                         />
                     </motion.div>
                     <motion.h3 
-                        className="text-xl font-bold text-white text-center mb-4 leading-tight drop-shadow-md"
+                        className="text-xl font-bold text-black text-center mb-4 leading-tight drop-shadow-md"
                         variants={glowVariants}
                         initial="hidden"
                         animate="visible"
                         style={{
-                            textShadow: '0 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.5)',
+                            textShadow: '0 2px 4px rgba(0, 0, 0, 0.1), 0 0 10px rgba(0, 0, 0, 0.05)',
                         }}
                     >
                         Contact HR Department
@@ -233,32 +233,32 @@ export default function Login({ status, canResetPassword }) {
                         className="text-center mb-6"
                         variants={itemVariants}
                     >
-                        <p className="mb-4 text-lg leading-relaxed text-white drop-shadow-md"
+                        <p className="mb-4 text-lg leading-relaxed text-black drop-shadow-md"
                            style={{
-                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                            }}
                         >
                             For account registration and general assistance, please visit the HR Office during working hours.
                         </p>
-                        <div className="bg-blue-800/50 rounded-xl p-5 text-sm shadow-inner border border-blue-700/30">
-                            <p className="font-semibold text-white mb-2 drop-shadow-md" 
+                        <div className="bg-gray-100 rounded-xl p-5 text-sm shadow-inner border border-gray-200">
+                            <p className="font-semibold text-black mb-2 drop-shadow-md" 
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >HR Office Location:</p>
-                            <p className="text-white mb-3 drop-shadow-md"
+                            <p className="text-black mb-3 drop-shadow-md"
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >Main Administration Building, 2nd Floor</p>
-                            <p className="font-semibold text-white mb-2 drop-shadow-md"
+                            <p className="font-semibold text-black mb-2 drop-shadow-md"
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >Office Hours:</p>
-                            <p className="text-white drop-shadow-md"
+                            <p className="text-black drop-shadow-md"
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >Monday - Friday: 8:00 AM - 5:00 PM</p>
                         </div>
@@ -271,7 +271,7 @@ export default function Login({ status, canResetPassword }) {
                     >
                         <button
                             onClick={closeContactModal}
-                            className="px-8 py-3 bg-blue-800/70 text-white rounded-full hover:bg-blue-700/70 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg border border-blue-600/50"
+                            className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg border border-gray-300"
                         >
                             Understood
                         </button>
@@ -294,7 +294,7 @@ export default function Login({ status, canResetPassword }) {
         >
             {/* Blurred Backdrop */}
             <motion.div
-                className="fixed inset-0 bg-red-900/40 backdrop-blur-md"
+                className="fixed inset-0 bg-black/20 backdrop-blur-md"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -311,23 +311,23 @@ export default function Login({ status, canResetPassword }) {
                 onClick={(e) => e.stopPropagation()}
             >
                 <motion.div 
-                    className="p-6 bg-blue-950 backdrop-blur-sm rounded-2xl border border-blue-800/50 shadow-2xl"
+                    className="p-6 bg-white backdrop-blur-sm rounded-2xl border border-gray-200 shadow-2xl"
                     variants={containerVariants}
                 >
                     <motion.div
-                        className="flex items-center justify-center w-16 h-16 mx-auto bg-blue-800/50 rounded-full mb-6 relative overflow-hidden"
+                        className="flex items-center justify-center w-16 h-16 mx-auto bg-gray-100 rounded-full mb-6 relative overflow-hidden"
                         variants={pulseVariants}
                         initial="hidden"
                         animate="visible"
                     >
-                        <svg className="w-8 h-8 text-white relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-8 h-8 text-black relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                         </svg>
                         {/* Subtle Glow Ring */}
                         <motion.div
                             className="absolute inset-0 rounded-full"
                             style={{
-                                boxShadow: '0 0 30px 10px rgba(255, 255, 255, 0.6)',
+                                boxShadow: '0 0 30px 10px rgba(0, 0, 0, 0.05)',
                             }}
                             animate={{ opacity: [0.5, 1, 0.5] }}
                             transition={{
@@ -338,12 +338,12 @@ export default function Login({ status, canResetPassword }) {
                         />
                     </motion.div>
                     <motion.h3 
-                        className="text-xl font-bold text-white text-center mb-4 leading-tight drop-shadow-md"
+                        className="text-xl font-bold text-black text-center mb-4 leading-tight drop-shadow-md"
                         variants={glowVariants}
                         initial="hidden"
                         animate="visible"
                         style={{
-                            textShadow: '0 2px 4px rgba(0, 0, 0, 0.3), 0 0 10px rgba(255, 255, 255, 0.5)',
+                            textShadow: '0 2px 4px rgba(0, 0, 0, 0.1), 0 0 10px rgba(0, 0, 0, 0.05)',
                         }}
                     >
                         Password Assistance Required
@@ -352,53 +352,53 @@ export default function Login({ status, canResetPassword }) {
                         className="text-center mb-6"
                         variants={itemVariants}
                     >
-                        <p className="mb-4 text-lg leading-relaxed text-white drop-shadow-md"
+                        <p className="mb-4 text-lg leading-relaxed text-black drop-shadow-md"
                            style={{
-                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                               textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                            }}
                         >
                             For security reasons, password resets must be processed in person at the HR Office.
                         </p>
-                        <div className="bg-blue-800/50 rounded-xl p-5 text-sm shadow-inner border border-blue-700/30">
-                            <p className="font-semibold text-white mb-3 drop-shadow-md"
+                        <div className="bg-gray-100 rounded-xl p-5 text-sm shadow-inner border border-gray-200">
+                            <p className="font-semibold text-black mb-3 drop-shadow-md"
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >Please bring:</p>
                             <ul className="space-y-2 text-left mb-4">
-                                <li className="flex items-center text-white drop-shadow-md"
+                                <li className="flex items-center text-black drop-shadow-md"
                                     style={{
-                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                     }}
                                 >
-                                    <span className="w-2 h-2 bg-white rounded-full mr-2 flex-shrink-0"></span>
+                                    <span className="w-2 h-2 bg-black rounded-full mr-2 flex-shrink-0"></span>
                                     Your company ID
                                 </li>
-                                <li className="flex items-center text-white drop-shadow-md"
+                                <li className="flex items-center text-black drop-shadow-md"
                                     style={{
-                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                     }}
                                 >
-                                    <span className="w-2 h-2 bg-white rounded-full mr-2 flex-shrink-0"></span>
+                                    <span className="w-2 h-2 bg-black rounded-full mr-2 flex-shrink-0"></span>
                                     Valid government-issued ID
                                 </li>
-                                <li className="flex items-center text-white drop-shadow-md"
+                                <li className="flex items-center text-black drop-shadow-md"
                                     style={{
-                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                     }}
                                 >
-                                    <span className="w-2 h-2 bg-white rounded-full mr-2 flex-shrink-0"></span>
+                                    <span className="w-2 h-2 bg-black rounded-full mr-2 flex-shrink-0"></span>
                                     Completed password reset form
                                 </li>
                             </ul>
-                            <p className="font-semibold text-white mb-2 drop-shadow-md"
+                            <p className="font-semibold text-black mb-2 drop-shadow-md"
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >HR Office:</p>
-                            <p className="text-white drop-shadow-md"
+                            <p className="text-black drop-shadow-md"
                                style={{
-                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+                                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.1)',
                                }}
                             >Main Administration Building, 2nd Floor</p>
                         </div>
@@ -411,7 +411,7 @@ export default function Login({ status, canResetPassword }) {
                     >
                         <button
                             onClick={closeForgotPasswordModal}
-                            className="px-8 py-3 bg-blue-800/70 text-white rounded-full hover:bg-blue-700/70 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg border border-blue-600/50"
+                            className="px-8 py-3 bg-black text-white rounded-full hover:bg-gray-800 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-lg border border-gray-300"
                         >
                             I Understand
                         </button>
@@ -425,7 +425,7 @@ export default function Login({ status, canResetPassword }) {
             <div 
                 className="min-h-screen flex items-center justify-center relative overflow-hidden py-12 px-4 sm:px-6 lg:px-8"
                 style={{ 
-                    background: 'linear-gradient(135deg, #7d0c0c 0%, #a52a2a 50%, #7d0c0c 100%)',
+                    background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 50%, #ffffff 100%)',
                 }}
             >
                 {/* Animated Background Gradient */}
@@ -434,7 +434,7 @@ export default function Login({ status, canResetPassword }) {
                     variants={backgroundVariants}
                     animate="animate"
                     style={{
-                        background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.1) 100%)',
+                        background: 'linear-gradient(135deg, rgba(0,0,0,0.02) 0%, transparent 50%, rgba(0,0,0,0.02) 100%)',
                         backgroundSize: '200% 200%',
                     }}
                 />
@@ -457,12 +457,12 @@ export default function Login({ status, canResetPassword }) {
                     >
                         <div className="flex justify-center mb-6 relative">
                             <motion.div 
-                                className="w-20 h-20 bg-white bg-opacity-10 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-sm"
+                                className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center shadow-2xl backdrop-blur-sm"
                                 variants={pulseVariants}
                                 initial="hidden"
                                 animate="visible"
                                 style={{
-                                    filter: 'drop-shadow(0 0 15px rgba(255, 255, 255, 0.3))',
+                                    filter: 'drop-shadow(0 0 15px rgba(0, 0, 0, 0.05))',
                                 }}
                             >
                                 <img
@@ -475,7 +475,6 @@ export default function Login({ status, canResetPassword }) {
                             <motion.div
                                 className="absolute inset-0 rounded-full"
                                 style={{
-                                    // boxShadow: '0 0 30px 10px rgba(141, 7, 7, 0.2)',
                                     opacity: 0,
                                 }}
                                 animate={{ opacity: [0.2, 0.5, 0.2] }}
@@ -487,7 +486,7 @@ export default function Login({ status, canResetPassword }) {
                             />
                         </div>
                         <motion.h2 
-                            className="text-3xl font-bold text-white mb-2"
+                            className="text-3xl font-bold text-black mb-2"
                             variants={glowVariants}
                             initial="hidden"
                             animate="visible"
@@ -495,7 +494,7 @@ export default function Login({ status, canResetPassword }) {
                             Welcome back
                         </motion.h2>
                         <motion.p 
-                            className="text-gray-200"
+                            className="text-gray-600"
                             variants={itemVariants}
                         >
                             Sign in to your OPOL Leave Portal account
@@ -506,7 +505,7 @@ export default function Login({ status, canResetPassword }) {
                     {status && (
                         <AnimatePresence>
                             <motion.div 
-                                className="rounded-xl bg-white bg-opacity-10 p-4 border border-white border-opacity-20 backdrop-blur-sm"
+                                className="rounded-xl bg-gray-100 p-4 border border-gray-200 backdrop-blur-sm"
                                 variants={itemVariants}
                                 initial="hidden"
                                 animate="visible"
@@ -518,7 +517,7 @@ export default function Login({ status, canResetPassword }) {
                                         </svg>
                                     </div>
                                     <div className="ml-3">
-                                        <p className="text-sm font-medium text-gray-200">
+                                        <p className="text-sm font-medium text-gray-600">
                                             {status}
                                         </p>
                                     </div>
@@ -530,7 +529,7 @@ export default function Login({ status, canResetPassword }) {
                     {/* Login Form */}
                     <motion.form 
                         onSubmit={submit} 
-                        className="mt-8 space-y-6 bg-white bg-opacity-10 p-8 rounded-2xl shadow-2xl border border-white border-opacity-20 backdrop-blur-sm"
+                        className="mt-8 space-y-6 bg-white p-8 rounded-2xl shadow-2xl border border-gray-200 backdrop-blur-sm"
                         variants={itemVariants}
                     >
                         <div className="space-y-4">
@@ -539,7 +538,7 @@ export default function Login({ status, canResetPassword }) {
                                 <InputLabel
                                     htmlFor="email"
                                     value="Email"
-                                    className="block text-sm font-medium text-white mb-2"
+                                    className="block text-sm font-medium text-black mb-2"
                                 />
                                 <div className="relative">
                                     <TextInput
@@ -547,20 +546,20 @@ export default function Login({ status, canResetPassword }) {
                                         type="email"
                                         name="email"
                                         value={data.email}
-                                        className="block w-full px-4 py-3 bg-white bg-opacity-10 border border-white border-opacity-20 rounded-xl focus:ring-2 focus:ring-white focus:ring-opacity-50 focus:border-white focus:border-opacity-30 transition duration-150 text-white placeholder-gray-300"
+                                        className="block w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:ring-opacity-50 focus:border-black focus:border-opacity-30 transition duration-150 text-black placeholder-gray-500"
                                         placeholder="Enter your email"
                                         autoComplete="email"
                                         isFocused={true}
                                         onChange={(e) => setData('email', e.target.value)}
                                     />
                                     <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                                        <svg className="h-5 w-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                        <svg className="h-5 w-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
                                             <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
                                             <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                                         </svg>
                                     </div>
                                 </div>
-                                <InputError message={errors.email} className="mt-2 text-sm text-red-300" />
+                                <InputError message={errors.email} className="mt-2 text-sm text-red-500" />
                             </motion.div>
 
                             {/* Password Field */}
@@ -569,12 +568,12 @@ export default function Login({ status, canResetPassword }) {
                                     <InputLabel
                                         htmlFor="password"
                                         value="Password"
-                                        className="block text-sm font-medium text-white"
+                                        className="block text-sm font-medium text-black"
                                     />
                                     <button
                                         type="button"
                                         onClick={openForgotPasswordModal}
-                                        className="text-sm font-medium text-white hover:text-gray-200 transition-colors"
+                                        className="text-sm font-medium text-black hover:text-gray-700 transition-colors"
                                     >
                                         Forgot password?
                                     </button>
@@ -585,14 +584,14 @@ export default function Login({ status, canResetPassword }) {
                                         type={showPassword ? "text" : "password"}
                                         name="password"
                                         value={data.password}
-                                        className="block w-full px-4 py-3 pr-12 bg-white bg-opacity-10 border border-white border-opacity-20 rounded-xl focus:ring-2 focus:ring-white focus:ring-opacity-50 focus:border-white focus:border-opacity-30 transition duration-150 text-white placeholder-gray-300"
+                                        className="block w-full px-4 py-3 pr-12 bg-gray-100 border border-gray-200 rounded-xl focus:ring-2 focus:ring-black focus:ring-opacity-50 focus:border-black focus:border-opacity-30 transition duration-150 text-black placeholder-gray-500"
                                         placeholder="Enter your password"
                                         autoComplete="current-password"
                                         onChange={(e) => setData('password', e.target.value)}
                                     />
                                     <button
                                         type="button"
-                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-300 hover:text-gray-100 transition-colors"
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700 transition-colors"
                                         onClick={togglePasswordVisibility}
                                     >
                                         {showPassword ? (
@@ -607,7 +606,7 @@ export default function Login({ status, canResetPassword }) {
                                         )}
                                     </button>
                                 </div>
-                                <InputError message={errors.password} className="mt-2 text-sm text-red-300" />
+                                <InputError message={errors.password} className="mt-2 text-sm text-red-500" />
                             </motion.div>
                         </div>
 
@@ -620,9 +619,9 @@ export default function Login({ status, canResetPassword }) {
                                 name="remember"
                                 checked={data.remember}
                                 onChange={(e) => setData('remember', e.target.checked)}
-                                className="h-4 w-4 text-white focus:ring-white border-white border-opacity-50 rounded"
+                                className="h-4 w-4 text-black focus:ring-black border-gray-300 rounded"
                             />
-                            <label htmlFor="remember" className="ml-2 block text-sm text-gray-200">
+                            <label htmlFor="remember" className="ml-2 block text-sm text-gray-600">
                                 Remember me
                             </label>
                         </motion.div>
@@ -630,17 +629,16 @@ export default function Login({ status, canResetPassword }) {
                         {/* Submit Button */}
                         <motion.div 
                             variants={itemVariants}
-                            whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(255,255,255,0.3)' }}
+                            whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(0,0,0,0.1)' }}
                             transition={{ duration: 0.3 }}
                         >
                             <PrimaryButton
-                                className="group relative w-full flex justify-center py-3 px-4 border border-transparent rounded-xl text-sm font-medium text-maroon bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white focus:ring-opacity-50 transition duration-150 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+                                className="group relative w-full flex justify-center py-3 px-4 border border-transparent rounded-xl text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black focus:ring-opacity-50 transition duration-150 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                                 disabled={processing}
-                                style={{ color: '#7d0c0c' }}
                             >
                                 {processing ? (
                                     <>
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-maroon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
@@ -654,15 +652,15 @@ export default function Login({ status, canResetPassword }) {
 
                         {/* Footer Links */}
                         <motion.div 
-                            className="text-center pt-4 border-t border-white border-opacity-20"
+                            className="text-center pt-4 border-t border-gray-200"
                             variants={itemVariants}
                         >
-                            <p className="text-sm text-gray-200">
+                            <p className="text-sm text-gray-600">
                                 Need an account?{' '}
                                 <button
                                     type="button"
                                     onClick={openContactModal}
-                                    className="font-medium text-white hover:text-gray-100 transition-colors"
+                                    className="font-medium text-black hover:text-gray-700 transition-colors"
                                 >
                                     Click me!
                                 </button>
@@ -675,7 +673,7 @@ export default function Login({ status, canResetPassword }) {
                         className="text-center"
                         variants={itemVariants}
                     >
-                        <div className="inline-flex items-center text-xs text-gray-300 bg-white bg-opacity-10 px-3 py-2 rounded-full shadow-sm backdrop-blur-sm">
+                        <div className="inline-flex items-center text-xs text-gray-500 bg-gray-100 px-3 py-2 rounded-full shadow-sm backdrop-blur-sm">
                             <svg className="w-4 h-4 mr-1 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                             </svg>
@@ -688,7 +686,7 @@ export default function Login({ status, canResetPassword }) {
                 <div className="absolute bottom-0 left-0 w-full overflow-hidden">
                     <svg className="relative block w-full h-24" viewBox="0 0 1420 100" preserveAspectRatio="none">
                         <path
-                            fill="rgba(255,255,255,0.1)"
+                            fill="rgba(0,0,0,0.02)"
                             d="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
                         >
                             <animate

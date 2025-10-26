@@ -9,7 +9,7 @@ class Department extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name'];
+    protected $fillable = ['name', 'head_employee_id'];
 
     public function employees()
     {
@@ -22,17 +22,25 @@ class Department extends Model
     }
 
     /**
-     * Get the department head user (user with role 'dept_head' in this department)
+     * Get the department head (employee)
      */
     public function head()
+    {
+        return $this->belongsTo(Employee::class, 'head_employee_id', 'employee_id');
+    }
+
+    /**
+     * Get the department head user
+     */
+    public function headUser()
     {
         return $this->hasOneThrough(
             User::class,
             Employee::class,
-            'department_id', // Foreign key on employees table
-            'employee_id',   // Foreign key on users table
-            'id',            // Local key on departments table
-            'employee_id'    // Local key on employees table
+            'department_id',
+            'employee_id',
+            'id',
+            'employee_id'
         )->where('users.role', 'dept_head');
     }
 }

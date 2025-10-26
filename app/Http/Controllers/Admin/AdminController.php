@@ -20,10 +20,22 @@ use App\Models\LeaveBalance;
 use App\Services\LeaveBalanceService;
 use App\Models\Employee;
 use App\Models\Department;  
+use App\Models\CreditConversion;
+use App\Services\CreditConversionService;
 
 
 class AdminController extends Controller
 {
+
+    protected $creditConversionService;
+
+
+    public function __construct(CreditConversionService $creditConversionService, NotificationService $notificationService)
+    {
+        $this->creditConversionService = $creditConversionService;
+        $this->notificationService = $notificationService;
+    }
+
 
     // In AdminController.php - leaveRequests method
     public function leaveRequests(Request $request)
@@ -1498,6 +1510,259 @@ public function departmentsIndex(Request $request)
         'pageTitle' => 'All Departments',
         'totalCount' => Department::count(),
     ]);
+}
+
+
+
+// Add these methods to your existing AdminController class
+
+
+
+/**
+ * Display credit conversion requests for Admin approval
+ */
+
+
+
+
+ public function creditConversions(Request $request)
+ {
+     $perPage = 10;
+     $adminUserId = auth()->id();
+     
+     // Only show requests that are approved by Department Head (ready for Admin)
+     $query = CreditConversion::with([
+             'employee.department', 
+             'hrApprover', 
+             'deptHeadApprover', 
+             'adminApprover'
+         ])
+         ->where('status', 'dept_head_approved') // Only show Dept Head approved requests to Admin
+         ->when($request->status, function ($query, $status) {
+             if ($status === 'pending_admin') {
+                 return $query->where('status', 'dept_head_approved');
+             } elseif ($status === 'fully_approved') {
+                 return $query->where('status', 'admin_approved');
+             } elseif ($status === 'rejected') {
+                 return $query->where('status', 'rejected');
+             }
+             return $query;
+         })
+         ->when($request->employee, function ($query, $employee) {
+             return $query->whereHas('employee', function ($q) use ($employee) {
+                 $q->where('firstname', 'like', "%{$employee}%")
+                   ->orWhere('lastname', 'like', "%{$employee}%");
+             });
+         })
+         ->orderBy('submitted_at', 'desc');
+ 
+     $conversions = $query->paginate($perPage)->withQueryString();
+ 
+     // Transform conversions with status mapping
+     $transformedConversions = $conversions->getCollection()->map(function ($conversion) {
+         return $this->transformConversionData($conversion);
+     });
+ 
+     $conversions->setCollection($transformedConversions);
+ 
+     // Get statistics - Admin specific
+     $totalRequests = CreditConversion::where('status', 'dept_head_approved')->count(); // Only requests that reached admin
+     $pendingAdminRequests = CreditConversion::where('status', 'dept_head_approved')->count();
+     
+     // For approved by current admin, check admin_approved_by column
+     $approvedByAdminRequests = CreditConversion::where('status', 'admin_approved')
+         ->where('admin_approved_by', $adminUserId)
+         ->count();
+     
+     // For rejected requests, we need to determine who rejected it based on your business logic
+     // Since you don't have a rejected_by column, we'll assume admin rejects are tracked differently
+     // Let's check if the request was rejected and has admin_remarks (indicating admin rejection)
+     $rejectedByAdminRequests = CreditConversion::where('status', 'rejected')
+         ->whereNotNull('admin_remarks') // Assuming admin remarks indicate admin rejection
+         ->count();
+ 
+     return Inertia::render('Admin/CreditConversions', [
+         'conversions' => $conversions,
+         'stats' => [
+             'total' => $totalRequests,
+             'pending' => $pendingAdminRequests,
+             'approved' => $approvedByAdminRequests,
+             'rejected' => $rejectedByAdminRequests,
+         ],
+         'filters' => $request->only(['status', 'employee']),
+     ]);
+ }
+ 
+ /**
+  * Admin approves credit conversion request (FINAL APPROVAL)
+  */
+ public function approveCreditConversion(Request $request, $id)
+ {
+     try {
+         \Log::info('=== ADMIN APPROVAL START ===');
+         
+         $conversionBefore = CreditConversion::find($id);
+         
+         // Verify this request is actually pending admin approval
+         if ($conversionBefore->status !== 'dept_head_approved') {
+             return back()->with('error', 'This request is not ready for admin approval.');
+         }
+ 
+         \Log::info('Conversion before admin approval', [
+             'id' => $conversionBefore->conversion_id,
+             'status' => $conversionBefore->status,
+         ]);
+ 
+         // NO REMARKS VALIDATION FOR APPROVAL
+         $conversion = $this->creditConversionService->adminApproveConversion(
+             $id,
+             $request->user()->id,
+             null // No remarks for approval
+         );
+ 
+         // Verify the conversion was updated
+         $conversionAfter = CreditConversion::find($id);
+         \Log::info('Conversion after admin approval', [
+             'status' => $conversionAfter->status,
+             'admin_approved_by' => $conversionAfter->admin_approved_by,
+         ]);
+ 
+         \Log::info('Admin Approval Successful');
+ 
+         return redirect()->route('admin.credit-conversions')
+             ->with('success', 'Credit conversion request approved successfully! Credits have been deducted.');
+         
+     } catch (\Exception $e) {
+         \Log::error('Admin Approval Failed', [
+             'conversion_id' => $id,
+             'error' => $e->getMessage(),
+         ]);
+ 
+         return back()->with('error', 'Failed to approve conversion: ' . $e->getMessage());
+     }
+ }
+ 
+ /**
+  * Admin rejects credit conversion request
+  */
+ public function rejectCreditConversion(Request $request, $id)
+ {
+     // Remarks still required for rejection
+     $validated = $request->validate([
+         'remarks' => ['required', 'string', 'max:500'],
+     ]);
+ 
+     try {
+         $conversionBefore = CreditConversion::find($id);
+         
+         // Verify this request is actually pending admin approval
+         if ($conversionBefore->status !== 'dept_head_approved') {
+             return back()->with('error', 'This request is not ready for admin action.');
+         }
+ 
+         $conversion = $this->creditConversionService->rejectConversion(
+             $id,
+             $request->user()->id,
+             $validated['remarks'],
+             'admin' // Rejected by Admin
+         );
+ 
+         return redirect()->route('admin.credit-conversions')
+             ->with('success', 'Credit conversion request rejected successfully!');
+     } catch (\Exception $e) {
+         return back()->withErrors(['error' => $e->getMessage()]);
+     }
+ }
+/**
+ * Show specific credit conversion request details for Admin
+ */
+public function showCreditConversion($id)
+{
+    $conversion = CreditConversion::with([
+        'employee.department',
+        'hrApprover',
+        'deptHeadApprover', 
+        'adminApprover'
+    ])->findOrFail($id);
+
+    $transformedConversion = $this->transformConversionData($conversion);
+
+    return Inertia::render('Admin/ShowCreditConversion', [
+        'conversion' => $transformedConversion,
+    ]);
+}
+
+/**
+ * Admin approves credit conversion request (FINAL APPROVAL)
+ */
+
+
+/**
+ * Admin rejects credit conversion request
+ */
+
+/**
+ * Transform conversion data for display
+ */
+private function transformConversionData($conversion)
+{
+    $leaveTypeNames = [
+        'SL' => 'Sick Leave',
+        'VL' => 'Vacation Leave'
+    ];
+
+    // Calculate cash equivalent using the same formula as service
+    $monthlySalary = $conversion->employee->monthly_salary ?? 0;
+    $calculatedCash = $this->calculateCashEquivalent($monthlySalary, $conversion->credits_requested);
+
+    // Safe employee data
+    $employee = $conversion->employee;
+    
+    return [
+        'conversion_id' => $conversion->conversion_id,
+        'employee_id' => $conversion->employee_id,
+        'employee' => $employee ? [
+            'firstname' => $employee->firstname,
+            'lastname' => $employee->lastname,
+            'position' => $employee->position,
+            'department' => $employee->department ? [
+                'name' => $employee->department->name,
+            ] : null,
+        ] : null,
+        'employee_name' => $employee ? $employee->firstname . ' ' . $employee->lastname : 'Unknown Employee',
+        'department' => $employee && $employee->department ? $employee->department->name : 'No Department',
+        'leave_type_code' => $conversion->leave_type,
+        'leave_type_name' => $leaveTypeNames[$conversion->leave_type] ?? 'Unknown',
+        'credits_requested' => (float) $conversion->credits_requested,
+        'equivalent_cash' => $calculatedCash,
+        'status' => $conversion->status,
+        'status_display' => $conversion->getStatusDisplay(),
+        'submitted_at' => $conversion->submitted_at?->format('Y-m-d H:i:s'),
+        'hr_approved_at' => $conversion->hr_approved_at?->format('Y-m-d H:i:s'),
+        'dept_head_approved_at' => $conversion->dept_head_approved_at?->format('Y-m-d H:i:s'),
+        'admin_approved_at' => $conversion->admin_approved_at?->format('Y-m-d H:i:s'),
+        'employee_remarks' => $conversion->employee_remarks,
+        'hr_remarks' => $conversion->hr_remarks,
+        'dept_head_remarks' => $conversion->dept_head_remarks,
+        'admin_remarks' => $conversion->admin_remarks,
+        'hr_approver_name' => $conversion->hrApprover->name ?? null,
+        'dept_head_approver_name' => $conversion->deptHeadApprover->name ?? null,
+        'admin_approver_name' => $conversion->adminApprover->name ?? null,
+        'current_approver_role' => $conversion->getCurrentApproverRole(),
+        'created_at' => $conversion->created_at?->format('Y-m-d H:i:s'),
+        'updated_at' => $conversion->updated_at?->format('Y-m-d H:i:s'),
+    ];
+}
+
+/**
+ * Calculate cash equivalent using the same formula as CreditConversionService
+ */
+private function calculateCashEquivalent($monthlySalary, $credits)
+{
+    // Use the same formula as in CreditConversionService
+    $dailyRate = $monthlySalary / 22; // Assuming 22 working days per month
+    $cashValue = $dailyRate * $credits;
+    return round($cashValue, 2);
 }
 
 }
