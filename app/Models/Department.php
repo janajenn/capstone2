@@ -9,7 +9,11 @@ class Department extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name', 'head_employee_id'];
+    protected $fillable = ['name', 'head_employee_id', 'status'];
+
+    protected $attributes = [
+        'status' => 'active',
+    ];
 
     public function employees()
     {
@@ -42,5 +46,21 @@ class Department extends Model
             'id',
             'employee_id'
         )->where('users.role', 'dept_head');
+    }
+
+    /**
+     * Scope active departments
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    /**
+     * Scope inactive departments
+     */
+    public function scopeInactive($query)
+    {
+        return $query->where('status', 'inactive');
     }
 }

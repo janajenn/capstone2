@@ -10,6 +10,8 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use App\Models\AttendanceLogRaw; // Add this
+use Illuminate\Support\Str;
 
 class AttendanceImportService
 {
@@ -17,8 +19,16 @@ class AttendanceImportService
     protected $successCount = 0;
     protected $processedRows = [];
     protected $currentEmployee = null;
+    protected $currentImportBatch; // Track current import batch
 
    
+
+
+
+    public function __construct()
+    {
+        $this->currentImportBatch = 'import_' . now()->format('Ymd_His') . '_' . Str::random(8);
+    }
  /**
      * Generate visual preview of Excel file
      */
@@ -569,9 +579,9 @@ public function generateVisualPreview($filePath)
             $worksheet = $spreadsheet->getActiveSheet();
             $rows = $worksheet->toArray();
 
-            \Log::info("Excel file loaded successfully", [
+            \Log::info("Starting import with batch: {$this->currentImportBatch}", [
                 'total_rows' => count($rows),
-                'first_few_rows' => array_slice($rows, 0, 10)
+                'file_path' => $filePath
             ]);
 
             foreach ($rows as $rowIndex => $row) {
@@ -586,12 +596,19 @@ public function generateVisualPreview($filePath)
                 }
             }
 
+            \Log::info("Import completed", [
+                'batch' => $this->currentImportBatch,
+                'success_count' => $this->successCount,
+                'error_count' => count($this->errors)
+            ]);
+
             return [
                 'success' => true,
                 'success_count' => $this->successCount,
                 'error_count' => count($this->errors),
                 'errors' => $this->errors,
-                'processed_rows' => $this->processedRows
+                'processed_rows' => $this->processedRows,
+                'import_batch' => $this->currentImportBatch // Return batch ID for reference
             ];
 
         } catch (\Exception $e) {
@@ -604,7 +621,8 @@ public function generateVisualPreview($filePath)
         }
     }
 
-    protected function processRow($row, $rowNumber, $options = [])
+
+   protected function processRow($row, $rowNumber, $options = [])
     {
         if (!is_array($row) || empty($row) || !isset($row[0])) {
             return;
@@ -612,7 +630,7 @@ public function generateVisualPreview($filePath)
 
         $firstCell = $row[0];
 
-        // Check if this is an employee header row (contains name and biometric code)
+        // Check if this is an employee header row
         if (is_string($firstCell) && $this->isEmployeeHeader($firstCell)) {
             $employeeInfo = $this->extractEmployeeInfo($firstCell);
             
@@ -620,40 +638,187 @@ public function generateVisualPreview($filePath)
                 $this->currentEmployee = Employee::where('biometric_id', $employeeInfo['biometric_id'])->first();
                 
                 if ($this->currentEmployee) {
-                    \Log::info("Set current employee: {$this->currentEmployee->firstname} {$this->currentEmployee->lastname} (Biometric ID: {$employeeInfo['biometric_id']})");
-                    
-                    // Log for verification
-                    \Log::info("Employee details", [
-                        'extracted_name' => $employeeInfo['name'],
-                        'extracted_biometric_id' => $employeeInfo['biometric_id'],
-                        'found_employee_id' => $this->currentEmployee->employee_id,
-                        'found_name' => $this->currentEmployee->firstname . ' ' . $this->currentEmployee->lastname
+                    \Log::info("Set current employee for raw import", [
+                        'employee_id' => $this->currentEmployee->employee_id,
+                        'biometric_id' => $employeeInfo['biometric_id'],
+                        'batch' => $this->currentImportBatch
                     ]);
-                } else {
-                    $this->addError($rowNumber, "Employee not found with biometric ID: {$employeeInfo['biometric_id']} - Name: {$employeeInfo['name']}");
                 }
             }
-            return; // Skip processing employee header rows as attendance data
+            return;
         }
 
         // Skip if no current employee is set
         if (!$this->currentEmployee) {
-            \Log::warning("Skipping row {$rowNumber} - no current employee set");
             return;
         }
 
-        // Skip if this is not a date row (header, empty, or other non-date content)
+        // Skip if this is not a date row
         if (!is_string($firstCell) || empty(trim($firstCell)) || $this->isHeaderRow($firstCell)) {
             return;
         }
 
-        // Parse the date (format: "08/01/2025 Fri")
+        // Parse the date
         $workDate = $this->parseDateFromString(trim($firstCell));
         if (!$workDate) {
             $this->addError($rowNumber, "Invalid date format: {$firstCell}");
             return;
         }
 
+        // ✅ FIRST: Save to RAW table (exact import data)
+        $this->saveToRawTable($row, $rowNumber, $workDate);
+
+        // ✅ THEN: Process for main table (existing logic)
+        $this->processForMainTable($row, $rowNumber, $workDate, $options);
+    }
+
+    /**
+     * Save exact import data to raw table
+     */
+    protected function saveToRawTable($row, $rowNumber, $workDate)
+    {
+        try {
+            $rawData = [
+                'employee_id' => $this->currentEmployee->employee_id,
+                'work_date' => $workDate,
+                'raw_row' => $row, // Store the exact row data
+                'import_batch' => $this->currentImportBatch,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+
+            // Parse and add other fields if available, but keep original data
+            $rawData = array_merge($rawData, $this->parseRawFields($row, $workDate));
+
+            // Save to raw table
+            AttendanceLogRaw::create($rawData);
+
+            \Log::debug("Saved to raw table", [
+                'employee_id' => $this->currentEmployee->employee_id,
+                'work_date' => $workDate->format('Y-m-d'),
+                'batch' => $this->currentImportBatch
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("Failed to save to raw table", [
+                'row_number' => $rowNumber,
+                'employee_id' => $this->currentEmployee->employee_id,
+                'error' => $e->getMessage()
+            ]);
+            // Don't stop the import if raw save fails
+        }
+    }
+
+    /**
+     * Parse fields for raw table (minimal processing)
+     */
+    /**
+ * Parse fields for raw table (UPDATED with fixed shift calculation)
+ */
+/**
+ * Parse fields for raw table - FIXED to use identical calculation as processed data
+ */
+protected function parseRawFields($row, $workDate)
+{
+    $rawFields = [];
+
+    try {
+        // Schedule (Column B)
+        if (isset($row[1]) && !empty(trim($row[1]))) {
+            $scheduleParts = $this->parseScheduleString(trim($row[1]));
+            $rawFields['schedule_start'] = $scheduleParts['start'] ?? null;
+            $rawFields['schedule_end'] = $scheduleParts['end'] ?? null;
+        }
+
+        // Remarks (Column C)
+        if (isset($row[2]) && !empty(trim($row[2]))) {
+            $rawFields['remarks'] = trim($row[2]);
+        }
+
+        // Absent flag (Column D)
+        if (isset($row[3])) {
+            $rawFields['absent'] = intval($row[3]) === 1;
+        }
+
+        // Time In (Column E)
+        if (isset($row[4]) && !empty(trim($row[4]))) {
+            $rawFields['time_in'] = $this->parseTime(trim($row[4]), $workDate);
+        }
+
+        // Break (Column F)
+        if (isset($row[5]) && !empty(trim($row[5]))) {
+            $breakTimes = $this->parseBreakTimes(trim($row[5]));
+            $rawFields['break_start'] = $breakTimes['start'] ?? null;
+            $rawFields['break_end'] = $breakTimes['end'] ?? null;
+        }
+
+        // Time Out (Column G)
+        if (isset($row[6]) && !empty(trim($row[6]))) {
+            $rawFields['time_out'] = $this->parseTimeOut(trim($row[6]), $workDate);
+        }
+// ✅ CRITICAL FIX: Use the EXACT SAME calculation as processed data WITH DEBUG
+if ($rawFields['time_in'] && $rawFields['time_out']) {
+    // DEBUG: Log inputs before calculation
+    $this->debugCalculationInputs(
+        $rawFields['time_in'], 
+        $rawFields['time_out'], 
+        $rawFields['break_start'] ?? null, 
+        $rawFields['break_end'] ?? null,
+        $rawFields['schedule_start'] ?? null,
+        $rawFields['schedule_end'] ?? null,
+        'RAW_TABLE'
+    );
+    
+    // Use the identical calculation method as the main table
+    $rawFields['hrs_worked_minutes'] = $this->calculateHoursWorked(
+        $rawFields['time_in'], 
+        $rawFields['time_out'], 
+        $rawFields['break_start'] ?? null, 
+        $rawFields['break_end'] ?? null,
+        $rawFields['schedule_start'] ?? null,
+        $rawFields['schedule_end'] ?? null
+    );
+
+    $rawFields['late_minutes'] = $this->calculateLateMinutes(
+        $rawFields['schedule_start'] ?? null,
+        $rawFields['time_in']
+    );
+
+    \Log::info("✅ RAW CALCULATION RESULT", [
+        'employee_id' => $this->currentEmployee->employee_id,
+        'work_date' => $workDate->format('Y-m-d'),
+        'calculated_minutes' => $rawFields['hrs_worked_minutes'],
+        'late_minutes' => $rawFields['late_minutes'],
+        'source' => 'Raw table'
+    ]);
+} else {
+    // If missing time data, set to 0 like processed data would
+    $rawFields['hrs_worked_minutes'] = 0;
+    $rawFields['late_minutes'] = 0;
+}
+
+    } catch (\Exception $e) {
+        \Log::warning("Error parsing raw fields", [
+            'error' => $e->getMessage(),
+            'row' => $row
+        ]);
+        
+        // Set defaults on error to match processed behavior
+        $rawFields['hrs_worked_minutes'] = 0;
+        $rawFields['late_minutes'] = 0;
+    }
+
+    return $rawFields;
+}
+
+    /**
+     * Process for main table (your existing logic)
+     */
+    protected function processForMainTable($row, $rowNumber, $workDate, $options)
+    {
+        // Your existing processRow logic here - unchanged
+        // This is the same logic you currently have for processing main table
+        
         // Check if rest day
         $remarks = isset($row[2]) ? trim($row[2]) : '';
         if (strtoupper($remarks) === 'RESTDAY') {
@@ -663,11 +828,10 @@ public function generateVisualPreview($filePath)
                 'date' => $workDate->format('Y-m-d'),
                 'status' => 'RESTDAY (Skipped)'
             ];
-            \Log::info("Skipped rest day for {$this->currentEmployee->firstname} on {$workDate->format('Y-m-d')}");
             return;
         }
 
-        // Parse schedule (Column B: "8:00 AM - 5:00 PM")
+        // Parse schedule
         $scheduleString = isset($row[1]) ? trim($row[1]) : '';
         $scheduleParts = $this->parseScheduleString($scheduleString);
         
@@ -676,30 +840,76 @@ public function generateVisualPreview($filePath)
         $timeOut = $this->parseTimeOut(isset($row[6]) ? $row[6] : null, $workDate);
         $breakTimes = $this->parseBreakTimes(isset($row[5]) ? $row[5] : null);
 
-        // Check absent flag (Column D: 1 or 0)
+        // Check absent flag
         $absentFlag = isset($row[3]) ? intval($row[3]) : 0;
         $isAbsent = $absentFlag === 1;
 
+        
+        
         // Calculate derived fields
-        $lateMinutes = $this->calculateLateMinutes($scheduleParts['start'] ?? null, $timeIn);
-        $hoursWorked = $this->calculateHoursWorked($timeIn, $timeOut, $breakTimes['start'] ?? null, $breakTimes['end'] ?? null);
+$lateMinutes = $this->calculateLateMinutes($scheduleParts['start'] ?? null, $timeIn);
+$regularHours = $this->calculateHoursWorked(
+    $timeIn, 
+    $timeOut, 
+    $breakTimes['start'] ?? null, 
+    $breakTimes['end'] ?? null,
+    $scheduleParts['start'] ?? null,
+    $scheduleParts['end'] ?? null
+);// Calculate derived fields WITH DEBUG
+$this->debugCalculationInputs(
+    $timeIn, 
+    $timeOut, 
+    $breakTimes['start'] ?? null, 
+    $breakTimes['end'] ?? null,
+    $scheduleParts['start'] ?? null,
+    $scheduleParts['end'] ?? null,
+    'PROCESSED_TABLE'
+);
 
+$lateMinutes = $this->calculateLateMinutes($scheduleParts['start'] ?? null, $timeIn);
+$regularHours = $this->calculateHoursWorked(
+    $timeIn, 
+    $timeOut, 
+    $breakTimes['start'] ?? null, 
+    $breakTimes['end'] ?? null,
+    $scheduleParts['start'] ?? null,
+    $scheduleParts['end'] ?? null
+);
+
+\Log::info("✅ PROCESSED CALCULATION RESULT", [
+    'employee_id' => $this->currentEmployee->employee_id,
+    'work_date' => $workDate->format('Y-m-d'),
+    'calculated_minutes' => $regularHours,
+    'late_minutes' => $lateMinutes,
+    'source' => 'Processed table'
+]);
+
+// ✅ VERIFY: Ensure identical calculations
+$this->verifyIdenticalCalculations(
+    $timeIn, 
+    $timeOut, 
+    $breakTimes['start'] ?? null, 
+    $breakTimes['end'] ?? null,
+    $scheduleParts['start'] ?? null,
+    $scheduleParts['end'] ?? null
+);
+    
         // Use existing remarks or generate new ones
         if (empty($remarks)) {
             $remarks = $this->generateRemarks($lateMinutes, $timeIn, $timeOut, $isAbsent);
         }
-
+    
         // Check for existing record
         $existingLog = AttendanceLog::where('employee_id', $this->currentEmployee->employee_id)
             ->where('work_date', $workDate)
             ->first();
-
+    
         if ($existingLog && !($options['overwrite'] ?? false)) {
             $this->addError($rowNumber, "Record already exists for {$this->currentEmployee->firstname} on {$workDate->format('Y-m-d')}");
             return;
         }
-
-        // Prepare attendance data
+    
+        // Prepare attendance data for main table
         $attendanceData = [
             'employee_id' => $this->currentEmployee->employee_id,
             'work_date' => $workDate,
@@ -709,23 +919,14 @@ public function generateVisualPreview($filePath)
             'time_out' => $timeOut,
             'break_start' => $breakTimes['start'] ?? null,
             'break_end' => $breakTimes['end'] ?? null,
-            'hrs_worked_minutes' => $hoursWorked,
+            'hrs_worked_minutes' => $regularHours, // This now represents REGULAR hours only (capped at 8)
             'late_minutes' => $lateMinutes,
             'remarks' => $remarks,
             'absent' => $isAbsent,
             'raw_row' => json_encode($row)
         ];
-
-        \Log::info("Prepared attendance data", [
-            'employee_id' => $this->currentEmployee->employee_id,
-            'work_date' => $workDate->format('Y-m-d'),
-            'schedule_start' => $scheduleParts['start'],
-            'schedule_end' => $scheduleParts['end'],
-            'time_in' => $timeIn ? $timeIn->format('Y-m-d H:i:s') : null,
-            'late_minutes' => $lateMinutes
-        ]);
-
-        // Save record
+    
+        // Save record to main table
         if ($existingLog) {
             $existingLog->update($attendanceData);
             $action = 'updated';
@@ -733,7 +934,7 @@ public function generateVisualPreview($filePath)
             AttendanceLog::create($attendanceData);
             $action = 'created';
         }
-
+    
         $this->successCount++;
         $this->processedRows[] = [
             'row' => $rowNumber,
@@ -742,16 +943,9 @@ public function generateVisualPreview($filePath)
             'status' => $action,
             'time_in' => $timeIn ? $timeIn->format('H:i') : 'None',
             'time_out' => $timeOut ? $timeOut->format('H:i') : 'None',
-            'hours_worked' => $this->formatMinutesToHours($hoursWorked),
+            'hours_worked' => $this->formatMinutesToHours($regularHours), // FIXED: Use $regularHours instead of $hoursWorked
             'late_minutes' => $lateMinutes
         ];
-
-        \Log::info("Successfully processed attendance for {$this->currentEmployee->firstname} on {$workDate->format('Y-m-d')}", [
-            'employee_id' => $this->currentEmployee->employee_id,
-            'time_in' => $timeIn ? $timeIn->format('H:i:s') : null,
-            'time_out' => $timeOut ? $timeOut->format('H:i:s') : null,
-            'absent' => $isAbsent
-        ]);
     }
 
     /**
@@ -872,26 +1066,27 @@ protected function parseTime($timeString, $workDate)
     }
 
     protected function parseBreakTimes($breakString)
-    {
-        if (empty($breakString)) {
-            return ['start' => null, 'end' => null];
-        }
-
-        try {
-            // Handle format like "12:15 PM - 12:53 PM"
-            $parts = explode(' - ', $breakString);
-            if (count($parts) === 2) {
-                return [
-                    'start' => Carbon::parse(trim($parts[0]))->format('H:i:s'),
-                    'end' => Carbon::parse(trim($parts[1]))->format('H:i:s')
-                ];
-            }
-        } catch (\Exception $e) {
-            // Ignore parsing errors for malformed break times
-        }
-
+{
+    if (empty($breakString)) {
         return ['start' => null, 'end' => null];
     }
+
+    try {
+        // Handle format like "12:15 PM - 12:53 PM"
+        $parts = explode(' - ', $breakString);
+        if (count($parts) === 2) {
+            return [
+                'start' => Carbon::parse(trim($parts[0]))->format('H:i:s'), // Store as TIME only
+                'end' => Carbon::parse(trim($parts[1]))->format('H:i:s')    // Store as TIME only
+            ];
+        }
+    } catch (\Exception $e) {
+        // Ignore parsing errors for malformed break times
+        \Log::warning("Failed to parse break times: {$breakString}", ['error' => $e->getMessage()]);
+    }
+
+    return ['start' => null, 'end' => null];
+}
 
     protected function calculateLateMinutes($scheduleStart, $timeIn)
     {
@@ -1009,27 +1204,305 @@ protected function parseTime($timeString, $workDate)
     }
 
 
-    protected function calculateHoursWorked($timeIn, $timeOut, $breakStart, $breakEnd)
-    {
-        if (!$timeIn || !$timeOut) {
-            return 0;
-        }
+/**
+ * Calculate hours worked with fixed 1-hour break deduction for standard schedules
+ * and overtime break handling
+ */
+/**
+ * Calculate hours worked according to FIXED SHIFT policy
+ * - Working hours bounded by schedule itself, not total logged time
+ * - Late time-in cannot be offset by extending time-out
+ */
+public  function calculateHoursWorked($timeIn, $timeOut, $breakStart, $breakEnd, $scheduleStart = null, $scheduleEnd = null)
+{
+    if (!$timeIn || !$timeOut) {
+        return 0;
+    }
 
+    try {
         $start = Carbon::parse($timeIn);
         $end = Carbon::parse($timeOut);
         
-        $totalMinutes = $end->diffInMinutes($start);
+        // FIXED SHIFT POLICY: Always deduct 1 hour break for standard schedules
+        $breakDeductionMinutes = 60;
 
-        // Subtract break time if provided
-        if ($breakStart && $breakEnd) {
-            $breakStartTime = Carbon::parse($breakStart);
-            $breakEndTime = Carbon::parse($breakEnd);
-            $breakMinutes = $breakEndTime->diffInMinutes($breakStartTime);
-            $totalMinutes -= $breakMinutes;
+        // Calculate hours based on SCHEDULE BOUNDARIES, not actual times
+        $regularHoursMinutes = $this->calculateFixedShiftHours(
+            $start, $end, $scheduleStart, $scheduleEnd, $breakDeductionMinutes
+        );
+
+        \Log::info("🎯 FIXED SHIFT CALCULATION APPLIED", [
+            'schedule' => $scheduleStart . ' - ' . $scheduleEnd,
+            'actual_times' => $start->format('H:i') . ' - ' . $end->format('H:i'),
+            'break_deduction' => '60 minutes (fixed)',
+            'calculated_hours' => $regularHoursMinutes . ' minutes',
+            'formatted_hours' => $this->formatMinutesToHours($regularHoursMinutes),
+            'policy' => 'Fixed Shift - Bounded by schedule'
+        ]);
+
+        return max(0, $regularHoursMinutes);
+
+    } catch (\Exception $e) {
+        \Log::error("Error in fixed shift calculation", [
+            'error' => $e->getMessage()
+        ]);
+        return 0;
+    }
+}
+
+/**
+ * Calculate hours based on fixed shift boundaries
+ */
+protected function calculateFixedShiftHours($timeIn, $timeOut, $scheduleStart, $scheduleEnd, $breakDeductionMinutes)
+{
+    // If no schedule, fallback to capped calculation
+    if (!$scheduleStart || !$scheduleEnd) {
+        $totalMinutes = $timeOut->diffInMinutes($timeIn);
+        return min(max(0, $totalMinutes - $breakDeductionMinutes), 8 * 60);
+    }
+
+    try {
+        // Parse schedule times with the actual work date
+        $scheduleStartTime = $this->parseScheduleTime($scheduleStart, $timeIn);
+        $scheduleEndTime = $this->parseScheduleTime($scheduleEnd, $timeIn);
+        
+        // 🎯 FIXED SHIFT CORE LOGIC: Work only counts within schedule boundaries
+        $effectiveStart = $timeIn->greaterThan($scheduleStartTime) ? $timeIn : $scheduleStartTime;
+        $effectiveEnd = $timeOut->lessThan($scheduleEndTime) ? $timeOut : $scheduleEndTime;
+        
+        // Calculate actual worked minutes within schedule
+        $workedMinutes = $effectiveEnd->diffInMinutes($effectiveStart);
+        
+        // Apply break deduction
+        $netMinutes = max(0, $workedMinutes - $breakDeductionMinutes);
+        
+        // Never exceed 8 hours
+        $finalMinutes = min($netMinutes, 8 * 60);
+
+        \Log::info("📊 FIXED SHIFT BREAKDOWN", [
+            'schedule_boundaries' => $scheduleStartTime->format('H:i') . ' - ' . $scheduleEndTime->format('H:i'),
+            'effective_work_period' => $effectiveStart->format('H:i') . ' - ' . $effectiveEnd->format('H:i'),
+            'worked_minutes_in_schedule' => $workedMinutes,
+            'break_deduction_applied' => $breakDeductionMinutes,
+            'net_minutes_after_break' => $netMinutes,
+            'final_regular_minutes' => $finalMinutes,
+            'late_impact' => $timeIn->greaterThan($scheduleStartTime) ? 'REDUCED_HOURS' : 'FULL_HOURS'
+        ]);
+
+        return $finalMinutes;
+
+    } catch (\Exception $e) {
+        \Log::error("Error in fixed shift calculation", [
+            'error' => $e->getMessage()
+        ]);
+        
+        // Fallback
+        $totalMinutes = $timeOut->diffInMinutes($timeIn);
+        return min(max(0, $totalMinutes - $breakDeductionMinutes), 8 * 60);
+    }
+}
+
+/**
+ * Parse schedule time with correct date context
+ */
+protected function parseScheduleTime($scheduleTime, $workDate)
+{
+    try {
+        if ($scheduleTime instanceof Carbon) {
+            return $workDate->copy()->setTimeFromTimeString($scheduleTime->format('H:i:s'));
         }
 
-        return max(0, $totalMinutes);
+        // Handle different time formats
+        $formats = ['H:i:s', 'H:i', 'g:i A', 'G:i:s', 'G:i'];
+        foreach ($formats as $format) {
+            try {
+                $time = Carbon::createFromFormat($format, $scheduleTime);
+                return $workDate->copy()->setTimeFromTimeString($time->format('H:i:s'));
+            } catch (\Exception $e) {
+                continue;
+            }
+        }
+
+        // Final fallback
+        $time = Carbon::parse($scheduleTime);
+        return $workDate->copy()->setTimeFromTimeString($time->format('H:i:s'));
+
+    } catch (\Exception $e) {
+        \Log::warning("Failed to parse schedule time", [
+            'schedule_time' => $scheduleTime,
+            'error' => $e->getMessage()
+        ]);
+        return $workDate->copy();
     }
+}
+/**
+ * Check if this is a standard 8 AM - 5 PM schedule
+ */
+protected function isStandardSchedule($scheduleStart, $scheduleEnd)
+{
+    if (!$scheduleStart || !$scheduleEnd) {
+        return false;
+    }
+
+    try {
+        // Normalize schedule times for comparison
+        $normalizedStart = $this->normalizeTime($scheduleStart);
+        $normalizedEnd = $this->normalizeTime($scheduleEnd);
+
+        // Check if schedule matches standard 8 AM - 5 PM
+        $isStandard = ($normalizedStart === '08:00:00' || $normalizedStart === '08:00') && 
+                     ($normalizedEnd === '17:00:00' || $normalizedEnd === '17:00');
+
+        \Log::info("Schedule check", [
+            'schedule_start' => $scheduleStart,
+            'schedule_end' => $scheduleEnd,
+            'normalized_start' => $normalizedStart,
+            'normalized_end' => $normalizedEnd,
+            'is_standard' => $isStandard
+        ]);
+
+        return $isStandard;
+
+    } catch (\Exception $e) {
+        \Log::warning("Error checking standard schedule", [
+            'schedule_start' => $scheduleStart,
+            'schedule_end' => $scheduleEnd,
+            'error' => $e->getMessage()
+        ]);
+        return false;
+    }
+}
+
+/**
+ * Normalize time to HH:MM:SS format
+ */
+protected function normalizeTime($timeString)
+{
+    if (!$timeString) {
+        return null;
+    }
+
+    try {
+        if ($timeString instanceof Carbon) {
+            return $timeString->format('H:i:s');
+        }
+
+        $time = Carbon::parse($timeString);
+        return $time->format('H:i:s');
+    } catch (\Exception $e) {
+        // If parsing fails, try to extract time from string
+        if (preg_match('/(\d{1,2}):(\d{2})/', $timeString, $matches)) {
+            $hours = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
+            $minutes = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+            return "{$hours}:{$minutes}:00";
+        }
+        return null;
+    }
+}
+
+/**
+ * Calculate break deduction based on the new rules
+ */
+protected function calculateBreakDeduction($timeIn, $timeOut, $breakStart, $breakEnd, $isStandardSchedule)
+{
+    $standardBreakMinutes = 60; // Fixed 1-hour break
+    
+    // If not standard schedule, use actual break duration
+    if (!$isStandardSchedule) {
+        return $this->calculateActualBreakMinutes($breakStart, $breakEnd);
+    }
+
+    // For standard schedule, check if shift passes through 12:00 PM - 1:00 PM
+    $shiftIncludesNoon = $this->shiftIncludesNoonBreak($timeIn, $timeOut);
+    
+    if (!$shiftIncludesNoon) {
+        // If shift doesn't include noon break period, use actual break
+        return $this->calculateActualBreakMinutes($breakStart, $breakEnd);
+    }
+
+    // For standard schedule with noon period, apply the new rules
+    $actualBreakMinutes = $this->calculateActualBreakMinutes($breakStart, $breakEnd);
+    
+    // If actual break is longer than 1 hour, deduct the full actual break
+    // Otherwise, deduct only the standard 1 hour
+    $deductionMinutes = $actualBreakMinutes > $standardBreakMinutes ? 
+        $actualBreakMinutes : $standardBreakMinutes;
+
+    \Log::info("Break deduction calculation", [
+        'is_standard_schedule' => $isStandardSchedule,
+        'shift_includes_noon' => $shiftIncludesNoon,
+        'actual_break_minutes' => $actualBreakMinutes,
+        'standard_break_minutes' => $standardBreakMinutes,
+        'final_deduction_minutes' => $deductionMinutes,
+        'break_start' => $breakStart,
+        'break_end' => $breakEnd
+    ]);
+
+    return $deductionMinutes;
+}
+
+/**
+ * Check if shift includes the standard noon break period (12:00 PM - 1:00 PM)
+ */
+protected function shiftIncludesNoonBreak($timeIn, $timeOut)
+{
+    try {
+        $noonStart = Carbon::parse($timeIn->format('Y-m-d') . ' 12:00:00');
+        $noonEnd = Carbon::parse($timeIn->format('Y-m-d') . ' 13:00:00');
+
+        // Check if work period overlaps with noon break period
+        $includesNoon = $timeIn < $noonEnd && $timeOut > $noonStart;
+
+        \Log::info("Noon break check", [
+            'time_in' => $timeIn->format('Y-m-d H:i:s'),
+            'time_out' => $timeOut->format('Y-m-d H:i:s'),
+            'noon_start' => $noonStart->format('Y-m-d H:i:s'),
+            'noon_end' => $noonEnd->format('Y-m-d H:i:s'),
+            'includes_noon' => $includesNoon
+        ]);
+
+        return $includesNoon;
+
+    } catch (\Exception $e) {
+        \Log::warning("Error checking noon break period", [
+            'error' => $e->getMessage()
+        ]);
+        return false;
+    }
+}
+
+/**
+ * Calculate actual break duration in minutes
+ */
+protected function calculateActualBreakMinutes($breakStart, $breakEnd)
+{
+    if (!$breakStart || !$breakEnd) {
+        return 0;
+    }
+
+    try {
+        $breakStartTime = Carbon::parse($breakStart);
+        $breakEndTime = Carbon::parse($breakEnd);
+        $breakMinutes = $breakEndTime->diffInMinutes($breakStartTime);
+
+        \Log::info("Actual break calculation", [
+            'break_start' => $breakStart,
+            'break_end' => $breakEnd,
+            'break_minutes' => $breakMinutes
+        ]);
+
+        return max(0, $breakMinutes);
+
+    } catch (\Exception $e) {
+        \Log::warning("Error calculating actual break minutes", [
+            'break_start' => $breakStart,
+            'break_end' => $breakEnd,
+            'error' => $e->getMessage()
+        ]);
+        return 0;
+    }
+}
+
 
     protected function generateRemarks($lateMinutes, $timeIn, $timeOut, $isAbsent)
     {
@@ -1280,4 +1753,61 @@ protected function parseTime($timeString, $workDate)
 
         return $result;
     }
+
+
+
+
+    /**
+ * Debug method to verify calculations are identical between raw and processed
+ */
+
+
+/**
+ * DEBUG: Log calculation inputs for comparison
+ */
+protected function debugCalculationInputs($timeIn, $timeOut, $breakStart, $breakEnd, $scheduleStart, $scheduleEnd, $source)
+{
+    \Log::info("🔍 CALCULATION INPUTS - {$source}", [
+        'time_in' => $timeIn,
+        'time_out' => $timeOut,
+        'break_start' => $breakStart,
+        'break_end' => $breakEnd,
+        'schedule_start' => $scheduleStart,
+        'schedule_end' => $scheduleEnd,
+        'time_in_parsed' => $timeIn ? \Carbon\Carbon::parse($timeIn)->format('Y-m-d H:i:s') : null,
+        'time_out_parsed' => $timeOut ? \Carbon\Carbon::parse($timeOut)->format('Y-m-d H:i:s') : null,
+        'source' => $source
+    ]);
+}
+
+/**
+ * DEBUG: Verify identical calculations between raw and processed
+ */
+protected function verifyIdenticalCalculations($timeIn, $timeOut, $breakStart, $breakEnd, $scheduleStart, $scheduleEnd)
+{
+    $processedCalculation = $this->calculateHoursWorked(
+        $timeIn, $timeOut, $breakStart, $breakEnd, $scheduleStart, $scheduleEnd
+    );
+    
+    $rawCalculation = $this->calculateHoursWorked(
+        $timeIn, $timeOut, $breakStart, $breakEnd, $scheduleStart, $scheduleEnd
+    );
+    
+    $identical = $processedCalculation === $rawCalculation;
+    
+    \Log::info("🔍 CALCULATION VERIFICATION", [
+        'time_in' => $timeIn,
+        'time_out' => $timeOut,
+        'schedule' => $scheduleStart . ' - ' . $scheduleEnd,
+        'processed_hours' => $processedCalculation,
+        'raw_hours' => $rawCalculation,
+        'identical' => $identical ? '✅ YES' : '❌ NO',
+        'difference' => $processedCalculation - $rawCalculation
+    ]);
+    
+    return $identical;
+}
+
+
+
 }

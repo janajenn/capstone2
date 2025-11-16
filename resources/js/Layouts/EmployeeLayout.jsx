@@ -28,8 +28,25 @@ export default function EmployeeLayout({ children }) {
 
     const toggleSidebar = () => setCollapsed(!collapsed);
 
+    // Fixed isActiveLink function with exact matching for all conflicting routes
     const isActiveLink = (href) => {
-        return url.startsWith(href);
+        const currentUrl = url;
+        
+        // Define routes that need exact matching (all routes that share prefixes)
+        const exactMatchRoutes = [
+            '/employee/leave',
+            '/employee/leave-balances',
+            '/employee/credit-conversion',
+            '/employee/credit-conversions'
+        ];
+        
+        // For routes that need exact matching
+        if (exactMatchRoutes.includes(href)) {
+            return currentUrl === href || currentUrl === href + '/';
+        }
+        
+        // For other routes, use prefix matching
+        return currentUrl.startsWith(href);
     };
 
     const handleLogout = () => {
@@ -317,29 +334,53 @@ function getEmployeePageTitle(url) {
         '/employee/leave-balances': 'Leave Balances'
     };
     
-    for (const [route, title] of Object.entries(routes)) {
-        if (url.startsWith(route)) return title;
+    // Try exact match first
+    if (routes[url]) {
+        return routes[url];
     }
+    
+    // Try match with trailing slash
+    if (url.endsWith('/') && routes[url.slice(0, -1)]) {
+        return routes[url.slice(0, -1)];
+    }
+    
+    // Fallback to prefix matching for specific routes
+    for (const [route, title] of Object.entries(routes)) {
+        if (url.startsWith(route) && route !== '/employee/dashboard') {
+            // Skip conflicting matches
+            if (route === '/employee/leave' && url.startsWith('/employee/leave-balances')) {
+                continue;
+            }
+            if (route === '/employee/credit-conversion' && url.startsWith('/employee/credit-conversions')) {
+                continue;
+            }
+            return title;
+        }
+    }
+    
     return 'Employee Dashboard';
 }
 
 // Helper function to get Employee page subtitle
 function getEmployeePageSubtitle(url, userName) {
-    if (url.startsWith('/employee/dashboard')) {
+    // Remove trailing slash for consistent matching
+    const cleanUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+    
+    if (cleanUrl === '/employee/dashboard') {
         return `Welcome back, ${userName}. Your personal workspace and analytics.`;
-    } else if (url.startsWith('/employee/leave')) {
+    } else if (cleanUrl === '/employee/leave') {
         return 'Submit a new leave request for approval';
-    } else if (url.startsWith('/employee/my-leave-requests')) {
+    } else if (cleanUrl === '/employee/my-leave-requests' || cleanUrl.startsWith('/employee/my-leave-requests/')) {
         return 'View and track your leave request status';
-    } else if (url.startsWith('/employee/leave-calendar')) {
+    } else if (cleanUrl === '/employee/leave-calendar' || cleanUrl.startsWith('/employee/leave-calendar/')) {
         return 'Visualize your scheduled leaves and time off';
-    } else if (url.startsWith('/employee/credit-conversion')) {
+    } else if (cleanUrl === '/employee/credit-conversion') {
         return 'Convert your leave credits to monetary value';
-    } else if (url.startsWith('/employee/credit-conversions')) {
+    } else if (cleanUrl === '/employee/credit-conversions' || cleanUrl.startsWith('/employee/credit-conversions/')) {
         return 'Track your credit conversion history and status';
-    } else if (url.startsWith('/employee/attendance-logs')) {
+    } else if (cleanUrl === '/employee/attendance-logs' || cleanUrl.startsWith('/employee/attendance-logs/')) {
         return 'Monitor your attendance records and patterns';
-    } else if (url.startsWith('/employee/leave-balances')) {
+    } else if (cleanUrl === '/employee/leave-balances' || cleanUrl.startsWith('/employee/leave-balances/')) {
         return 'Check your current leave credit balances';
     }
     return `Welcome, ${userName}. Streamlined employee self-service portal.`;

@@ -1,6 +1,7 @@
 // resources/js/Components/AdminNotificationDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell } from 'lucide-react';
+import { router } from '@inertiajs/react';
 
 export default function AdminNotificationDropdown() {
     const [isOpen, setIsOpen] = useState(false);
@@ -46,6 +47,29 @@ export default function AdminNotificationDropdown() {
             }
         } catch (error) {
             console.error('Error fetching Admin unread count:', error);
+        }
+    };
+
+    const handleNotificationClick = async (notification) => {
+        try {
+            // Close dropdown first
+            setIsOpen(false);
+    
+            // Mark as read via API (optional - you can also rely on the redirect endpoint to mark as read)
+            if (!notification.is_read) {
+                await markAsRead(notification.id);
+            }
+    
+            // Use Inertia to handle the redirect via the new click route
+            router.visit(`/admin/notifications/${notification.id}/click`);
+            
+        } catch (error) {
+            console.error('Error handling notification click:', error);
+            
+            // Fallback: try to redirect directly if the click route fails
+            if (notification.redirect_url) {
+                router.visit(notification.redirect_url);
+            }
         }
     };
 
@@ -111,47 +135,7 @@ export default function AdminNotificationDropdown() {
         }
     };
 
-    const playNotificationSound = () => {
-        if (audioRef.current) {
-            audioRef.current.play().catch(e => {
-                console.log('Audio play failed:', e);
-            });
-        }
-    };
-
-    useEffect(() => {
-        fetchUnreadCount();
-        
-        const interval = setInterval(() => {
-            fetchUnreadCount();
-        }, 30000);
-
-        return () => clearInterval(interval);
-    }, []);
-
-    useEffect(() => {
-        if (isOpen) {
-            fetchNotifications();
-        }
-    }, [isOpen]);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    useEffect(() => {
-        if (unreadCount > previousUnreadCount && previousUnreadCount !== 0) {
-            playNotificationSound();
-        }
-        setPreviousUnreadCount(unreadCount);
-    }, [unreadCount, previousUnreadCount]);
+    // ... keep existing useEffect hooks and helper functions ...
 
     const formatTime = (dateString) => {
         const date = new Date(dateString);
@@ -174,6 +158,10 @@ export default function AdminNotificationDropdown() {
                 return '👨‍💼';
             case 'leave_recall':
                 return '↩️';
+            case 'credit_conversion':
+                return '💰';
+            case 'attendance_correction':
+                return '⏰';
             default:
                 return '🔔';
         }
@@ -224,10 +212,10 @@ export default function AdminNotificationDropdown() {
                             notifications.map((notification) => (
                                 <div
                                     key={notification.id}
-                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors group ${
                                         !notification.is_read ? 'bg-blue-50' : ''
                                     }`}
-                                    onClick={() => markAsRead(notification.id)}
+                                    onClick={() => handleNotificationClick(notification)}
                                 >
                                     <div className="flex items-start space-x-3">
                                         <div className="text-2xl">
@@ -249,6 +237,10 @@ export default function AdminNotificationDropdown() {
                                             }`}>
                                                 {notification.message}
                                             </p>
+                                            {/* Redirect hint */}
+                                            <div className="mt-1 flex items-center text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span>Click to view →</span>
+                                            </div>
                                             {!notification.is_read && (
                                                 <div className="mt-2">
                                                     <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>

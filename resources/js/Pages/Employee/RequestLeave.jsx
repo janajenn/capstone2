@@ -431,7 +431,7 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
   );
 };
 
-export default function RequestLeave() {
+export default function RequestLeave({ prefill }) {
   const { props } = usePage();
   const { leaveTypes, flash, existingRequests, leaveCredits, leaveBalances, errors, auth } = props;
 
@@ -448,15 +448,58 @@ export default function RequestLeave() {
     [leaveTypes]
   );
 
-
-  // In your RequestLeave component, add this debug section temporarily:
-  console.log('Holidays from backend:', props.holidays);
-  console.log('Holidays data type:', typeof props.holidays);
+  // Get URL parameters for pre-filling
+  const [urlParams, setUrlParams] = useState(new URLSearchParams(window.location.search));
+    
+  const prefillDate = urlParams.get('prefill_date');
+  const prefillForAbsence = urlParams.get('prefill_for_absence');
 
   const selectedType = useMemo(() => leaveTypes?.find((lt) => lt.id === selectedTypeId) || null, [leaveTypes, selectedTypeId]);
   const specificFields = useMemo(() => typeSpecificFields(selectedType?.code), [selectedType]);
 
   const formSectionRef = useRef(null);
+
+  // Auto-select Sick Leave and pre-fill date when component mounts for absence requests
+  useEffect(() => {
+      if (prefillForAbsence && prefillDate) {
+          // Find Sick Leave type
+          const sickLeaveType = leaveTypes?.find(lt => 
+              lt.code.toUpperCase() === 'SL' || 
+              lt.name.toLowerCase().includes('sick')
+          );
+
+          if (sickLeaveType && !isLeaveTypeDisabled(sickLeaveType)) {
+              setSelectedTypeId(sickLeaveType.id);
+              setData('leave_type_id', sickLeaveType.id);
+          }
+
+          // Pre-fill the date
+          setData('date_from', prefillDate);
+          setData('number_of_days', 1);
+          setData('selectedDates', [prefillDate]);
+          setData('date_to', prefillDate);
+          
+          // Auto-scroll to form section
+          if (formSectionRef.current) {
+              setTimeout(() => {
+                  formSectionRef.current.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start'
+                  });
+              }, 100);
+          }
+      }
+  }, [prefillForAbsence, prefillDate, leaveTypes]);
+
+
+  // In your RequestLeave component, add this debug section temporarily:
+  console.log('Holidays from backend:', props.holidays);
+  console.log('Holidays data type:', typeof props.holidays);
+
+  // const selectedType = useMemo(() => leaveTypes?.find((lt) => lt.id === selectedTypeId) || null, [leaveTypes, selectedTypeId]);
+  // const specificFields = useMemo(() => typeSpecificFields(selectedType?.code), [selectedType]);
+
+  // const formSectionRef = useRef(null);
 
   useEffect(() => {
     if (selectedTypeId && formSectionRef.current) {
@@ -469,6 +512,27 @@ export default function RequestLeave() {
       }, 100);
     }
   }, [selectedTypeId]);
+
+
+  
+    // useEffect(() => {
+    //     if (prefill) {
+    //         if (prefill.leave_type_id) {
+    //             const leaveType = leaveTypes?.find(lt => lt.id.toString() === prefill.leave_type_id.toString());
+    //             if (leaveType && !isLeaveTypeDisabled(leaveType)) {
+    //                 setSelectedTypeId(leaveType.id);
+    //                 setData('leave_type_id', leaveType.id);
+    //             }
+    //         }
+
+    //         if (prefill.date) {
+    //             setData('date_from', prefill.date);
+    //             setData('number_of_days', prefill.number_of_days || 1);
+    //             setData('selectedDates', [prefill.date]);
+    //             setData('date_to', prefill.date);
+    //         }
+    //     }
+    // }, [prefill, leaveTypes]);
 
   const { data, setData, post, processing, reset } = useForm({
     leave_type_id: '',
@@ -794,6 +858,26 @@ export default function RequestLeave() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Request a Leave</h1>
         <p className="text-gray-600 mb-8">Select a leave type and fill out the required information</p>
+
+{/* Show pre-fill notice */}
+{prefillForAbsence && prefillDate && (
+                    <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center">
+                            <svg className="w-5 h-5 text-blue-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            <div>
+                                <h3 className="text-sm font-medium text-blue-800">
+                                    Leave Request for Past Absence
+                                </h3>
+                                <p className="text-sm text-blue-700 mt-1">
+                                    This leave request has been pre-filled for your absence on <strong>{new Date(prefillDate).toLocaleDateString()}</strong>. 
+                                    The leave type has been set to <strong>Sick Leave</strong> by default.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
         {flash?.success && (
           <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">

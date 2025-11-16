@@ -14,79 +14,101 @@ use Illuminate\Support\Facades\Log;
 class LeaveCreditService
 {
     public function deductLeaveCredits(LeaveRequest $leaveRequest)
-    {
-        Log::info('🚀 LEAVE CREDIT SERVICE STARTED for leave request ID: ' . $leaveRequest->id);
+{
+    Log::info('🚀 LEAVE CREDIT SERVICE STARTED for leave request ID: ' . $leaveRequest->id);
 
-        try {
-            return DB::transaction(function () use ($leaveRequest) {
-                Log::info('📦 Transaction started');
+    try {
+        return DB::transaction(function () use ($leaveRequest) {
+            Log::info('📦 Transaction started');
 
-                // Get leave type CODE from relationship (not the name)
-                $leaveTypeCode = $leaveRequest->leaveType->code;
-                Log::info('📋 Leave Type Code: ' . $leaveTypeCode);
+            // Get leave type CODE from relationship (not the name)
+            $leaveTypeCode = $leaveRequest->leaveType->code;
+            Log::info('📋 Leave Type Code: ' . $leaveTypeCode);
 
-                // Only process SL and VL leave types (checking the CODE now)
-                if (!in_array($leaveTypeCode, ['SL', 'VL'])) {
-                    Log::info("⏭️ Skipping deduction for non-SL/VL leave type code: {$leaveTypeCode}");
-                    return null;
-                }
+            // Only process SL and VL leave types (checking the CODE now)
+            if (!in_array($leaveTypeCode, ['SL', 'VL'])) {
+                Log::info("⏭️ Skipping deduction for non-SL/VL leave type code: {$leaveTypeCode}");
+                return null;
+            }
 
-                // Calculate working days (excluding weekends)
-                $period = CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
-                $workingDays = collect($period)->filter(function ($date) {
-                    return !$date->isWeekend();
-                })->count();
+            // Calculate working days (excluding weekends)
+            $period = CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
+            $workingDays = collect($period)->filter(function ($date) {
+                return !$date->isWeekend();
+            })->count();
 
-                Log::info("📅 Working days to deduct: {$workingDays}");
+            Log::info("📅 Working days to deduct: {$workingDays}");
 
-                // Get leave credit record
-                $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
+            // Get leave credit record
+            $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
 
-                if (!$leaveCredit) {
-                    Log::error("❌ No leave credits found for employee: {$leaveRequest->employee_id}");
-                    throw new \Exception('No leave credits found for this employee.');
-                }
+            if (!$leaveCredit) {
+                Log::error("❌ No leave credits found for employee: {$leaveRequest->employee_id}");
+                throw new \Exception('No leave credits found for this employee.');
+            }
 
-                Log::info("💳 Current balances - SL: {$leaveCredit->sl_balance}, VL: {$leaveCredit->vl_balance}");
+            Log::info("💳 Current balances - SL: {$leaveCredit->sl_balance}, VL: {$leaveCredit->vl_balance}");
 
-                // Check sufficient balance
-                $balanceField = $this->getBalanceField($leaveTypeCode);
-                $currentBalance = $leaveCredit->{$balanceField};
+            // ✅ NEW LOGIC: Always deduct but leave at least 1 credit
+            $balanceField = $this->getBalanceField($leaveTypeCode);
+            $currentBalance = $leaveCredit->{$balanceField};
 
-                if ($currentBalance < $workingDays) {
-                    Log::warning("⚠️ Insufficient {$leaveTypeCode} balance: {$currentBalance} available, {$workingDays} required - returning insufficient balance result");
-                    return [
-                        'success' => false,
-                        'message' => "Insufficient {$leaveTypeCode} balance",
-                        'available_balance' => $currentBalance,
-                        'required_days' => $workingDays
-                    ];
-                }
+            $daysToDeduct = 0;
+            $daysWithoutPay = $workingDays;
 
-                // Deduct from balance
-                $leaveCredit->{$balanceField} -= $workingDays;
-                $leaveCredit->last_updated = now();
-                $leaveCredit->save();
+            if ($currentBalance > 1) {
+                // We have more than 1 credit, deduct as much as possible while leaving 1
+                $daysToDeduct = min($workingDays, $currentBalance - 1);
+                $daysWithoutPay = $workingDays - $daysToDeduct;
+                
+                Log::info("✅ NEW LOGIC: Deducting {$daysToDeduct} days, leaving 1 credit. {$daysWithoutPay} days without pay.");
+            } else {
+                // We have 1 or fewer credits, don't deduct any (leave as is)
+                $daysToDeduct = 0;
+                $daysWithoutPay = $workingDays;
+                Log::info("⚠️ NEW LOGIC: Insufficient credits (≤1), deducting 0 days. All {$daysWithoutPay} days without pay.");
+            }
 
-                Log::info("✅ Deducted {$workingDays} days. New {$balanceField}: {$leaveCredit->{$balanceField}}");
+            // Update the leave credit balance
+            $balanceBefore = $currentBalance;
+            $newBalance = $currentBalance - $daysToDeduct;
 
-                // Log the deduction
-                $this->createCreditLog($leaveRequest, $leaveTypeCode, $workingDays, $leaveCredit->{$balanceField});
+            // Ensure we don't go below 0 (safety check)
+            $newBalance = max(0, $newBalance);
 
-                Log::info('🎉 LEAVE CREDIT SERVICE COMPLETED SUCCESSFULLY');
-                return [
-                    'success' => true,
-                    'message' => "Successfully deducted {$workingDays} days from {$leaveTypeCode} balance",
-                    'days_deducted' => $workingDays,
-                    'new_balance' => $leaveCredit->{$balanceField}
-                ];
-            });
-        } catch (\Exception $e) {
-            Log::error('💥 Exception in LeaveCreditService: ' . $e->getMessage());
-            Log::error('📝 Stack trace: ' . $e->getTraceAsString());
-            throw $e;
-        }
+            // Update the balance
+            $leaveCredit->{$balanceField} = $newBalance;
+            $leaveCredit->last_updated = now();
+            $leaveCredit->save();
+
+            Log::info("💰 Balance updated: {$balanceBefore} - {$daysToDeduct} = {$newBalance}");
+
+            // Update the leave request with days with/without pay
+            $leaveRequest->update([
+                'days_with_pay' => $daysToDeduct,
+                'days_without_pay' => $daysWithoutPay
+            ]);
+
+            Log::info("📊 Leave request updated - With Pay: {$daysToDeduct}, Without Pay: {$daysWithoutPay}");
+
+            // Log the deduction
+            $this->createCreditLog($leaveRequest, $leaveTypeCode, $daysToDeduct, $newBalance);
+
+            Log::info('🎉 LEAVE CREDIT SERVICE COMPLETED SUCCESSFULLY');
+            return [
+                'success' => true,
+                'message' => "Deducted {$daysToDeduct} days, {$daysWithoutPay} days without pay.",
+                'days_deducted' => $daysToDeduct,
+                'days_without_pay' => $daysWithoutPay,
+                'new_balance' => $newBalance
+            ];
+        });
+    } catch (\Exception $e) {
+        Log::error('💥 Exception in LeaveCreditService: ' . $e->getMessage());
+        Log::error('📝 Stack trace: ' . $e->getTraceAsString());
+        throw $e;
     }
+}
 
     private function getBalanceField($leaveTypeCode)
     {

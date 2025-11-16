@@ -123,6 +123,52 @@ const LeaveProgressTracker = ({
         return approval?.status || 'pending';
     };
 
+    // Get approval details for each role
+    const getApprovalDetails = (role) => {
+        if (!approvals) return null;
+        const approval = approvals.find(a => a.role === role);
+        return approval || null;
+    };
+
+    // Format approver name - handle different data structures
+    const formatApproverName = (approval) => {
+        if (!approval) return null;
+        
+        console.log('Approval data:', approval); // Debug log
+        
+        // If approved_by is a string (name)
+        if (typeof approval.approved_by === 'string') {
+            return approval.approved_by;
+        }
+        
+        // If approved_by is an object with user data
+        if (approval.approved_by && typeof approval.approved_by === 'object') {
+            if (approval.approved_by.name) return approval.approved_by.name;
+            if (approval.approved_by.firstname && approval.approved_by.lastname) {
+                return `${approval.approved_by.firstname} ${approval.approved_by.lastname}`;
+            }
+        }
+        
+        // If we have approver relation data
+        if (approval.approver) {
+            if (approval.approver.name) return approval.approver.name;
+            if (approval.approver.firstname && approval.approver.lastname) {
+                return `${approval.approver.firstname} ${approval.approver.lastname}`;
+            }
+        }
+        
+        return null;
+    };
+
+    // Format approval date
+    const formatApprovalDate = (date) => {
+        if (!date) return '';
+        return new Date(date).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+
     // Determine which step is current - with dept head and admin bypass logic
     const getCurrentStepIndex = () => {
         if (isDeptHead || isAdmin) {
@@ -239,6 +285,9 @@ const LeaveProgressTracker = ({
                         const isCurrent = index === currentStepIndex;
                         const isPending = index > currentStepIndex;
                         const status = step.id === 'submitted' ? 'pending' : getStatus(step.id);
+                        const approvalDetails = step.id !== 'submitted' ? getApprovalDetails(step.id) : null;
+                        const approverName = approvalDetails ? formatApproverName(approvalDetails) : null;
+                        const approvalDate = approvalDetails?.approved_at ? formatApprovalDate(approvalDetails.approved_at) : null;
 
                         return (
                             <div key={step.id} className="flex flex-col items-center flex-1">
@@ -286,6 +335,23 @@ const LeaveProgressTracker = ({
                                             {status.charAt(0).toUpperCase() + status.slice(1)}
                                         </motion.div>
                                     )}
+
+                                    {/* Approver Name and Date - Show for completed steps */}
+                                    {approverName && approvalDate && status !== 'pending' && (
+                                        <motion.div
+                                            className="mt-2 text-xs text-gray-600 space-y-1"
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            transition={{ delay: 0.4 }}
+                                        >
+                                            <div className="font-medium text-gray-900">
+                                                {approverName}
+                                            </div>
+                                            <div className="text-gray-500">
+                                                {approvalDate}
+                                            </div>
+                                        </motion.div>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -293,7 +359,7 @@ const LeaveProgressTracker = ({
                 </div>
             </div>
 
-            {/* Status details card */}
+            {/* Status details card - THIS IS THE PART THAT WAS MISSING */}
             <motion.div
                 className="mt-8 bg-white p-4 rounded-lg border border-gray-100 shadow-xs"
                 initial={{ opacity: 0, y: 10 }}

@@ -6,6 +6,9 @@ use App\Models\Notification;
 use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
+use App\Models\AttendanceCorrection;
+use App\Models\LeaveRescheduleRequest; // Add this import
+
 
 class NotificationService
 {
@@ -59,39 +62,40 @@ class NotificationService
     /**
      * Create leave request notification with role-specific messages
      */
-    public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null)
-    {
-        // Validate employee_id
-        if (!$employeeId) {
-            Log::error('Leave request notification failed: employee_id is null', [
-                'status' => $status,
-                'request_id' => $requestId,
-                'leave_type' => $leaveType
-            ]);
-            return null;
-        }
+    // public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null)
+    // {
+    //     // Validate employee_id
+    //     if (!$employeeId) {
+    //         Log::error('Leave request notification failed: employee_id is null', [
+    //             'status' => $status,
+    //             'request_id' => $requestId,
+    //             'leave_type' => $leaveType
+    //         ]);
+    //         return null;
+    //     }
 
-        // Map status to proper notification type and message based on target role
-        $notificationData = $this->getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks, $targetRole);
+    //     // Map status to proper notification type and message based on target role
+    //     $notificationData = $this->getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks, $targetRole);
         
-        $data = [
-            'request_id' => $requestId,
-            'status' => $status,
-            'leave_type' => $leaveType,
-            'date_from' => $dateFrom,
-            'date_to' => $dateTo,
-            'remarks' => $remarks,
-            'notification_for' => $targetRole, // Specify who this notification is for
-        ];
+    //     $data = [
+    //         'request_id' => $requestId,
+    //         'status' => $status,
+    //         'leave_type' => $leaveType,
+    //         'date_from' => $dateFrom,
+    //         'date_to' => $dateTo,
+    //         'remarks' => $remarks,
+    //         'notification_for' => $targetRole,
+    //     ];
 
-        return $this->createNotification(
-            $employeeId, 
-            'leave_request', 
-            $notificationData['title'], 
-            $notificationData['message'], 
-            $data
-        );
-    }
+    //     return $this->createNotificationWithRedirect(
+    //         $employeeId, 
+    //         'leave_request', 
+    //         $notificationData['title'], 
+    //         $notificationData['message'], 
+    //         $data,
+    //         $currentMode
+    //     );
+    // }
 
     /**
      * Get notification data based on status AND target role
@@ -523,32 +527,32 @@ class NotificationService
     /**
      * Create credit conversion notification with role-specific messages
      */
-    public function createCreditConversionNotification($employeeId, $status, $conversionId, $leaveType, $creditsRequested, $cashEquivalent = null, $targetRole = null)
-    {
-        if (!$employeeId) {
-            Log::error('Credit conversion notification failed: employee_id is null');
-            return null;
-        }
+    // public function createCreditConversionNotification($employeeId, $status, $conversionId, $leaveType, $creditsRequested, $cashEquivalent = null, $targetRole = null)
+    // {
+    //     if (!$employeeId) {
+    //         Log::error('Credit conversion notification failed: employee_id is null');
+    //         return null;
+    //     }
 
-        $notificationData = $this->getCreditConversionNotificationData($status, $leaveType, $creditsRequested, $cashEquivalent, $targetRole);
+    //     $notificationData = $this->getCreditConversionNotificationData($status, $leaveType, $creditsRequested, $cashEquivalent, $targetRole);
         
-        $data = [
-            'conversion_id' => $conversionId,
-            'status' => $status,
-            'leave_type' => $leaveType,
-            'credits_requested' => $creditsRequested,
-            'cash_equivalent' => $cashEquivalent,
-            'notification_for' => $targetRole,
-        ];
+    //     $data = [
+    //         'conversion_id' => $conversionId,
+    //         'status' => $status,
+    //         'leave_type' => $leaveType,
+    //         'credits_requested' => $creditsRequested,
+    //         'cash_equivalent' => $cashEquivalent,
+    //         'notification_for' => $targetRole,
+    //     ];
 
-        return $this->createNotification(
-            $employeeId, 
-            'credit_conversion', 
-            $notificationData['title'], 
-            $notificationData['message'], 
-            $data
-        );
-    }
+    //     return $this->createNotification(
+    //         $employeeId, 
+    //         'credit_conversion', 
+    //         $notificationData['title'], 
+    //         $notificationData['message'], 
+    //         $data
+    //     );
+    // }
 
     /**
      * Get credit conversion notification data based on status and target role
@@ -1275,4 +1279,271 @@ private function preventDuplicateNotification($employeeId, $type, $data)
         ->where('data', json_encode($data))
         ->exists();
 }
+
+
+    // Now this will work without the full namespace
+    public function notifyAttendanceCorrectionSubmission(AttendanceCorrection $correction)
+    {
+        try {
+            // Load relationships if needed
+            $correction->load(['employee', 'department.headUser']);
+            
+            // Notify Department Head
+            $departmentHead = $correction->department->headUser;
+            if ($departmentHead && $departmentHead->employee) {
+                $this->createEmployeeNotification(
+                    $departmentHead->employee->employee_id,
+                    'attendance_correction_pending_review',
+                    'Attendance Correction Request Pending Review',
+                    "A new attendance correction request from {$correction->employee->firstname} {$correction->employee->lastname} for {$correction->attendance_date} requires your review.",
+                    [
+                        'correction_id' => $correction->id,
+                        'employee_name' => "{$correction->employee->firstname} {$correction->employee->lastname}",
+                        'attendance_date' => $correction->attendance_date,
+                    ]
+                );
+            }
+
+            // Notify HR
+            $hrUsers = User::where('role', 'hr')->get();
+            foreach ($hrUsers as $hrUser) {
+                if ($hrUser->employee) {
+                    $this->createEmployeeNotification(
+                        $hrUser->employee->employee_id,
+                        'attendance_correction_submitted',
+                        'New Attendance Correction Request',
+                        "{$correction->employee->firstname} {$correction->employee->lastname} submitted an attendance correction request for {$correction->attendance_date}.",
+                        [
+                            'correction_id' => $correction->id,
+                            'employee_name' => "{$correction->employee->firstname} {$correction->employee->lastname}",
+                            'attendance_date' => $correction->attendance_date,
+                        ]
+                    );
+                }
+            }
+
+            Log::info("Attendance correction notifications sent", [
+                'correction_id' => $correction->id,
+                'employee_id' => $correction->employee_id,
+                'attendance_date' => $correction->attendance_date
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to send attendance correction notifications: ' . $e->getMessage(), [
+                'correction_id' => $correction->id ?? 'unknown',
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+ * Notify about attendance correction review by department head
+ */
+public function notifyAttendanceCorrectionReview(\App\Models\AttendanceCorrection $correction, $reviewerId, $remarks = null)
+{
+    try {
+        // Load relationships
+        $correction->load(['employee', 'department']);
+        
+        // Notify HR about the reviewed correction
+        $hrUsers = User::where('role', 'hr')->get();
+        foreach ($hrUsers as $hrUser) {
+            if ($hrUser->employee) {
+                $this->createHRNotification(
+                    $hrUser->employee->employee_id,
+                    'attendance_correction_reviewed',
+                    'Attendance Correction Reviewed by Department Head',
+                    "Department Head has reviewed the attendance correction request from {$correction->employee->firstname} {$correction->employee->lastname} for {$correction->attendance_date}.",
+                    [
+                        'correction_id' => $correction->id,
+                        'employee_name' => "{$correction->employee->firstname} {$correction->employee->lastname}",
+                        'attendance_date' => $correction->attendance_date,
+                        'reviewer_id' => $reviewerId,
+                        'remarks' => $remarks,
+                        'status' => 'Reviewed'
+                    ]
+                );
+            }
+        }
+
+        // Notify the employee about the review
+        $this->createEmployeeNotification(
+            $correction->employee_id,
+            'attendance_correction_reviewed',
+            'Attendance Correction Under Review',
+            "Your attendance correction request for {$correction->attendance_date} has been reviewed by your Department Head and forwarded to HR for final approval.",
+            [
+                'correction_id' => $correction->id,
+                'attendance_date' => $correction->attendance_date,
+                'status' => 'Reviewed'
+            ]
+        );
+
+        Log::info("Attendance correction review notifications sent", [
+            'correction_id' => $correction->id,
+            'reviewer_id' => $reviewerId,
+            'status' => 'Reviewed'
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Failed to send attendance correction review notifications: ' . $e->getMessage(), [
+            'correction_id' => $correction->id ?? 'unknown',
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
 }
+
+public function generateRedirectUrl($type, $data, $currentMode = 'admin')
+    {
+        $baseUrl = $currentMode === 'admin' ? '/admin' : '/employee';
+        
+        switch ($type) {
+            case 'leave_request':
+            case 'leave_request_submission':
+                if (isset($data['request_id'])) {
+                    return route('admin.leave-requests.show', ['id' => $data['request_id']]);
+                }
+                return route('admin.leave-requests.index');
+                
+            case 'credit_conversion':
+            case 'credit_conversion_submission':
+                if (isset($data['conversion_id'])) {
+                    return route('admin.credit-conversions.show', ['id' => $data['conversion_id']]);
+                }
+                return route('admin.credit-conversions');
+                
+            case 'attendance_correction_pending_review':
+            case 'attendance_correction_submitted':
+            case 'attendance_correction_reviewed':
+                if (isset($data['correction_id'])) {
+                    // If you have an attendance corrections route, use it here
+                    // return route('admin.attendance-corrections.show', ['id' => $data['correction_id']]);
+                    return route('admin.dashboard'); // Fallback for now
+                }
+                return route('admin.dashboard');
+                
+            case 'leave_recall':
+                if (isset($data['request_id'])) {
+                    return route('admin.leave-requests.show', ['id' => $data['request_id']]);
+                }
+                return route('admin.leave-requests.index');
+                
+            case 'dept_head_request':
+                return route('admin.leave-requests.index');
+                
+            default:
+                return route('admin.dashboard');
+        }
+    }
+
+    /**
+     * Create notification with redirect URL
+     */
+    public function createNotificationWithRedirect($employeeId, $type, $title, $message, $data = null, $currentMode = 'admin')
+    {
+        $redirectUrl = $this->generateRedirectUrl($type, $data ?? [], $currentMode);
+        
+        if ($data && is_array($data)) {
+            $data['redirect_url'] = $redirectUrl;
+        } else {
+            $data = ['redirect_url' => $redirectUrl];
+        }
+
+        return $this->createNotification($employeeId, $type, $title, $message, $data);
+    }
+
+    /**
+     * Update leave request notification to include redirect URL
+     */
+    public function createLeaveRequestNotification($employeeId, $status, $requestId, $leaveType, $dateFrom, $dateTo, $remarks = null, $targetRole = null, $currentMode = 'admin')
+    {
+        $notificationData = $this->getLeaveRequestNotificationData($status, $leaveType, $dateFrom, $dateTo, $remarks, $targetRole);
+        
+        $data = [
+            'request_id' => $requestId,
+            'status' => $status,
+            'leave_type' => $leaveType,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'remarks' => $remarks,
+            'notification_for' => $targetRole,
+        ];
+
+        return $this->createNotificationWithRedirect(
+            $employeeId, 
+            'leave_request', 
+            $notificationData['title'], 
+            $notificationData['message'], 
+            $data,
+            $currentMode
+        );
+    }
+
+    /**
+     * Update credit conversion notification to include redirect URL
+     */
+    public function createCreditConversionNotification($employeeId, $status, $conversionId, $leaveType, $creditsRequested, $cashEquivalent = null, $targetRole = null, $currentMode = 'admin')
+    {
+        $notificationData = $this->getCreditConversionNotificationData($status, $leaveType, $creditsRequested, $cashEquivalent, $targetRole);
+        
+        $data = [
+            'conversion_id' => $conversionId,
+            'status' => $status,
+            'leave_type' => $leaveType,
+            'credits_requested' => $creditsRequested,
+            'cash_equivalent' => $cashEquivalent,
+            'notification_for' => $targetRole,
+        ];
+
+        return $this->createNotificationWithRedirect(
+            $employeeId, 
+            'credit_conversion', 
+            $notificationData['title'], 
+            $notificationData['message'], 
+            $data,
+            $currentMode
+        );
+    }
+
+
+
+    public function notifyRescheduleAutoApproval(LeaveRescheduleRequest $rescheduleRequest)
+    {
+        $adminUsers = User::where('role', 'admin')->get();
+        
+        foreach ($adminUsers as $adminUser) {
+            $this->createNotification(
+                $adminUser->id,
+                'reschedule_auto_approved',
+                'Reschedule Auto-Approved',
+                "A reschedule request from {$rescheduleRequest->employee->firstname} {$rescheduleRequest->employee->lastname} has been auto-approved (Department Head/Admin).",
+                [
+                    'reschedule_id' => $rescheduleRequest->id,
+                    'employee_id' => $rescheduleRequest->employee_id,
+                    'type' => 'reschedule'
+                ]
+            );
+        }
+    }
+
+    public function notifyRescheduleRequestSubmission(LeaveRescheduleRequest $rescheduleRequest)
+    {
+        $hrUsers = User::where('role', 'hr')->get();
+        
+        foreach ($hrUsers as $hrUser) {
+            $this->createNotification(
+                $hrUser->id,
+                'reschedule_request_submitted',
+                'New Reschedule Request',
+                "A new leave reschedule request has been submitted by {$rescheduleRequest->employee->firstname} {$rescheduleRequest->employee->lastname}.",
+                [
+                    'reschedule_id' => $rescheduleRequest->id,
+                    'employee_id' => $rescheduleRequest->employee_id,
+                    'type' => 'reschedule'
+                ]
+            );
+        }
+    }
+}
+
+

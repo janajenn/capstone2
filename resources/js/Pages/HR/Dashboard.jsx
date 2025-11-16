@@ -2,6 +2,7 @@ import HRLayout from '@/Layouts/HRLayout';
 import { usePage, router } from '@inertiajs/react';
 import { useEffect, useState, useRef } from 'react';
 import Swal from 'sweetalert2';
+import { generateLeaveReportPDF } from '@/Utils/leaveReportGenerator';
 import { 
     BarChart, 
     Bar, 
@@ -75,7 +76,8 @@ export default function Dashboard() {
         availableYears,
         currentYear,
         currentMonth,
-        filters
+        filters,
+        leaveReportsData
     } = props;
 
     // State to track previous data for comparison
@@ -170,6 +172,72 @@ export default function Dashboard() {
             setNotificationPermission(permission);
         }
     };
+
+    // Download Leave Reports Handler
+    const handleDownloadLeaveReports = async () => {
+        try {
+            // Show loading state
+            Swal.fire({
+                title: 'Generating Report...',
+                text: 'Please wait while we prepare your leave report',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+    
+            // Validate data and ensure leave_requests is an array
+            if (!leaveReportsData || leaveReportsData.length === 0) {
+                Swal.close();
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No Data Available',
+                    text: 'There are no leave records for the selected period.',
+                    confirmButtonText: 'OK'
+                });
+                return;
+            }
+    
+            // Transform the data to ensure leave_requests is always an array
+            const transformedData = leaveReportsData.map(emp => ({
+                ...emp,
+                leave_requests: Array.isArray(emp.leave_requests) ? emp.leave_requests : [],
+                department: emp.department || { name: 'No Department' }
+            }));
+            // Generate the PDF with transformed data
+            await generateLeaveReportPDF({
+                year: localFilters.year,
+                month: localFilters.month,
+                leaveReportsData: transformedData,
+                monthlyStats: monthlyStats || [],
+                departmentStats: departmentStats || [],
+                leaveTypeStats: leaveTypeStats || []
+            });
+    
+            // Close loading and show success
+            Swal.close();
+            Swal.fire({
+                icon: 'success',
+                title: 'Report Downloaded!',
+                text: 'Leave report has been successfully generated and downloaded.',
+                timer: 3000,
+                showConfirmButton: false
+            });
+            
+        } catch (error) {
+            console.error('Error generating leave report:', error);
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Download Failed',
+                text: 'There was an error generating the report. Please try again.',
+                confirmButtonText: 'OK'
+            });
+        }
+    };
+
+
+
 
     const handleFilterChange = (newFilters) => {
         setLocalFilters(newFilters);
@@ -344,6 +412,17 @@ export default function Dashboard() {
                             <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"></div>
                         </div>
                         <div className="mt-4 md:mt-0 flex items-center space-x-3">
+                            {/* Download Leave Reports Button */}
+                            <button
+                                onClick={handleDownloadLeaveReports}
+                                className="px-6 py-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white font-medium rounded-2xl hover:shadow-2xl transition-all duration-300 hover:scale-105 shadow-lg flex items-center"
+                            >
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Download Leave Reports
+                            </button>
+
                             {notificationPermission === 'default' && (
                                 <button
                                     onClick={requestNotificationPermission}

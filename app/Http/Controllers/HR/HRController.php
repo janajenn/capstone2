@@ -26,6 +26,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\Holiday;
+use App\Models\LeaveRescheduleRequest;
 
 
 class HRController extends Controller
@@ -599,248 +600,374 @@ public function deleteLeaveType(LeaveType $leaveType)
 
 
 public function departments(Request $request)
-{
-    $perPage = 7;
-    
-    $departments = Department::with(['head', 'employees.user'])
-        ->paginate($perPage)
-        ->withQueryString();
+    {
+        $perPage = 7;
+        
+        $departments = Department::with(['head', 'employees.user'])
+            ->paginate($perPage)
+            ->withQueryString();
 
-    // Get ALL active employees regardless of role
-    $employees = Employee::with(['user', 'department'])
+        // Get ALL active employees regardless of role
+        $employees = Employee::with(['user', 'department'])
+            ->where('status', 'active')
+            ->get()
+            ->map(function($employee) {
+                $currentHeadDepartment = Department::where('head_employee_id', $employee->employee_id)->first();
+                
+                return [
+                    'employee_id' => $employee->employee_id,
+                    'name' => $employee->firstname . ' ' . $employee->lastname,
+                    'firstname' => $employee->firstname,
+                    'lastname' => $employee->lastname,
+                    'position' => $employee->position,
+                    'department_id' => $employee->department_id,
+                    'current_department' => $employee->department ? $employee->department->name : 'No Department',
+                    'role' => $employee->user ? $employee->user->role : 'employee',
+                    'is_current_dept_head' => $currentHeadDepartment ? true : false,
+                    'current_head_department' => $currentHeadDepartment ? $currentHeadDepartment->name : null,
+                    'current_head_department_id' => $currentHeadDepartment ? $currentHeadDepartment->id : null,
+                ];
+            });
+
+        return Inertia::render('HR/Departments', [
+            'departments' => $departments,
+            'employees' => $employees,
+        ]);
+    }
+
+    public function showEmployees(Request $request, $id)
+{
+    $perPage = 10;
+
+    $department = Department::with('head')->findOrFail($id);
+
+    $employees = Employee::with('user')
+        ->where('department_id', $id)
         ->where('status', 'active')
-        ->get()
-        ->map(function($employee) {
-            $currentHeadDepartment = Department::where('head_employee_id', $employee->employee_id)->first();
-            
+        ->paginate($perPage)
+        ->withQueryString()
+        ->through(function($employee) {
             return [
                 'employee_id' => $employee->employee_id,
                 'name' => $employee->firstname . ' ' . $employee->lastname,
                 'firstname' => $employee->firstname,
                 'lastname' => $employee->lastname,
                 'position' => $employee->position,
-                'department_id' => $employee->department_id,
-                'current_department' => $employee->department ? $employee->department->name : 'No Department',
                 'role' => $employee->user ? $employee->user->role : 'employee',
-                'is_current_dept_head' => $currentHeadDepartment ? true : false,
-                'current_head_department' => $currentHeadDepartment ? $currentHeadDepartment->name : null,
-                'current_head_department_id' => $currentHeadDepartment ? $currentHeadDepartment->id : null,
             ];
         });
 
-    return Inertia::render('HR/Departments', [
-        'departments' => $departments,
+    return Inertia::render('HR/DepartmentEmployees', [
+        'department' => [
+            'id' => $department->id,
+            'name' => $department->name,
+            'status' => $department->status,
+            'head' => $department->head ? [
+                'employee_id' => $department->head->employee_id,
+                'name' => $department->head->firstname . ' ' . $department->head->lastname,
+                'position' => $department->head->position,
+            ] : null,
+            'employee_count' => $department->employees()->where('status', 'active')->count(),
+        ],
         'employees' => $employees,
     ]);
 }
 
-public function updateDepartment(Request $request, $id)
-{
-    $request->validate([
-        'name' => 'required|unique:departments,name,' . $id,
-        'head_employee_id' => 'nullable|exists:employees,employee_id',
-        'transfer_from' => 'nullable|exists:departments,id',
-        'transfer_employee_id' => 'nullable|exists:employees,employee_id'
-    ]);
+    public function storeDepartment(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|unique:departments,name',
+            'head_employee_id' => 'nullable|exists:employees,employee_id',
+            'status' => 'required|in:active,inactive',
+            'transfer_from' => 'nullable|exists:departments,id',
+            'transfer_employee_id' => 'nullable|exists:employees,employee_id'
+        ]);
 
-    DB::beginTransaction();
-    try {
-        $department = Department::findOrFail($id);
-        $department->update(['name' => $request->name]);
+        DB::beginTransaction();
+        try {
+            $department = Department::create([
+                'name' => $request->name,
+                'status' => $request->status,
+            ]);
 
-        $transferFrom = $request->input('transfer_from');
-        $transferEmployeeId = $request->input('transfer_employee_id');
-        $isTransferRequest = !empty($transferFrom) && !empty($transferEmployeeId);
+            $transferFrom = $request->input('transfer_from');
+            $transferEmployeeId = $request->input('transfer_employee_id');
+            $isTransferRequest = !empty($transferFrom) && !empty($transferEmployeeId);
 
-        if ($isTransferRequest) {
-            $this->transferDepartmentHead($transferFrom, $department->id, $transferEmployeeId);
-        } else if ($request->has('head_employee_id')) {
-            $employeeId = $request->head_employee_id;
-            if (!empty($employeeId)) {
-                $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId, $department->id);
+            if ($isTransferRequest) {
+                $this->transferDepartmentHead($transferFrom, $department->id, $transferEmployeeId);
+            } else if ($request->has('head_employee_id') && !empty($request->head_employee_id)) {
+                $employeeId = $request->head_employee_id;
+                $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId);
                 
                 if ($existingHeadDepartment) {
                     throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
                 }
                 
                 $this->assignDepartmentHead($department->id, $employeeId);
+            }
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Department created successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return redirect()->back()->withErrors(['error' => 'Failed to create department: ' . $e->getMessage()]);
+        }
+    }
+
+    public function updateDepartment(Request $request, $id)
+    {
+        Log::info('=== DEPARTMENT UPDATE START ===');
+        Log::info('Request Data:', $request->all());
+        Log::info('Department ID: ' . $id);
+        Log::info('User ID: ' . $request->user()->id);
+
+        $request->validate([
+            'name' => 'required|unique:departments,name,' . $id,
+            'head_employee_id' => 'nullable|exists:employees,employee_id',
+            'status' => 'required|in:active,inactive',
+            'transfer_from' => 'nullable|exists:departments,id',
+            'transfer_employee_id' => 'nullable|exists:employees,employee_id'
+        ]);
+
+        Log::info('Validation passed');
+
+        DB::beginTransaction();
+        try {
+            $department = Department::findOrFail($id);
+            Log::info('Department found:', ['id' => $department->id, 'name' => $department->name]);
+
+            // Update basic department info
+            $department->update([
+                'name' => $request->name,
+                'status' => $request->status,
+            ]);
+
+            Log::info('Department basic info updated');
+
+            $transferFrom = $request->input('transfer_from');
+            $transferEmployeeId = $request->input('transfer_employee_id');
+            $isTransferRequest = !empty($transferFrom) && !empty($transferEmployeeId);
+
+            Log::info('Transfer check:', [
+                'transfer_from' => $transferFrom,
+                'transfer_employee_id' => $transferEmployeeId,
+                'is_transfer_request' => $isTransferRequest
+            ]);
+
+            if ($isTransferRequest) {
+                Log::info('Processing transfer request');
+                $this->transferDepartmentHead($transferFrom, $department->id, $transferEmployeeId);
+            } else if ($request->has('head_employee_id')) {
+                $employeeId = $request->head_employee_id;
+                Log::info('Processing head employee assignment:', ['employee_id' => $employeeId]);
+
+                if (!empty($employeeId)) {
+                    $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId, $department->id);
+                    Log::info('Existing head check:', [
+                        'existing_department' => $existingHeadDepartment ? $existingHeadDepartment->name : null
+                    ]);
+                    
+                    if ($existingHeadDepartment) {
+                        throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
+                    }
+                    
+                    $this->assignDepartmentHead($department->id, $employeeId);
+                    Log::info('Department head assigned successfully');
+                } else {
+                    Log::info('No head_employee_id provided, removing department head if exists');
+                    if ($department->head_employee_id) {
+                        $this->removeDepartmentHead($department->id);
+                        Log::info('Department head removed');
+                    }
+                }
             } else {
+                Log::info('No head_employee_id in request, removing department head if exists');
                 if ($department->head_employee_id) {
                     $this->removeDepartmentHead($department->id);
+                    Log::info('Department head removed');
                 }
             }
-        } else {
-            if ($department->head_employee_id) {
-                $this->removeDepartmentHead($department->id);
-            }
+
+            DB::commit();
+            Log::info('=== DEPARTMENT UPDATE SUCCESS ===');
+            
+            return redirect()->back()->with('success', 'Department updated successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Department update failed:', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()->withErrors(['error' => 'Failed to update department: ' . $e->getMessage()]);
+        }
+    }
+
+    private function isEmployeeAlreadyDeptHead($employeeId, $excludingDepartmentId = null)
+    {
+        $query = Department::where('head_employee_id', $employeeId);
+        
+        if ($excludingDepartmentId) {
+            $query->where('id', '!=', $excludingDepartmentId);
+        }
+        
+        $result = $query->first();
+        Log::info('Employee head check:', [
+            'employee_id' => $employeeId,
+            'excluding_department' => $excludingDepartmentId,
+            'found_department' => $result ? $result->name : null
+        ]);
+        
+        return $result;
+    }
+
+    private function assignDepartmentHead($departmentId, $employeeId)
+    {
+        Log::info('=== ASSIGN DEPARTMENT HEAD START ===');
+        Log::info('Department ID: ' . $departmentId);
+        Log::info('Employee ID: ' . $employeeId);
+
+        $department = Department::findOrFail($departmentId);
+        $employee = Employee::with('user')->findOrFail($employeeId);
+
+        Log::info('Department:', [
+            'name' => $department->name,
+            'current_head_employee_id' => $department->head_employee_id
+        ]);
+        Log::info('Employee:', ['name' => $employee->firstname . ' ' . $employee->lastname]);
+
+        $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId, $departmentId);
+        
+        if ($existingHeadDepartment) {
+            throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
         }
 
-        DB::commit();
-        return redirect()->back()->with('success', 'Department updated successfully!');
-
-    } catch (\Exception $e) {
-        DB::rollback();
-        return redirect()->back()->withErrors(['error' => 'Failed to update department: ' . $e->getMessage()]);
-    }
-}
-
-public function storeDepartment(Request $request)
-{
-    $request->validate([
-        'name' => 'required|unique:departments,name',
-        'head_employee_id' => 'nullable|exists:employees,employee_id',
-        'transfer_from' => 'nullable|exists:departments,id',
-        'transfer_employee_id' => 'nullable|exists:employees,employee_id'
-    ]);
-
-    DB::beginTransaction();
-    try {
-        $department = Department::create($request->only('name'));
-
-        $transferFrom = $request->input('transfer_from');
-        $transferEmployeeId = $request->input('transfer_employee_id');
-        $isTransferRequest = !empty($transferFrom) && !empty($transferEmployeeId);
-
-        if ($isTransferRequest) {
-            $this->transferDepartmentHead($transferFrom, $department->id, $transferEmployeeId);
-        } else if ($request->has('head_employee_id') && !empty($request->head_employee_id)) {
-            $employeeId = $request->head_employee_id;
-            $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId);
-            
-            if ($existingHeadDepartment) {
-                throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
-            }
-            
-            $this->assignDepartmentHead($department->id, $employeeId);
+        // Check if we're assigning the SAME employee as head (no change needed)
+        if ($department->head_employee_id == $employeeId) {
+            Log::info('Same employee assigned as head, no changes needed');
+            return; // No changes needed
         }
 
-        DB::commit();
-        return redirect()->back()->with('success', 'Department created successfully!');
+        // If department has a different head, remove the current head first
+        if ($department->head_employee_id && $department->head_employee_id != $employeeId) {
+            Log::info('Removing current department head before assigning new one');
+            $this->removeDepartmentHead($departmentId);
+        }
 
-    } catch (\Exception $e) {
-        DB::rollback();
-        return redirect()->back()->withErrors(['error' => 'Failed to create department: ' . $e->getMessage()]);
-    }
-}
+        $currentHead = $department->head_employee_id ? Employee::with('user')->find($department->head_employee_id) : null;
+        Log::info('Current head after removal:', ['current_head' => $currentHead ? $currentHead->firstname . ' ' . $currentHead->lastname : 'None']);
 
-private function isEmployeeAlreadyDeptHead($employeeId, $excludingDepartmentId = null)
-{
-    $query = Department::where('head_employee_id', $employeeId);
-    
-    if ($excludingDepartmentId) {
-        $query->where('id', '!=', $excludingDepartmentId);
-    }
-    
-    return $query->first();
-}
+        // Update the new employee to be department head
+        if ($employee->user) {
+            $employee->user->update(['role' => 'dept_head']);
+            Log::info('New head role updated to dept_head');
+        }
 
-private function transferDepartmentHead($fromDepartmentId, $toDepartmentId, $employeeId)
-{
-    $fromDepartment = Department::findOrFail($fromDepartmentId);
-    $toDepartment = Department::findOrFail($toDepartmentId);
-    $employee = Employee::with('user')->findOrFail($employeeId);
+        $department->update(['head_employee_id' => $employeeId]);
+        Log::info('Department head_employee_id updated to: ' . $employeeId);
 
-    if ($fromDepartment->head_employee_id != $employeeId) {
-        throw new \Exception("Employee is not the department head of {$fromDepartment->name}");
+        // Optional: Update employee's department if different
+        if ($employee->department_id != $departmentId) {
+            $employee->update(['department_id' => $departmentId]);
+            Log::info('Employee department updated to new department');
+        }
+
+        Log::info('=== ASSIGN DEPARTMENT HEAD SUCCESS ===');
     }
 
-    if ($toDepartment->head_employee_id && $toDepartment->head_employee_id != $employeeId) {
-        throw new \Exception("The target department already has a department head. Please remove them first.");
-    }
+    private function removeDepartmentHead($departmentId)
+    {
+        Log::info('=== REMOVE DEPARTMENT HEAD START ===');
+        Log::info('Department ID: ' . $departmentId);
 
-    $fromDepartment->update(['head_employee_id' => null]);
-    $toDepartment->update(['head_employee_id' => $employeeId]);
-    $employee->update(['department_id' => $toDepartment->id]);
-    
-    if ($employee->user) {
-        $employee->user->update(['role' => 'dept_head']);
-    }
-}
-
-private function assignDepartmentHead($departmentId, $employeeId)
-{
-    $department = Department::findOrFail($departmentId);
-    $employee = Employee::with('user')->findOrFail($employeeId);
-
-    $existingHeadDepartment = $this->isEmployeeAlreadyDeptHead($employeeId, $departmentId);
-    
-    if ($existingHeadDepartment) {
-        throw new \Exception("This employee is already the department head of {$existingHeadDepartment->name}. Please transfer them instead.");
-    }
-
-    if ($department->head_employee_id && $department->head_employee_id != $employeeId) {
-        throw new \Exception("This department already has a department head. Please remove the current head first.");
-    }
-
-    $currentHead = $department->head_employee_id ? Employee::with('user')->find($department->head_employee_id) : null;
-
-    if ($currentHead && $currentHead->user && $currentHead->employee_id != $employeeId) {
-        $originalRole = $this->getOriginalRole($currentHead);
-        $currentHead->user->update(['role' => $originalRole]);
-    }
-
-    if ($employee->user) {
-        $employee->user->update(['role' => 'dept_head']);
-    }
-
-    $department->update(['head_employee_id' => $employeeId]);
-
-    if ($employee->department_id != $departmentId) {
-        $employee->update(['department_id' => $departmentId]);
-    }
-}
-
-private function getOriginalRole($employee)
-{
-    $currentRole = $employee->user->role;
-    
-    if (in_array($currentRole, ['admin', 'hr'])) {
-        return $currentRole;
-    }
-    
-    return 'employee';
-}
-
-private function removeDepartmentHead($departmentId)
-{
-    $department = Department::with('head.user')->findOrFail($departmentId);
-
-    if ($department->head && $department->head->user) {
-        $originalRole = $this->getOriginalRole($department->head);
-        $department->head->user->update(['role' => $originalRole]);
-    }
-
-    $department->update(['head_employee_id' => null]);
-}
-
-public function deleteDepartment($id)
-{
-    DB::beginTransaction();
-    try {
-        $department = Department::with('head.user')->findOrFail($id);
+        $department = Department::with('head.user')->findOrFail($departmentId);
+        
+        Log::info('Department before removal:', [
+            'name' => $department->name,
+            'current_head_employee_id' => $department->head_employee_id
+        ]);
 
         if ($department->head && $department->head->user) {
             $originalRole = $this->getOriginalRole($department->head);
             $department->head->user->update(['role' => $originalRole]);
+            Log::info('Previous head role reverted to: ' . $originalRole);
         }
 
-        $department->delete();
+        $department->update(['head_employee_id' => null]);
+        Log::info('Department head_employee_id set to null');
 
-        DB::commit();
-        return redirect()->back()->with('success', 'Department deleted successfully!');
-
-    } catch (\Exception $e) {
-        DB::rollback();
-        return redirect()->back()->withErrors(['error' => 'Failed to delete department: ' . $e->getMessage()]);
+        Log::info('=== REMOVE DEPARTMENT HEAD SUCCESS ===');
     }
-}
+
+    private function getOriginalRole($employee)
+    {
+        $currentRole = $employee->user->role;
+        
+        // If the employee was admin/hr before becoming dept head, keep that role
+        if (in_array($currentRole, ['admin', 'hr'])) {
+            return $currentRole;
+        }
+        
+        // Otherwise, revert to employee role
+        return 'employee';
+    }
+
+    private function transferDepartmentHead($fromDepartmentId, $toDepartmentId, $employeeId)
+    {
+        $fromDepartment = Department::findOrFail($fromDepartmentId);
+        $toDepartment = Department::findOrFail($toDepartmentId);
+        $employee = Employee::with('user')->findOrFail($employeeId);
+
+        if ($fromDepartment->head_employee_id != $employeeId) {
+            throw new \Exception("Employee is not the department head of {$fromDepartment->name}");
+        }
+
+        if ($toDepartment->head_employee_id && $toDepartment->head_employee_id != $employeeId) {
+            throw new \Exception("The target department already has a department head. Please remove them first.");
+        }
+
+        $fromDepartment->update(['head_employee_id' => null]);
+        $toDepartment->update(['head_employee_id' => $employeeId]);
+        $employee->update(['department_id' => $toDepartment->id]);
+        
+        if ($employee->user) {
+            $employee->user->update(['role' => 'dept_head']);
+        }
+    }
+
+    public function deleteDepartment($id)
+    {
+        DB::beginTransaction();
+        try {
+            $department = Department::with('head.user')->findOrFail($id);
+
+            if ($department->head && $department->head->user) {
+                $originalRole = $this->getOriginalRole($department->head);
+                $department->head->user->update(['role' => $originalRole]);
+            }
+
+            $department->delete();
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Department deleted successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            return redirect()->back()->withErrors(['error' => 'Failed to delete department: ' . $e->getMessage()]);
+        }
+    }
 
 // LEAVE REQUEST APPROVAL METHODS
 public function dashboard(Request $request)
 {
     // Get filter values
-    $year = $request->year ?? now()->year;
-    $month = $request->month ?? null;
+    $year = $request->get('year', date('Y'));
+    $month = $request->get('month', '');
     
     // Get available years for filter dropdown
     $availableYears = $this->getAvailableYears();
@@ -971,6 +1098,31 @@ public function dashboard(Request $request)
             ];
         });
 
+    // FIXED: Remove the 'approved' status filter to get ALL leave requests
+    $leaveReportsQuery = Employee::with(['department', 'leaveRequests.leaveType', 'leaveRequests.approvals'])
+        ->whereHas('leaveRequests', function ($query) use ($year, $month) {
+            // REMOVED: ->where('status', 'approved')
+            $query->whereYear('date_from', $year);
+            
+            if ($month) {
+                $query->whereMonth('date_from', $month);
+            }
+        });
+
+    $leaveReportsData = $leaveReportsQuery->get()->map(function ($employee) {
+        // Get ALL leave requests (not just approved)
+        $employee->setRelation('leave_requests', 
+            $employee->leaveRequests->map(function ($request) {
+                // Add status display and duration calculation
+                $request->status_display = $this->getStatusDisplay($request);
+                $request->duration = $this->calculateDuration($request->date_from, $request->date_to);
+                return $request;
+            })
+        );
+        return $employee;
+    });
+
+
     return Inertia::render('HR/Dashboard', [
         'pendingCount' => $pendingCount,
         'recentRequests' => $recentRequests,
@@ -986,8 +1138,64 @@ public function dashboard(Request $request)
         'currentYear' => $year,
         'currentMonth' => $month,
         'filters' => $request->only(['year', 'month']),
+        'leaveReportsData' => $leaveReportsData // Make sure this is included
     ]);
 }
+
+
+
+// Add these helper methods to your HRController
+private function getStatusDisplay($leaveRequest)
+{
+    $status = $leaveRequest->status;
+    $approvals = $leaveRequest->approvals;
+    
+    // Check if fully approved (has admin approval)
+    $hasAdminApproval = $approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
+    $hasHrApproval = $approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
+    $hasDeptHeadApproval = $approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
+    
+    if ($hasAdminApproval) {
+        return 'Fully Approved';
+    }
+    
+    switch ($status) {
+        case 'approved':
+            return 'Fully Approved';
+        case 'pending':
+            return 'Pending HR Approval';
+        case 'pending_dept_head':
+            return 'Pending Dept Head';
+        case 'pending_admin':
+            return 'Pending Admin';
+        case 'rejected':
+            return 'Rejected';
+        default:
+            return ucfirst(str_replace('_', ' ', $status));
+    }
+}
+
+private function calculateDuration($startDate, $endDate)
+{
+    if (!$startDate || !$endDate) return 0;
+    
+    $start = \Carbon\Carbon::parse($startDate);
+    $end = \Carbon\Carbon::parse($endDate);
+    
+    return $start->diffInDays($end) + 1; // +1 to include both start and end dates
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 /**
  * Get available years for filtering
@@ -1130,12 +1338,21 @@ public function leaveRequests(Request $request)
 
     $leaveRequests = $query->paginate($perPage)->withQueryString();
 
+
+    $rescheduleRequestsCount = LeaveRescheduleRequest::where('status', 'pending_hr')->count();
+
+
     return Inertia::render('HR/LeaveRequests', [
         'leaveRequests' => $leaveRequests,
         'departments' => Department::all(),
+        'rescheduleRequestsCount' => $rescheduleRequestsCount, // Add this
         'filters' => $request->only(['status', 'date_from', 'date_to', 'search', 'department']),
     ]);
 }
+
+
+
+
 
 public function showLeaveRequest($id)
 {
@@ -1630,6 +1847,72 @@ private function getLeaveTypeColor($leaveTypeCode)
 
         return Inertia::render('HR/ShowCreditConversion', [
             'conversion' => $transformedConversion,
+        ]);
+    }
+
+    // Add this method to your HRController
+    public function showMonetizationForm($id)
+    {
+        $conversion = CreditConversion::with([
+            'employee.department',
+            'employee.leaveCredit', // Add this to get leave credit data
+            'hrApprover',
+            'deptHeadApprover', 
+            'adminApprover'
+        ])->findOrFail($id);
+    
+        $transformedConversion = $this->transformConversionData($conversion);
+    
+        // Get current VL balance for calculations
+        $currentVlBalance = $conversion->employee->leaveCredit->vl_balance ?? 0;
+        $creditsRequested = (float) $conversion->credits_requested;
+        
+        // Calculate the leave credit breakdown
+        $leaveCreditData = [
+            'total_earned' => $currentVlBalance + $creditsRequested, // Total before deduction
+            'less_application' => $creditsRequested,
+            'balance' => $currentVlBalance, // Balance after deduction
+        ];
+    
+        // Get approvers for the form
+        $approvers = [];
+        
+        if ($conversion->hrApprover) {
+            $approvers[] = [
+                'role' => 'HRMO-Designate',
+                'name' => $conversion->hrApprover->name,
+                'approved_at' => $conversion->hr_approved_at
+            ];
+        }
+        
+        if ($conversion->deptHeadApprover) {
+            $approvers[] = [
+                'role' => 'Department Head',
+                'name' => $conversion->deptHeadApprover->name,
+                'approved_at' => $conversion->dept_head_approved_at
+            ];
+        }
+        
+        if ($conversion->adminApprover) {
+            $approvers[] = [
+                'role' => 'Municipal Vice Mayor',
+                'name' => $conversion->adminApprover->name,
+                'approved_at' => $conversion->admin_approved_at
+            ];
+        }
+    
+        return Inertia::render('HR/MonetizationForm', [
+            'conversion' => array_merge($transformedConversion, [
+                'leave_credit_data' => $leaveCreditData
+            ]),
+            'employee' => [
+                'full_name' => $conversion->employee->firstname . ' ' . $conversion->employee->lastname,
+                'department' => $conversion->employee->department,
+                'position' => $conversion->employee->position,
+                'monthly_salary' => $conversion->employee->monthly_salary,
+                'current_vl_balance' => $currentVlBalance,
+            ],
+            'approvers' => $approvers,
         ]);
     }
 
@@ -3073,4 +3356,215 @@ public function getHolidayDates()
 }
 
 
+
+public function rescheduleRequests(Request $request)
+{
+    $rescheduleRequests = LeaveRescheduleRequest::with([
+            'employee.department',
+            'employee.user',
+            'originalLeaveRequest.leaveType'
+        ])
+        ->orderBy('submitted_at', 'desc')
+        ->paginate(10)
+        ->through(function ($request) {
+            return [
+                'id' => $request->id,
+                'employee' => $request->employee ? [
+                    'id' => $request->employee->id,
+                    'firstname' => $request->employee->firstname,
+                    'lastname' => $request->employee->lastname,
+                    'department' => $request->employee->department ? [
+                        'id' => $request->employee->department->id,
+                        'name' => $request->employee->department->name,
+                    ] : null,
+                    'user' => $request->employee->user ? [
+                        'role' => $request->employee->user->role,
+                    ] : null,
+                ] : null,
+                'original_leave_request' => $request->originalLeaveRequest ? [
+                    'id' => $request->originalLeaveRequest->id,
+                    'date_from' => $request->originalLeaveRequest->date_from,
+                    'date_to' => $request->originalLeaveRequest->date_to,
+                    'total_days' => $request->originalLeaveRequest->total_days,
+                    'reason' => $request->originalLeaveRequest->reason,
+                    'leave_type' => $request->originalLeaveRequest->leaveType ? [
+                        'id' => $request->originalLeaveRequest->leaveType->id,
+                        'name' => $request->originalLeaveRequest->leaveType->name,
+                        'code' => $request->originalLeaveRequest->leaveType->code,
+                    ] : null,
+                ] : null,
+                'proposed_dates' => $request->proposed_dates,
+                'reason' => $request->reason,
+                'status' => $request->status,
+                'submitted_at' => $request->submitted_at,
+                'hr_reviewed_at' => $request->hr_reviewed_at,
+                'dept_head_reviewed_at' => $request->dept_head_reviewed_at,
+                'hr_remarks' => $request->hr_remarks,
+                'dept_head_remarks' => $request->dept_head_remarks,
+            ];
+        });
+
+    return Inertia::render('HR/RescheduleRequests', [
+        'rescheduleRequests' => $rescheduleRequests,
+    ]);
 }
+
+/**
+ * Approve a reschedule request (HR action)
+ */
+public function approveRescheduleRequest(Request $request, $id)
+{
+    $rescheduleRequest = LeaveRescheduleRequest::with(['employee', 'originalLeaveRequest'])->findOrFail($id);
+
+    // Check if request is pending HR approval
+    if ($rescheduleRequest->status !== 'pending_hr') {
+        return back()->with('error', 'This reschedule request has already been processed.');
+    }
+
+    try {
+        $user = $request->user();
+        $employeeRole = $rescheduleRequest->employee->user->role;
+        
+        // FIXED LOGIC: Based on your requirements
+        $isSimpleApproval = in_array($employeeRole, ['dept_head', 'admin']);
+        $isTwoStepApproval = in_array($employeeRole, ['employee', 'hr']);
+
+        if ($isTwoStepApproval) {
+            // For employees and HR: HR approves and sends to Dept Head
+            $rescheduleRequest->update([
+                'status' => 'pending_dept_head',
+                'hr_reviewed_by' => $user->id,
+                'hr_reviewed_at' => now(),
+                'hr_remarks' => 'Approved by HR - Forwarded to Department Head',
+            ]);
+        } elseif ($isSimpleApproval) {
+            // For dept_head and admin: HR approval is final
+            $rescheduleRequest->update([
+                'status' => 'approved',
+                'hr_reviewed_by' => $user->id,
+                'hr_reviewed_at' => now(),
+                'processed_by' => $user->id,
+                'processed_at' => now(),
+                'hr_remarks' => 'Approved by HR - Auto-approved for Department Head/Admin',
+            ]);
+
+            // Update the original leave request with new dates
+            $this->updateLeaveRequestDates($rescheduleRequest);
+        }
+
+        // // 🔔 Send notifications
+        // $this->notificationService->notifyRescheduleHRApproval($rescheduleRequest, $isTwoStepApproval);
+
+        return back()->with('success', 
+            $isTwoStepApproval 
+                ? 'Reschedule request approved and forwarded to Department Head.' 
+                : 'Reschedule request approved successfully.'
+        );
+
+    } catch (\Exception $e) {
+        \Log::error('HR reschedule approval failed: ' . $e->getMessage());
+        return back()->with('error', 'Failed to approve reschedule request.');
+    }
+}
+
+/**
+ * Reject a reschedule request (HR action)
+ */
+public function rejectRescheduleRequest(Request $request, $id)
+{
+    $rescheduleRequest = LeaveRescheduleRequest::with(['employee'])->findOrFail($id);
+
+    // Check if request is pending HR approval
+    if ($rescheduleRequest->status !== 'pending_hr') {
+        return back()->with('error', 'This reschedule request has already been processed.');
+    }
+
+    $validated = $request->validate([
+        'remarks' => ['required', 'string', 'max:1000'],
+    ]);
+
+    try {
+        $user = $request->user();
+
+        $rescheduleRequest->update([
+            'status' => 'rejected',
+            'hr_reviewed_by' => $user->id,
+            'hr_reviewed_at' => now(),
+            'processed_by' => $user->id,
+            'processed_at' => now(),
+            'hr_remarks' => $validated['remarks'],
+        ]);
+
+        // // 🔔 Send notifications
+        // $this->notificationService->notifyRescheduleHRRejection($rescheduleRequest);
+
+        return back()->with('success', 'Reschedule request rejected successfully.');
+
+    } catch (\Exception $e) {
+        \Log::error('HR reschedule rejection failed: ' . $e->getMessage());
+        return back()->with('error', 'Failed to reject reschedule request.');
+    }
+}
+
+/**
+ * Update original leave request with new dates
+ */
+private function updateLeaveRequestDates($rescheduleRequest)
+{
+    try {
+        $originalLeave = $rescheduleRequest->originalLeaveRequest;
+        $dates = collect($rescheduleRequest->proposed_dates)->sort()->values();
+        $dateFrom = $dates->first();
+        $dateTo = $dates->last();
+
+        // Calculate working days (excluding weekends)
+        $workingDays = 0;
+        foreach ($dates as $date) {
+            $dateObj = new \DateTime($date);
+            $dayOfWeek = $dateObj->format('N');
+            if ($dayOfWeek < 6) { // 1-5 are weekdays
+                $workingDays++;
+            }
+        }
+
+        // Store the original dates in reschedule history
+        $rescheduleHistory = array_merge(
+            json_decode($originalLeave->reschedule_history ?? '[]', true),
+            [
+                [
+                    'reschedule_id' => $rescheduleRequest->id,
+                    'original_dates' => [
+                        'date_from' => $originalLeave->date_from,
+                        'date_to' => $originalLeave->date_to,
+                        'total_days' => $originalLeave->total_days,
+                    ],
+                    'new_dates' => [
+                        'date_from' => $dateFrom,
+                        'date_to' => $dateTo,
+                        'total_days' => $workingDays,
+                    ],
+                    'rescheduled_at' => now()->toISOString(),
+                    'reason' => $rescheduleRequest->reason,
+                    'approved_by' => $rescheduleRequest->processed_by,
+                    'remarks' => $rescheduleRequest->hr_remarks
+                ]
+            ]
+        );
+
+        // Update the original leave request
+        $originalLeave->update([
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'total_days' => $workingDays,
+            'selected_dates' => json_encode($dates),
+            'reschedule_history' => json_encode($rescheduleHistory)
+        ]);
+
+    } catch (\Exception $e) {
+        \Log::error('Failed to update leave request dates: ' . $e->getMessage());
+        throw $e;
+    }
+}
+}
+
+

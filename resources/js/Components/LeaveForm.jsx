@@ -1,4 +1,6 @@
 import React from 'react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 export default function LeaveForm({ leaveRequest, employee, approvers }) {
     // Helper function to format date
@@ -115,27 +117,28 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
     };
 
     // Get leave credit data from logs
-    const getLeaveCreditData = (leaveType) => {
-        if (!employee?.leave_credit_logs) return null;
-        
-        // Filter out late deductions and sort by date
-        const relevantLogs = employee.leave_credit_logs
-            .filter(log => 
-                log.type === leaveType && 
-                (!log.remarks || !log.remarks.includes('Late')) // Exclude late deductions
-            )
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
-        
-        if (relevantLogs.length === 0) return null;
-        
-        const latestLog = relevantLogs[0];
-        
-        return {
-            total_earned: latestLog.balance_before,
-            less_application: latestLog.points_deducted,
-            balance: latestLog.balance_after
-        };
+   // Get leave credit data from logs - UPDATED to show whole numbers only
+const getLeaveCreditData = (leaveType) => {
+    if (!employee?.leave_credit_logs) return null;
+    
+    // Filter out late deductions and sort by date
+    const relevantLogs = employee.leave_credit_logs
+        .filter(log => 
+            log.type === leaveType && 
+            (!log.remarks || !log.remarks.includes('Late')) // Exclude late deductions
+        )
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    if (relevantLogs.length === 0) return null;
+    
+    const latestLog = relevantLogs[0];
+    
+    return {
+        total_earned: Math.round(latestLog.balance_before), // Round to whole number
+        less_application: Math.round(latestLog.points_deducted), // Round to whole number
+        balance: Math.round(latestLog.balance_after) // Round to whole number
     };
+};
 
     // Debug logging
     console.log('=== ALL LEAVE CREDIT LOGS ===');
@@ -175,28 +178,106 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
     console.log('- physicianName:', leaveDetails.physicianName);
     console.log('========================');
 
-    return (
+
+
+    const downloadPDF = () => {
+        const formElement = document.getElementById('leave-form-content');
+        
+        // Reduced scale for moderate zoom
+        const scale = 3.5; // Reduced from 5 to 3.5
+        
+        html2canvas(formElement, {
+            scale: scale,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            dpi: 470, // Reduced from 400
+            letterRendering: true,
+            allowTaint: true
+        }).then(canvas => {
+            const imgData = canvas.toDataURL('image/jpeg', 1.0);
+            
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+            
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            
+            // Reduced zoom factor - fit to page with slight margin
+            const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight) * 1.3; // Reduced from 1.1 to 0.95
+            
+            // Center the image with small margins
+            const xPosition = (pdfWidth - imgWidth * ratio) / 2 + 5;
+
+            const yPosition = (pdfHeight - imgHeight * ratio) / 2;
+            
+            pdf.addImage(imgData, 'JPEG', xPosition, yPosition, imgWidth * ratio, imgHeight * ratio);
+            
+            pdf.setProperties({
+                title: 'Leave Application Form',
+                subject: 'Employee Leave Request',
+                author: 'HR System'
+            });
+            
+            pdf.save('leave-application-form.pdf');
+        }).catch(error => {
+            console.error('Error generating PDF:', error);
+        });
+    };
+
+
+     return (
         <div className="leave-form-container">
-            {/* Print Button */}
-            <div className="print-controls">
-                <button 
-                    onClick={() => window.print()} 
-                    className="print-button"
-                >
-                    🖨️ Print Form
+            {/* SIMPLE DOWNLOAD BUTTONS */}
+            <div style={{ textAlign: 'right', marginBottom: '10px' }}>
+                
+                <button onClick={downloadPDF} style={{...buttonStyle, backgroundColor: '#28a745', marginLeft: '10px'}}>
+                    📄 Download PDF
                 </button>
             </div>
 
+
+            <div id="leave-form-content">
             {/* Leave Form */}
             <div className="leave-form-page">
-                {/* Header */}
-                <div className="form-header">
-                    <div className="government-info">
-                        Republic of the Philippines<br />
-                        Local Government Unit of Opol<br />
-                        Zone 3, Poblacion Opol, Misamis Oriental<br />
-                    </div>
-                </div>
+               {/* Header */}
+<div className="form-header">
+    {/* Top section with form number and logo space */}
+    <div className="header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+        {/* Civil Service Form Number - Top Left */}
+        <div className="form-number" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+            Civil Service Form No. 6, Revised 2020
+        </div>
+        {/* Logo Space - Top Right */}
+<div className="logo-space" style={{ width: '80px', height: '80px' }}>
+    <img 
+        src="\public\assets\Opol_logo.png" 
+        alt="Opol Logo" 
+        style={{ 
+            width: '100%', 
+            height: '100%', 
+            objectFit: 'contain' 
+        }} 
+    />
+            Opol Logo
+        </div>
+    </div>
+
+    {/* Government Info - Centered */}
+    <div className="government-info">
+        Republic of the Philippines<br />
+        Local Government Unit of Opol<br />
+        Zone 3, Poblacion Opol, Misamis Oriental<br />
+    </div>
+</div>
+                
+                
 
                 <div className="form-title">APPLICATION FOR LEAVE</div>
 
@@ -205,14 +286,14 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                     <tbody>
                         <tr>
                             <td className="left-section" style={{ minWidth: '500px' }}>
-                                <strong style={{ marginRight: '160px' }}>1.Office/Department: {employee?.department?.name || 'N/A'}</strong>
+                                <strong style={{ marginRight: '220px' }}>1.Office/Department: {employee?.department?.name || 'N/A'}</strong>
                                 <strong>2.Name: {employee?.full_name || 'N/A'}</strong>
                             </td>
                         </tr>
                         <tr>
                             <td className="left-section">
-                                <strong style={{ marginRight: '140px' }}>3.Date of filing: {formatDate(leaveRequest?.created_at)}</strong>
-                                <strong style={{ marginRight: '100px' }}>4.Position: {employee?.position || 'N/A'}</strong>
+                                <strong style={{ marginRight: '216px' }}>3.Date of filing: {formatDate(leaveRequest?.created_at)}</strong>
+                                <strong style={{ marginRight: '140px' }}>4.Position: {employee?.position || 'N/A'}</strong>
                                 <strong>5.Salary: ₱{employee?.salary ? Number(employee.salary).toLocaleString() : 'N/A'}</strong>
                             </td>
                         </tr>
@@ -504,47 +585,51 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                 <br />
 
                 {/* Final Approval Section */}
-                <table className="final-approval-table">
-                    <tbody>
-                        <tr>
-                            <td style={{ width: '50%', borderRight: 'none' }}>
-                                7.C APPROVED FOR: <br />
-                                <strong>{leaveRequest?.days_with_pay || 0} days with pay</strong><br />
-                                <strong>{leaveRequest?.days_without_pay || 0} days without pay</strong><br />
-                                _____ others (specify)__________
-                            </td>
-                            <td style={{ width: '50%', borderLeft: 'none' }}>
-                                7.D DISAPPROVED DUE TO:<br />
-                                ______________________________________________________________<br />    
-                                ______________________________________________________________
-                            </td>
-                        </tr>
-                        <tr>
-                            <td colSpan="2" style={{ textAlign: 'center', paddingTop: '10px', borderTop: 'none' }}>
-                                <div className="approver-signature">
-                                    <div className="approver-signature-line">
-                                        {getApproverByRole('admin')?.name || 'Municipal Vice Mayor'}
-                                    </div>
-                                    <div className="approver-role">
-                                        {getApproverByRole('admin')?.role === 'admin' ? 'Municipal Vice Mayor' : 'Administrator'}
-                                    </div>
-                                    <div className="verification-text">Digitally Signed and Approved by</div>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+               {/* Final Approval Section */}
+<table className="final-approval-table">
+    <tbody>
+        <tr>
+            <td style={{ width: '50%' }}>
+                7.C APPROVED FOR: <br />
+                <strong>{leaveRequest?.days_with_pay || 0} days with pay</strong><br />
+                <strong>{leaveRequest?.days_without_pay || 0} days without pay</strong><br />
+                _____ others (specify)__________
+            </td>
+            <td style={{ width: '50%' }}>
+                7.D DISAPPROVED DUE TO:<br />
+                ______________________________________________________________<br />    
+                ______________________________________________________________
+            </td>
+        </tr>
+        <tr>
+            <td colSpan="2" style={{ textAlign: 'center', paddingTop: '20px' }}>
+                <div className="approver-signature">
+                    <div className="approver-signature-line">
+                        {getApproverByRole('admin')?.name || 'Municipal Vice Mayor'}
+                    </div>
+                    <div className="approver-role">
+                        {getApproverByRole('admin')?.role === 'admin' ? 'Municipal Vice Mayor' : 'Administrator'}
+                    </div>
+                    <div className="verification-text">Digitally Signed and Approved by</div>
+                </div>
+
+                <br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />
+            </td>
+        </tr>
+    </tbody>
+</table>
+            </div>
             </div>
 
             {/* Print Styles */}
             <style jsx>{`
                 .leave-form-container {
                     font-family: Arial, sans-serif;
-                    font-size: 11px;
+                    font-size: 12px; /* Slightly reduced from 13px */
                     background: white;
                     width: 100%;
                 }
-
+            
                 /* Ensure the form content fits well in the modal */
                 @media screen {
                     .leave-form-page {
@@ -556,12 +641,12 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                         background: transparent;
                     }
                 }
-
+            
                 .print-controls {
                     text-align: right;
                     margin-bottom: 10px;
                 }
-
+            
                 .print-button {
                     background: #007bff;
                     color: white;
@@ -571,168 +656,206 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                     cursor: pointer;
                     font-size: 14px;
                 }
-
+            
                 .print-button:hover {
                     background: #0056b3;
                 }
-
+            
                 .leave-form-page {
-                    width: 816px;
-                    min-height: 1056px;
-                     margin: auto;
+                    
+    width: 1000px; /* Made wider */
+    min-height: 1200px; /* Made taller */
+                    margin: auto;
                     background: white;
-                    padding: 20px;
+                    padding: 20px 25px; /* Reduced top/bottom padding, kept side padding */
                     box-shadow: 0 0 5px rgba(0,0,0,0.3);
                     border: 1px solid #000;
+                    position: relative;
+                    left: -20px; /* Shift entire form to the left */
+                    top: -15px; /* Shift entire form upward */
                 }
-
+            
                 .form-header {
                     text-align: center;
+                    margin-bottom: 5px; /* Reduced margin */
                 }
-
+            
                 .government-info {
-                    font-size: 11px;
+                    font-size: 12px; /* Slightly reduced */
+                    line-height: 1.2; /* Tighter line spacing */
                 }
-
+            
                 .form-title {
                     text-align: center;
                     font-weight: bold;
-                    font-size: 14px;
-                    margin-top: 10px;
+                    font-size: 16px; /* Slightly reduced from 18px */
+                    margin-top: 8px; /* Reduced margin */
+                    margin-bottom: 10px; /* Reduced margin */
                 }
-
+            
                 /* Form Info Table - Populated data */
                 .form-info-table {
                     width: 100%;
                     border-collapse: collapse;
-                    margin-bottom: 10px;
+                    margin-bottom: 10px; /* Reduced margin */
                 }
-
+            
                 .form-info-table td {
-                    padding: 5px;
+                    padding: 6px; /* Slightly reduced padding */
                     border: 1px solid #000;
                     vertical-align: top;
+                    font-size: 12px; /* Slightly reduced */
                 }
-
+            
                 .form-info-table .left-section {
                     width: 100%;
                 }
-
+            
                 .section-title {
                     font-weight: bold;
                     background: #eee;
-                    padding: 2px 4px;
+                    padding: 4px 6px; /* Reduced padding */
                     border: 1px solid #000;
-                    margin-bottom: 5px;
+                    margin-bottom: 6px; /* Reduced margin */
+                    font-size: 13px; /* Slightly reduced */
                 }
-
+            
                 .form-table {
                     width: 100%;
                     border-collapse: collapse;
                 }
-
+            
                 .form-table td, .form-table th {
-                    padding: 3px;
+                    padding: 4px; /* Reduced padding */
                     vertical-align: top;
+                    font-size: 12px; /* Slightly reduced */
                 }
-
+            
                 .bordered td, .bordered th {
                     border: 1px solid #000;
                 }
-
+            
                 .leave-type-option {
-                    margin-bottom: 2px;
+                    margin-bottom: 2px; /* Reduced spacing */
+                    font-size: 12px; /* Slightly reduced */
+                    line-height: 1.2; /* Tighter line spacing */
                 }
-
+            
                 .checkbox {
                     display: inline-block;
-                    width: 12px;
-                    height: 12px;
+                    width: 14px; /* Slightly reduced */
+                    height: 14px; /* Slightly reduced */
                     border: 1px solid #000;
-                    margin-right: 3px;
+                    margin-right: 4px; /* Reduced spacing */
                     text-align: center;
-                    line-height: 12px;
-                    font-size: 10px;
+                    line-height: 14px; /* Adjusted line height */
+                    font-size: 11px; /* Slightly reduced */
                 }
-
+            
                 .checkbox.checked {
                     background: #000;
                     color: white;
                 }
-
+            
                 .leave-credits-table {
                     width: 100%;
                     border: 1px solid #000;
                     text-align: center;
                     border-collapse: collapse;
+                    font-size: 12px; /* Slightly reduced */
                 }
-
+            
                 .leave-credits-table th,
                 .leave-credits-table td {
                     border: 1px solid #000;
-                    padding: 3px;
+                    padding: 4px; /* Reduced padding */
                 }
-
+            
                 .signature-section {
                     text-align: center;
-                    margin-top: 10px;
+                    margin-top: 15px; /* Reduced spacing */
                 }
-
+            
                 .system-signature {
                     font-weight: bold;
                     color: #666;
                     font-style: italic;
+                    font-size: 11px; /* Slightly reduced */
                 }
-
+            
                 .approver-signature-line {
-                    width: 200px;
+                    width: 250px; /* Slightly narrower */
                     margin: 0 auto;
                     border-bottom: 1px solid #000;
-                    height: 25px;
-                    line-height: 25px;
+                    height: 30px; /* Reduced height */
+                    line-height: 30px; /* Adjusted line height */
                     font-weight: bold;
+                    font-size: 13px; /* Slightly reduced */
                 }
-
+            
                 .verification-text {
-                    margin-top: 5px;
+                    margin-top: 5px; /* Reduced spacing */
                     font-weight: bold;
                     color: #666;
                     font-style: italic;
+                    font-size: 11px; /* Slightly reduced */
                 }
-
+            
                 .approver-role {
-                    margin-top: 5px;
+                    margin-top: 5px; /* Reduced spacing */
                     font-weight: bold;
-                    font-size: 10px;
+                    font-size: 11px; /* Slightly reduced */
                 }
-
+            
                 .signature-label {
-                    margin-top: 5px;
-                    font-size: 10px;
+                    margin-top: 5px; /* Reduced spacing */
+                    font-size: 11px; /* Slightly reduced */
                     color: #666;
                 }
+            
+               .final-approval-table {
+    width: 100%;
+    border: 1px solid #000;
+    border-collapse: collapse;
+}
 
-                .final-approval-table {
-                    width: 100%;
-                    border: 1px solid #000;
-                    border-collapse: collapse;
+.final-approval-table tr:first-child td {
+    border-bottom: 1px solid #000;
+    /* Remove all side borders */
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.final-approval-table td {
+    padding: 6px;
+    /* Remove all borders by default */
+    border: none;
+    font-size: 12px;
+}
+
+/* Remove the border between 7C and 7D specifically */
+.final-approval-table tr:first-child td:first-child {
+    border-right: none !important;
+}
+
+.final-approval-table tr:first-child td:last-child {
+    border-left: none !important;
+}
+
+.approver-signature {
+    text-align: center;
+}
+                /* Reduce spacing between sections */
+                br {
+                    margin-bottom: 5px !important; /* Reduced spacing between sections */
                 }
-
-                .final-approval-table td {
-                    padding: 3px;
-                    border: 1px solid #000;
-                }
-
-                .approver-signature {
-                    text-align: center;
-                }
-
+            
                 /* Print-specific styles */
                 @media print {
                     body * {
                         visibility: hidden;
-                         margin: 0;
-        padding: 0;
+                        margin: 0;
+                        padding: 0;
                     }
                     
                     .leave-form-container,
@@ -742,9 +865,9 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                     
                     .leave-form-container {
                         position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
+                        left: -5mm; /* Shift left for print */
+                        top: -5mm; /* Shift up for print */
+                        width: 103%; /* Slightly wider to compensate for shift */
                         padding: 0;
                         margin: 0;
                         background: white;
@@ -755,25 +878,29 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                     }
                     
                     .leave-form-page {
-                        width: 9.90in;
-                       
-                        min-height: 15in;
-                       overflow: visible;
-                        box-shadow: none;
-                        border: none;
-                        font-size: 10pt;
-                        position: relative;
-                        transform: scale(1.45); /* Slightly zoomed in */
-                        transform-origin: top center;
-                        left: -1.15in; /* Shift left by 0.25 inches */
+                        width: 100% !important;
+                        min-height: 95vh !important; /* Reduced height for print */
+                        height: auto !important;
+                        overflow: visible !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        font-size: 12pt !important; /* Slightly reduced font for print */
+                        position: relative !important;
+                        transform: none !important;
+                        transform-origin: top left !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        padding: 10mm 12mm !important; /* Reduced padding for print */
+                        margin: 0 auto !important;
                     }
                     
+                    /* Ensure all content uses adjusted sizes */
                     .form-info-table,
                     .form-table,
                     .leave-credits-table,
                     .final-approval-table {
-                        width: 100%;
-                        
+                        width: 100% !important;
+                        font-size: 12pt !important;
                     }
                     
                     .form-info-table td,
@@ -781,40 +908,109 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                     .leave-credits-table td,
                     .final-approval-table td {
                         word-wrap: break-word;
-                        padding: 2px;
+                        padding: 4px !important;
+                        font-size: 12pt !important;
                     }
                     
                     .form-header,
-                    .government-info,
-                    .form-title,
-                    .section-title {
-                        font-size: 10pt;
+                    .government-info {
+                        font-size: 12pt !important;
+                        line-height: 1.2 !important;
+                    }
+                    
+                    .form-title {
+                        font-size: 16pt !important;
+                        margin: 10px 0 !important;
                     }
                     
                     .section-title {
+                        font-size: 13pt !important;
                         background: rgb(200, 198, 198) !important;
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
+                        padding: 5px 8px !important;
                     }
                     
-                    .leave-type-option,
-                    .signature-section,
+                    .leave-type-option {
+                        font-size: 12pt !important;
+                        margin-bottom: 3px !important;
+                        line-height: 1.2 !important;
+                    }
+                    
+                    .checkbox {
+                        width: 14px !important;
+                        height: 14px !important;
+                        line-height: 14px !important;
+                        font-size: 11px !important;
+                    }
+                    
                     .approver-signature-line {
-                        overflow: hidden;
-                        white-space: normal;
+                        width: 250px !important;
+                        height: 30px !important;
+                        line-height: 30px !important;
+                        font-size: 13pt !important;
                     }
-
-                    @page {
-    margin: 0;
-}
-
                     
+                    .signature-label,
+                    .verification-text,
+                    .approver-role {
+                        font-size: 11pt !important;
+                    }
+            
+                    @page {
+                        margin: 5mm; /* Reduced margins to use more paper space */
+                        size: letter;
+                    }
                     
                     * {
                         box-sizing: border-box;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
                     }
+
+                    .leave-form-container * {
+    box-sizing: border-box;
+}
+
+.leave-form-page {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+}
+
+/* Ensure all text is crisp */
+.form-header,
+.form-title,
+.form-info-table,
+.form-table,
+.leave-credits-table,
+.final-approval-table {
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+}
+
+/* Improve text rendering */
+.leave-form-page * {
+    text-rendering: optimizeLegibility !important;
+}
                 }
             `}</style>
+
+
+
         </div>
+
+        
     );
 }
+
+// ADD THIS OUTSIDE YOUR COMPONENT
+const buttonStyle = {
+    background: '#007bff',
+    color: 'white',
+    border: 'none',
+    padding: '8px 16px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '14px'
+};

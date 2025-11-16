@@ -13,18 +13,13 @@ class LeaveRecall extends Model
         'leave_request_id',
         'employee_id',
         'approved_leave_date',
-        'new_leave_date_from',
-        'new_leave_date_to',
-        'reason_for_change',
         'status',
-        'approved_by_depthead',
-        'approved_by_hr'
+        'approved_by_admin',
+        'reason'
     ];
 
     protected $casts = [
         'approved_leave_date' => 'date',
-        'new_leave_date_from' => 'date',
-        'new_leave_date_to' => 'date',
     ];
 
     /**
@@ -44,27 +39,11 @@ class LeaveRecall extends Model
     }
 
     /**
-     * Get the department head who approved/rejected the recall
+     * Get the admin who approved the recall
      */
-    public function approvedByDeptHead()
+    public function approvedByAdmin()
     {
-        return $this->belongsTo(User::class, 'approved_by_depthead');
-    }
-
-    /**
-     * Get the HR who approved/rejected the recall
-     */
-    public function approvedByHr()
-    {
-        return $this->belongsTo(User::class, 'approved_by_hr');
-    }
-
-    /**
-     * Scope to get pending recalls
-     */
-    public function scopePending($query)
-    {
-        return $query->where('status', 'pending');
+        return $this->belongsTo(User::class, 'approved_by_admin');
     }
 
     /**
@@ -76,34 +55,10 @@ class LeaveRecall extends Model
     }
 
     /**
-     * Scope to get rejected recalls
-     */
-    public function scopeRejected($query)
-    {
-        return $query->where('status', 'rejected');
-    }
-
-    /**
-     * Check if the recall is pending
-     */
-    public function isPending()
-    {
-        return $this->status === 'pending';
-    }
-
-    /**
      * Check if the recall is approved
      */
     public function isApproved()
     {
         return $this->status === 'approved';
-    }
-
-    /**
-     * Check if the recall is rejected
-     */
-    public function isRejected()
-    {
-        return $this->status === 'rejected';
     }
 }

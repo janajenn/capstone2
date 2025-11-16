@@ -61,10 +61,10 @@ const ProgressDetailsModal = ({
                                                 {new Date(leaveRequest.date_from).toLocaleDateString()} - {new Date(leaveRequest.date_to).toLocaleDateString()}
                                             </p>
                                         </div>
-                                        {/* <div>
+                                        <div>
                                             <span className="text-gray-500">Duration:</span>
                                             <p className="font-medium">{leaveRequest.total_days} days</p>
-                                        </div> */}
+                                        </div>
                                         <div>
                                             <span className="text-gray-500">Status:</span>
                                             <p className={`font-medium ${
@@ -80,13 +80,13 @@ const ProgressDetailsModal = ({
 
                                 {/* Full Progress Tracker */}
                                 <div className="mb-6">
-                                <LeaveProgressTracker 
-    approvals={leaveRequest.approvals} 
-    isDeptHead={leaveRequest.is_dept_head_request || employee?.user?.role === 'dept_head'}
-    isAdmin={employee?.user?.role === 'admin'}
-    isRecalled={isRecalled}
-    recallData={recallData}
-/>
+                                    <LeaveProgressTracker 
+                                        approvals={leaveRequest.approvals} 
+                                        isDeptHead={leaveRequest.is_dept_head_request || employee?.user?.role === 'dept_head'}
+                                        isAdmin={employee?.user?.role === 'admin'}
+                                        isRecalled={isRecalled}
+                                        recallData={recallData}
+                                    />
                                 </div>
 
                                 {/* Action Buttons */}
@@ -96,7 +96,6 @@ const ProgressDetailsModal = ({
                                             onClick={() => {
                                                 onClose();
                                                 // This would open the recall details modal
-                                                // You can pass a callback prop to handle this
                                             }}
                                             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                                         >

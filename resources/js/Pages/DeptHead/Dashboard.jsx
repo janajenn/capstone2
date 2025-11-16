@@ -10,13 +10,8 @@ import {
     CartesianGrid, 
     Tooltip, 
     ResponsiveContainer,
-    LineChart,
-    Line,
     AreaChart,
-    Area,
-    PieChart,
-    Pie,
-    Cell
+    Area
 } from 'recharts';
 
 // Custom yellow color constants
@@ -33,6 +28,10 @@ const getStatusColor = (status) => {
       return 'from-rose-400 to-red-600';
     case 'pending':
       return 'from-amber-400 to-orange-500';
+    case 'pending_dept_head':
+      return 'from-amber-400 to-orange-500';
+    case 'pending_hr_to_dept':
+      return 'from-amber-400 to-orange-500';
     default:
       return 'from-gray-400 to-gray-600';
   }
@@ -44,6 +43,15 @@ const formatDate = (dateString) => {
     month: 'short',
     day: 'numeric',
   });
+};
+
+// Calculate days between dates
+const calculateDays = (dateFrom, dateTo) => {
+  const start = new Date(dateFrom);
+  const end = new Date(dateTo);
+  const diffTime = Math.abs(end - start);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays + 1; // Inclusive of both start and end dates
 };
 
 // Custom chart colors with yellow palette
@@ -82,7 +90,10 @@ export default function Dashboard({
         employees: 0,
         approved: 0,
         rejected: 0,
-        pending: 0
+        pendingLeaves: 0,
+        pendingRecalls: 0,
+        pendingCorrections: 0,
+        pendingCredits: 0
     });
 
     // Animate numbers on mount
@@ -105,9 +116,12 @@ export default function Dashboard({
             animateValue(0, stats?.totalEmployees || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, employees: val})));
             animateValue(0, stats?.approvedLeaveRequests || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, approved: val})));
             animateValue(0, stats?.rejectedLeaveRequests || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, rejected: val})));
-            animateValue(0, initialLeaveRequests?.length || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, pending: val})));
+            animateValue(0, stats?.pendingLeaveRequestsCount || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, pendingLeaves: val})));
+            animateValue(0, stats?.pendingRecallRequestsCount || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, pendingRecalls: val})));
+            animateValue(0, stats?.pendingAttendanceCorrectionsCount || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, pendingCorrections: val})));
+            animateValue(0, stats?.pendingCreditConversionsCount || 0, 2000, (val) => setAnimatedStats(prev => ({...prev, pendingCredits: val})));
         }, 500);
-    }, [stats, initialLeaveRequests]);
+    }, [stats]);
 
     // Enhanced notification functions
     const playNotificationSound = () => {
@@ -358,23 +372,6 @@ export default function Dashboard({
                             <p className="text-gray-600 text-lg">Strategic insights for {departmentName} management</p>
                             <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full"></div>
                         </div>
-                        <div className="mt-4 md:mt-0 flex items-center space-x-3">
-                            {/* <button
-                                onClick={requestNotificationPermission}
-                                className="px-6 py-3 bg-gradient-to-r from-yellow-400 to-amber-500 text-gray-800 rounded-2xl hover:shadow-2xl transition-all duration-300 flex items-center shadow-lg hover:scale-105 border border-yellow-300"
-                            >
-                                <div className="p-2 rounded-xl bg-white/30 mr-3">
-                                
-                                </div>
-                               
-                            </button> */}
-                            {/* {isPolling && (
-                                <span className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-2xl text-sm font-medium shadow-lg flex items-center">
-                                    <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
-                                    
-                                </span>
-                            )} */}
-                        </div>
                     </div>
                 </div>
 
@@ -402,19 +399,6 @@ export default function Dashboard({
                                         ))}
                                     </select>
                                 </div>
-                                <div className="flex-1">
-                                    <label className="block text-sm font-semibold text-gray-700 mb-3">Month</label>
-                                    <select
-                                        value={''}
-                                        onChange={() => {}}
-                                        className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all duration-300 bg-white/50 backdrop-blur-sm opacity-50 cursor-not-allowed"
-                                        disabled
-                                    >
-                                        {monthOptions.map(month => (
-                                            <option key={month.value} value={month.value}>{month.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
                             </div>
                         </div>
                         <div className="flex items-center justify-between">
@@ -423,15 +407,191 @@ export default function Dashboard({
                                     {currentYear}
                                 </span></p>
                             </div>
-                            {/* {isPolling && (
-                                <div className="flex items-center text-sm text-yellow-600">
-                                    <div className="w-2 h-2 bg-yellow-500 rounded-full mr-2 animate-pulse"></div>
-                                    Live updating...
-                                </div>
-                            )} */}
                         </div>
                     </div>
                 </div>
+
+                {/* 🔔 PENDING APPROVALS NOTIFICATION SECTION */}
+                {(stats.pendingLeaveRequestsCount > 0 || stats.pendingRecallRequestsCount > 0 || stats.pendingAttendanceCorrectionsCount > 0 || stats.pendingCreditConversionsCount > 0) && (
+                    <div className="mb-8">
+                        <div className="bg-white/90 backdrop-blur-sm border border-yellow-200 rounded-2xl shadow-lg p-6 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-yellow-100 to-amber-100 rounded-full -mr-16 -mt-16"></div>
+                            <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-br from-amber-50 to-orange-50 rounded-full -ml-12 -mb-12"></div>
+                            
+                            <div className="relative z-10">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center">
+                                        <div className="p-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 shadow-lg mr-4">
+                                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-bold text-gray-800">Pending Approvals</h3>
+                                            <p className="text-gray-600 text-sm">Items requiring your attention</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        {(stats.pendingLeaveRequestsCount > 0 || stats.pendingRecallRequestsCount > 0 || stats.pendingAttendanceCorrectionsCount > 0 || stats.pendingCreditConversionsCount > 0) && (
+                                            <div className="flex space-x-1">
+                                                {stats.pendingLeaveRequestsCount > 0 && (
+                                                    <span className="px-2 py-1 bg-amber-500 text-white text-xs font-medium rounded-full animate-pulse">
+                                                        {animatedStats.pendingLeaves} Leave
+                                                    </span>
+                                                )}
+                                                {stats.pendingRecallRequestsCount > 0 && (
+                                                    <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded-full animate-pulse">
+                                                        {animatedStats.pendingRecalls} Recall
+                                                    </span>
+                                                )}
+                                                {stats.pendingAttendanceCorrectionsCount > 0 && (
+                                                    <span className="px-2 py-1 bg-green-500 text-white text-xs font-medium rounded-full animate-pulse">
+                                                        {animatedStats.pendingCorrections} Attendance
+                                                    </span>
+                                                )}
+                                                {stats.pendingCreditConversionsCount > 0 && (
+                                                    <span className="px-2 py-1 bg-purple-500 text-white text-xs font-medium rounded-full animate-pulse">
+                                                        {animatedStats.pendingCredits} Credit
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {/* Leave Requests Card */}
+                                    {stats.pendingLeaveRequestsCount > 0 && (
+                                        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 hover:shadow-md transition-all duration-300 cursor-pointer group"
+                                             onClick={() => router.visit(route('dept_head.leave-requests'))}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center">
+                                                    <div className="p-2 rounded-lg bg-amber-100 mr-3 group-hover:bg-amber-200 transition-colors">
+                                                        <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-gray-800">
+                                                            There {stats.pendingLeaveRequestsCount === 1 ? 'is' : 'are'} {animatedStats.pendingLeaves} leave request{stats.pendingLeaveRequestsCount === 1 ? '' : 's'} that need your approval.
+                                                        </p>
+                                                        <p className="text-sm text-gray-600 mt-1">Click to review and take action</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-amber-600 group-hover:text-amber-700 transition-colors">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Recall Requests Card */}
+                                    {stats.pendingRecallRequestsCount > 0 && (
+                                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 hover:shadow-md transition-all duration-300 cursor-pointer group"
+                                             onClick={() => router.visit(route('dept_head.recall-requests'))}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center">
+                                                    <div className="p-2 rounded-lg bg-blue-100 mr-3 group-hover:bg-blue-200 transition-colors">
+                                                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-gray-800">
+                                                            There {stats.pendingRecallRequestsCount === 1 ? 'is' : 'are'} {animatedStats.pendingRecalls} recall request{stats.pendingRecallRequestsCount === 1 ? '' : 's'} that need your approval.
+                                                        </p>
+                                                        <p className="text-sm text-gray-600 mt-1">Click to review and take action</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-blue-600 group-hover:text-blue-700 transition-colors">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Attendance Corrections Card */}
+                                    {stats.pendingAttendanceCorrectionsCount > 0 && (
+                                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4 hover:shadow-md transition-all duration-300 cursor-pointer group"
+                                             onClick={() => router.visit(route('dept_head.attendance-corrections'))}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center">
+                                                    <div className="p-2 rounded-lg bg-green-100 mr-3 group-hover:bg-green-200 transition-colors">
+                                                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-gray-800">
+                                                            There {stats.pendingAttendanceCorrectionsCount === 1 ? 'is' : 'are'} {animatedStats.pendingCorrections} attendance correction{stats.pendingAttendanceCorrectionsCount === 1 ? '' : 's'} that need your review.
+                                                        </p>
+                                                        <p className="text-sm text-gray-600 mt-1">Click to review and take action</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-green-600 group-hover:text-green-700 transition-colors">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Credit Conversions Card */}
+                                    {stats.pendingCreditConversionsCount > 0 && (
+                                        <div className="bg-gradient-to-r from-purple-50 to-violet-50 border border-purple-200 rounded-xl p-4 hover:shadow-md transition-all duration-300 cursor-pointer group"
+                                             onClick={() => router.visit(route('dept_head.credit-conversions'))}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center">
+                                                    <div className="p-2 rounded-lg bg-purple-100 mr-3 group-hover:bg-purple-200 transition-colors">
+                                                        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                                                        </svg>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-gray-800">
+                                                            There {stats.pendingCreditConversionsCount === 1 ? 'is' : 'are'} {animatedStats.pendingCredits} credit conversion request{stats.pendingCreditConversionsCount === 1 ? '' : 's'} that need your approval.
+                                                        </p>
+                                                        <p className="text-sm text-gray-600 mt-1">Click to review and take action</p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-purple-600 group-hover:text-purple-700 transition-colors">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Quick Actions */}
+                                <div className="flex justify-end space-x-3 mt-4 pt-4 border-t border-gray-200">
+                                    {stats.pendingLeaveRequestsCount > 0 && (
+                                        <button
+                                            onClick={() => router.visit(route('dept_head.leave-requests'))}
+                                            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:shadow-lg transition-all duration-300 text-sm font-medium hover:scale-105"
+                                        >
+                                            Review Leave Requests
+                                        </button>
+                                    )}
+                                    {stats.pendingRecallRequestsCount > 0 && (
+                                        <button
+                                            onClick={() => router.visit(route('dept_head.recall-requests'))}
+                                            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg hover:shadow-lg transition-all duration-300 text-sm font-medium hover:scale-105"
+                                        >
+                                            Review Recall Requests
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Enhanced Stats Cards with Yellow Accent Theme */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -524,7 +684,7 @@ export default function Dashboard({
                                 <div>
                                     <p className="text-sm font-medium text-gray-600 mb-2">Pending Approvals</p>
                                     <h2 className="text-4xl font-bold bg-gradient-to-r from-yellow-600 to-amber-700 bg-clip-text text-transparent">
-                                        {animatedStats.pending}
+                                        {animatedStats.pendingLeaves}
                                     </h2>
                                     <p className="text-xs text-gray-500 mt-2">Awaiting action</p>
                                 </div>
@@ -544,6 +704,7 @@ export default function Dashboard({
                     </div>
                 </div>
 
+               
                 {/* Enhanced Charts Section with Yellow Accent Theme */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                     {/* Leave Types Chart */}
@@ -665,7 +826,7 @@ export default function Dashboard({
                                 </div>
                                 <div className="text-left">
                                     <h4 className="font-semibold text-gray-900 group-hover:text-yellow-700 transition-colors">Leave Approvals</h4>
-                                    <p className="text-sm text-gray-600 mt-1">{animatedStats.pending} pending requests</p>
+                                    <p className="text-sm text-gray-600 mt-1">{animatedStats.pendingLeaves} pending requests</p>
                                 </div>
                             </div>
                         </button>

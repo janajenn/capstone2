@@ -11,6 +11,8 @@ use App\Http\Controllers\Employee\EmployeeController;
 use App\Http\Controllers\DeptHead\DeptHeadController;
 use App\Http\Controllers\HR\AttendanceImportController;
 use App\Http\Controllers\Admin\AdminController;
+use App\Http\Controllers\Employee\AttendanceCorrectionController;
+
 
 
 
@@ -24,6 +26,17 @@ use App\Http\Controllers\Admin\AdminController;
 | contains the "web" middleware group. Now create something great!
 |
 */
+
+
+Route::get('/debug-routes-check', function() {
+    return response()->json([
+        'status' => 'ok',
+        'message' => 'Debug route is working',
+        'timestamp' => now()->toDateTimeString()
+    ]);
+});
+
+
 
 Route::get('/', function () {
     return Inertia::render('WelcomePage', [
@@ -91,7 +104,8 @@ Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
         Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAsRead'])->name('admin.notifications.mark-read');
         Route::post('/notifications/mark-all-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAllAsRead'])->name('admin.notifications.mark-all-read');
         Route::get('/notifications/unread-count', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'getUnreadCount'])->name('admin.notifications.unread-count');
-
+        // ✅ ADD THIS: Notification Click Route for Redirecting
+        Route::get('/notifications/{id}/click', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'handleClick'])->name('admin.notifications.click');
 
 
         Route::get('/debug-routes', function() {
@@ -124,6 +138,7 @@ Route::post('/admin/credit-conversions/{id}/reject', [AdminController::class, 'r
     Route::middleware(['role:hr'])->group(function () {
     // HR Dashboard
     Route::get('/hr/dashboard', [HRController::class, 'dashboard'])->name('hr.dashboard');
+    
 
     //employees side
     Route::get('/hr/employees', [HRController::class, 'employees'])->name('hr.employees');
@@ -165,6 +180,7 @@ Route::get('/hr/departments', [HRController::class, 'departments'])->name('hr.de
 Route::post('/hr/departments', [HRController::class, 'storeDepartment'])->name('hr.departments.store');
 Route::put('/hr/departments/{id}', [HRController::class, 'updateDepartment'])->name('hr.departments.update');
 Route::delete('/hr/departments/{id}', [HRController::class, 'deleteDepartment'])->name('hr.departments.delete');
+Route::get('/hr/departments/{id}/employees', [HRController::class, 'showEmployees'])->name('hr.departments.employees');
 
 // Leave Request Approval Routes (HR)
 Route::get('/hr/leave-requests', [HRController::class, 'leaveRequests'])->name('hr.leave-requests');
@@ -178,6 +194,8 @@ Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'
 // Route::post('/hr/recall-requests/{id}/approve', [HRController::class, 'approveRecallRequest'])->name('hr.recall-requests.approve');
 // Route::post('/hr/recall-requests/{id}/reject', [HRController::class, 'rejectRecallRequest'])->name('hr.recall-requests.reject');
 
+
+
 // Leave Form Demo Route (for testing)
 Route::get('/leave-form-demo', function() {
     return Inertia::render('LeaveFormDemo');
@@ -188,6 +206,8 @@ Route::get('/hr/credit-conversions', [HRController::class, 'creditConversions'])
 Route::get('/hr/credit-conversions/{id}', [HRController::class, 'showCreditConversion'])->name('hr.credit-conversions.show');
 Route::post('/hr/credit-conversions/{id}/approve', [HRController::class, 'approveCreditConversion'])->name('hr.credit-conversions.approve');
 Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectCreditConversion'])->name('hr.credit-conversions.reject');
+// Add this route to your web.php
+Route::get('/hr/credit-conversions/{id}/form', [HRController::class, 'showMonetizationForm'])->name('hr.credit-conversions.form');
 
     // Attendance Import Routes (HR)
     
@@ -198,14 +218,40 @@ Route::post('/hr/credit-conversions/{id}/reject', [HRController::class, 'rejectC
         Route::post('/preview', [AttendanceImportController::class, 'preview'])->name('hr.attendance.preview');
         Route::post('/process-import', [AttendanceImportController::class, 'processImport'])->name('hr.attendance.process-import');
         Route::get('/template', [AttendanceImportController::class, 'downloadTemplate'])->name('hr.attendance.template');
-    
-    // Existing routes...
-    Route::get('/logs', [AttendanceImportController::class, 'attendanceLogs'])->name('hr.attendance.logs');
-    Route::get('/logs/api', [AttendanceImportController::class, 'getAttendanceLogs'])->name('hr.attendance.logs.api');
-    Route::get('/logs/employee/{employeeId}', [AttendanceImportController::class, 'viewEmployeeLogs'])->name('hr.attendance.logs.employee');
-    Route::delete('/logs/{id}', [AttendanceImportController::class, 'deleteLog'])->name('hr.attendance.logs.delete');
-    Route::post('/logs/bulk-delete', [AttendanceImportController::class, 'bulkDelete'])->name('hr.attendance.logs.bulk-delete');
-}); 
+        
+        // Existing routes...
+        Route::get('/logs', [AttendanceImportController::class, 'attendanceLogs'])->name('hr.attendance.logs');
+        Route::get('/logs/api', [AttendanceImportController::class, 'getAttendanceLogs'])->name('hr.attendance.logs.api');
+        Route::get('/logs/employee/{employeeId}', [AttendanceImportController::class, 'viewEmployeeLogs'])->name('hr.attendance.logs.employee');
+        Route::delete('/logs/{id}', [AttendanceImportController::class, 'deleteLog'])->name('hr.attendance.logs.delete');
+        Route::post('/logs/bulk-delete', [AttendanceImportController::class, 'bulkDelete'])->name('hr.attendance.logs.bulk-delete');
+
+
+        Route::get('/attendance-corrections', [AttendanceImportController::class, 'correctionRequests'])->name('hr.attendance-corrections');
+    Route::get('/attendance-corrections/{id}', [AttendanceImportController::class, 'showCorrection'])->name('hr.attendance-corrections.show');
+    Route::post('/attendance-corrections/{id}/approve', [AttendanceImportController::class, 'approveCorrection'])->name('hr.attendance-corrections.approve');
+    Route::post('/attendance-corrections/{id}/reject', [AttendanceImportController::class, 'rejectCorrection'])->name('hr.attendance-corrections.reject');
+    Route::get('/attendance-corrections/{id}/view-proof', [AttendanceImportController::class, 'viewProofImage'])
+    ->name('hr.attendance-corrections.view-proof');
+    Route::post('/attendance/{id}/update-field', [AttendanceImportController::class, 'updateAttendanceField'])
+    ->name('hr.attendance.update-field');
+        
+        // ✅ ADD THE COMPARE ROUTE INSIDE THE PREFIX GROUP
+ Route::get('/logs/employee/{employeeId}/compare', 
+[AttendanceImportController::class, 'compareWithRawLogs']
+)->name('hr.attendance.logs.compare');
+
+
+
+
+
+
+
+
+    });
+
+
+
 
 //holidays
 
@@ -226,6 +272,8 @@ Route::get('/holiday-dates', [HRController::class, 'getHolidayDates'])->name('ho
 
 
 
+
+
      // Leave Recordings Routes
 Route::get('/hr/leave-recordings', [HRController::class, 'leaveRecordings'])->name('hr.leave-recordings');
 Route::get('/hr/leave-recordings/{employee}', [HRController::class, 'showEmployeeRecordings'])->name('hr.leave-recordings.employee');
@@ -241,7 +289,13 @@ Route::get('/hr/leave-recordings/export/all', [HRController::class, 'exportAllRe
         Route::post('/leave-requests/generate-pdf', [HRController::class, 'generatePDF'])
         ->name('leave-requests.generate-pdf');
 
-        
+
+
+
+        Route::get('/hr/reschedule-requests', [HRController::class, 'rescheduleRequests'])->name('hr.reschedule-requests');
+        Route::post('/hr/reschedule-requests/{id}/approve', [HRController::class, 'approveRescheduleRequest'])->name('hr.reschedule-requests.approve');
+        Route::post('/hr/reschedule-requests/{id}/reject', [HRController::class, 'rejectRescheduleRequest'])->name('hr.reschedule-requests.reject');
+
 
 Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduction']);
 });
@@ -292,6 +346,24 @@ Route::get('/dept-head/credit-conversions/{id}', [DeptHeadController::class, 'sh
 Route::post('/dept-head/credit-conversions/{id}/approve', [DeptHeadController::class, 'approveCreditConversion'])->name('dept_head.credit-conversions.approve');
 Route::post('/dept-head/credit-conversions/{id}/reject', [DeptHeadController::class, 'rejectCreditConversion'])->name('dept_head.credit-conversions.reject');
 Route::get('/dept-head/credit-conversions-stats', [DeptHeadController::class, 'getCreditConversionStats'])->name('dept_head.credit-conversions.stats');
+
+// Attendance Correction Routes for Department Head
+Route::get('/dept-head/attendance-corrections', [DeptHeadController::class, 'attendanceCorrections'])->name('dept_head.attendance-corrections');
+Route::get('/dept-head/attendance-corrections/{id}', [DeptHeadController::class, 'showAttendanceCorrection'])->name('dept_head.attendance-corrections.show');
+Route::post('/dept-head/attendance-corrections/{id}/review', [DeptHeadController::class, 'reviewAttendanceCorrection'])->name('dept_head.attendance-corrections.review');
+Route::post('/dept-head/attendance-corrections/{id}/reject', [DeptHeadController::class, 'rejectAttendanceCorrection'])->name('dept_head.attendance-corrections.reject');
+Route::get('/dept-head/attendance-corrections-stats', [DeptHeadController::class, 'getAttendanceCorrectionStats'])->name('dept_head.attendance-corrections.stats');
+// Department Head proof image viewing
+Route::get('/dept-head/attendance-corrections/{id}/view-proof', [DeptHeadController::class, 'viewProofImage'])
+    ->name('dept_head.attendance-corrections.view-proof');
+
+     // Reschedule Requests
+     Route::get('/dept-head/reschedule-requests', [DeptHeadController::class, 'rescheduleRequests'])->name('dept_head.reschedule-requests');
+     Route::get('/dept-head/reschedule-requests/{id}', [DeptHeadController::class, 'showRescheduleRequest'])->name('dept_head.reschedule-requests.show');
+     Route::post('/dept-head/reschedule-requests/{id}/approve', [DeptHeadController::class, 'approveRescheduleRequest'])->name('dept_head.reschedule-requests.approve');
+     Route::post('/dept-head/reschedule-requests/{id}/reject', [DeptHeadController::class, 'rejectRescheduleRequest'])->name('dept_head.reschedule-requests.reject');
+
+     Route::get('/dept-head/reschedule-requests/count', [DeptHeadController::class, 'getPendingRescheduleCount'])->name('dept_head.reschedule-requests.count');
     });
     //Route::middleware(['auth', 'role:dept_head'])->group(function () {
     //    Route::get('/dept-head/dashboard', [App\Http\Controllers\DeptHead\DeptHeadController::class, 'dashboard']);
@@ -356,9 +428,22 @@ Route::get('/dept-head/credit-conversions-stats', [DeptHeadController::class, 'g
         Route::get('/leave-history', [EmployeeController::class, 'leaveHistory'])->name('employee.leave-history');
         // Leave Balances Routes
         Route::get('/employee/leave-balances', [EmployeeController::class, 'leaveBalances'])->name('employee.leave-balances');
+        Route::get('/employee/check-donation-eligibility', [EmployeeController::class, 'checkDonationEligibility']);
+    Route::get('/employee/eligible-recipients', [EmployeeController::class, 'getEligibleRecipients']);
+    Route::post('/employee/donate-maternity-leave', [EmployeeController::class, 'donateMaternityLeave']);
+    // routes/web.php - in the employee routes group
+
+Route::post('/employee/leave-reschedule', [EmployeeController::class, 'submitRescheduleRequest'])->name('employee.leave-reschedule.submit');
         
         // Attendance Logs Routes
         Route::get('/employee/attendance-logs', [\App\Http\Controllers\Employee\AttendanceLogsController::class, 'index'])->name('employee.attendance-logs');
+        // Add these to your existing employee routes group
+Route::get('/employee/attendance-correction-request', [AttendanceCorrectionController::class, 'showCorrectionRequest'])->name('employee.correction-request');
+Route::post('/employee/attendance-corrections', [AttendanceCorrectionController::class, 'submitCorrectionRequest'])->name('employee.corrections.submit');
+Route::get('/employee/my-correction-requests', [AttendanceCorrectionController::class, 'myCorrectionRequests'])->name('employee.my-correction-requests');
+Route::get('/employee/attendance-corrections/{id}/download-proof', [AttendanceCorrectionController::class, 'downloadProofImage'])->name('employee.corrections.download-proof');
+// Replace the download route with this:
+Route::get('/attendance-corrections/{id}/view-proof', [AttendanceCorrectionController::class, 'viewProofImage'])->name('attendance-corrections.view-proof');
         
         // Debug route to check attendance logs
         Route::get('/employee/debug-attendance', function() {

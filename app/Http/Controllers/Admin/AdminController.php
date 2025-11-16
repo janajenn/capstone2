@@ -57,6 +57,31 @@ class AdminController extends Controller
             ]);
         }
     
+        // DEBUG: Check what's happening with pending_admin requests
+        $allPendingAdmin = LeaveRequest::with([
+            'employee.user', 
+            'approvals' => function($q) {
+                $q->whereIn('role', ['hr', 'dept_head', 'admin']);
+            }
+        ])
+        ->where('status', 'pending_admin')
+        ->get();
+    
+        \Log::info("DEBUG - All pending_admin requests before filtering:", [
+            'total' => $allPendingAdmin->count(),
+            'requests' => $allPendingAdmin->map(function($req) {
+                return [
+                    'id' => $req->id,
+                    'employee' => $req->employee->firstname . ' ' . $req->employee->lastname,
+                    'employee_role' => $req->employee->user->role,
+                    'approvals_count' => $req->approvals->count(),
+                    'hr_approved' => $req->approvals->where('role', 'hr')->where('status', 'approved')->count() > 0,
+                    'dept_head_approved' => $req->approvals->where('role', 'dept_head')->where('status', 'approved')->count() > 0,
+                    'admin_approved' => $req->approvals->where('role', 'admin')->count() > 0,
+                ];
+            })
+        ]);
+    
         $query = LeaveRequest::with([
             'employee.user',
             'employee.department:id,name',
@@ -123,6 +148,18 @@ class AdminController extends Controller
                            ->whereHas('employee.user', function ($q3) {
                                $q3->where('role', 'admin');
                            });
+                    })->orWhere(function ($q2) {
+                        // ✅ NEW: HR employees: Approved by HR and Dept Head, waiting for Admin
+                        $q2->where('status', 'pending_admin')
+                           ->whereHas('approvals', function ($q3) {
+                               $q3->where('role', 'hr')->where('status', 'approved');
+                           })
+                           ->whereHas('approvals', function ($q3) {
+                               $q3->where('role', 'dept_head')->where('status', 'approved');
+                           })
+                           ->whereHas('employee.user', function ($q3) {
+                               $q3->where('role', 'hr'); // For HR role employees
+                           });
                     });
                 })->whereDoesntHave('approvals', function ($q) {
                     $q->where('role', 'admin');
@@ -158,6 +195,15 @@ class AdminController extends Controller
                       ->whereHas('recalls');
                 break;
         }
+    
+        // DEBUG: Log the final query results
+        $finalQueryCount = $query->count();
+        \Log::info("DEBUG - Final query results:", [
+            'status_filter' => $status,
+            'final_count' => $finalQueryCount,
+            'search_term' => $search,
+            'department_filter' => $department
+        ]);
     
         $paginatedRequests = $query->orderBy('created_at', 'desc')
             ->paginate($perPage)
@@ -328,10 +374,17 @@ private function canBeRecalled(LeaveRequest $request)
                 // Get leave type code to determine which service to use
                 $leaveTypeCode = $leaveRequest->leaveType->code;
                 
-                if (in_array($leaveTypeCode, ['SL', 'VL'])) {
-                    // Process SL/VL leave types using LeaveCreditService
-                    $leaveCreditService = new LeaveCreditService();
-                    $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
+                // In your admin approve method:
+if (in_array($leaveTypeCode, ['SL', 'VL'])) {
+    // Process SL/VL leave types using LeaveCreditService
+    $leaveCreditService = new LeaveCreditService();
+    $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
+    
+    // Log the result
+    if (is_array($result) && isset($result['success']) && $result['success']) {
+        \Log::info("✅ Leave credits processed for {$leaveTypeCode}. Deducted: {$result['days_deducted']}, Without Pay: {$result['days_without_pay']}");
+    }
+
                     
                     // Check if deduction was successful
                     if (is_array($result) && isset($result['success']) && !$result['success']) {
@@ -607,6 +660,57 @@ public function dashboard(Request $request)
         'rejected' => $statusResults->where('status', 'rejected')->first()->count ?? 0,
     ];
 
+    // 🔔 UPDATED: Get pending approvals counts (matches leaveRequests page logic)
+    $pendingLeaveRequestsCount = LeaveRequest::where(function ($q) {
+        $q->where(function ($q2) {
+            // Regular employees: Approved by HR and Dept Head, waiting for Admin
+            $q2->where('status', 'pending_admin')
+               ->whereHas('approvals', function ($q3) {
+                   $q3->where('role', 'hr')->where('status', 'approved');
+               })
+               ->whereHas('approvals', function ($q3) {
+                   $q3->where('role', 'dept_head')->where('status', 'approved');
+               })
+               ->whereHas('employee.user', function ($q3) {
+                   $q3->where('role', 'employee');
+               });
+        })->orWhere(function ($q2) {
+            // Department heads: Approved by HR only, waiting for Admin
+            $q2->where('status', 'pending_admin')
+               ->whereHas('approvals', function ($q3) {
+                   $q3->where('role', 'hr')->where('status', 'approved');
+               })
+               ->whereHas('employee.user', function ($q3) {
+                   $q3->where('role', 'dept_head');
+               });
+        })->orWhere(function ($q2) {
+            // Admins: Approved by HR only, waiting for Admin
+            $q2->where('status', 'pending_admin')
+               ->whereHas('approvals', function ($q3) {
+                   $q3->where('role', 'hr')->where('status', 'approved');
+               })
+               ->whereHas('employee.user', function ($q3) {
+                   $q3->where('role', 'admin');
+               });
+        })->orWhere(function ($q2) {
+            // ✅ ADDED: HR employees: Approved by HR and Dept Head, waiting for Admin
+            $q2->where('status', 'pending_admin')
+               ->whereHas('approvals', function ($q3) {
+                   $q3->where('role', 'hr')->where('status', 'approved');
+               })
+               ->whereHas('approvals', function ($q3) {
+                   $q3->where('role', 'dept_head')->where('status', 'approved');
+               })
+               ->whereHas('employee.user', function ($q3) {
+                   $q3->where('role', 'hr'); // For HR role employees
+               });
+        });
+    })->whereDoesntHave('approvals', function ($q) {
+        $q->where('role', 'admin');
+    })->count();
+
+    $pendingCreditConversionsCount = CreditConversion::where('status', 'dept_head_approved')->count();
+
     // Analytics data for the dashboard
     $totalEmployees = Employee::count();
     $totalDepartments = Department::count();
@@ -707,6 +811,11 @@ public function dashboard(Request $request)
         'pendingCount' => $pendingCount,
         'recentRequests' => $recentRequests,
         'requestsByStatus' => $requestsByStatus,
+        
+        // 🔔 UPDATED: Pending approvals data (now matches leaveRequests page)
+        'pendingLeaveRequestsCount' => $pendingLeaveRequestsCount,
+        'pendingCreditConversionsCount' => $pendingCreditConversionsCount,
+        
         'totalEmployees' => $totalEmployees,
         'totalDepartments' => $totalDepartments,
         'totalUsers' => $totalUsers,
@@ -743,6 +852,15 @@ private function getAvailableYears()
     
     return $years;
 }
+
+    /**
+     * Get available years for filtering
+     */
+   
+/**
+ * Get available years for filtering
+ */
+
     
         /**
          * Calculate average processing time for leave requests
@@ -1085,6 +1203,15 @@ private function getLeaveTypeColor($leaveTypeCode)
 /**
  * Admin recall leave request (only for Vacation Leave)
  */
+/**
+ * Admin recall leave request (only for Vacation Leave) - Simplified version
+ */
+/**
+ * Admin recall leave request (only for Vacation Leave) - Simplified version
+ */
+/**
+ * Admin recall leave request (only for Vacation Leave) - Simplified version
+ */
 public function recallLeaveRequest(Request $request, $id)
 {
     \Log::info('👤 Admin recall attempt for leave request ID: ' . $id . ' by user: ' . auth()->user()->name);
@@ -1104,26 +1231,20 @@ public function recallLeaveRequest(Request $request, $id)
 
         $validated = $request->validate([
             'reason' => 'required|string|max:500',
-            'new_leave_date_from' => 'required|date|after_or_equal:today',
-            'new_leave_date_to' => 'required|date|after_or_equal:new_leave_date_from'
         ]);
 
         DB::transaction(function () use ($leaveRequest, $validated, $id) {
-            // Create recall record with new dates
+            // Create simplified recall record
             $recall = $leaveRequest->recalls()->create([
                 'employee_id' => $leaveRequest->employee_id,
                 'approved_leave_date' => $leaveRequest->date_from,
-                'new_leave_date_from' => $validated['new_leave_date_from'],
-                'new_leave_date_to' => $validated['new_leave_date_to'],
-                'reason_for_change' => $validated['reason'],
-                'status' => 'approved', // Admin recall is automatically approved
-                'approved_by_depthead' => null, // Bypass department head approval
-                'approved_by_hr' => null,       // Bypass HR approval
-                'approved_by_admin' => auth()->id(), // Admin directly approves
+                'status' => 'approved',
+                'approved_by_admin' => auth()->id(),
+                'reason' => $validated['reason'],
             ]);
 
-            // Restore leave credits
-            $this->restoreLeaveCredits($leaveRequest);
+            // Restore leave credits - ONLY DAYS WITH PAY
+            $restorationResult = $this->restoreLeaveCredits($leaveRequest);
 
             // Update leave request status to recalled
             $leaveRequest->update(['status' => 'recalled']);
@@ -1140,10 +1261,13 @@ public function recallLeaveRequest(Request $request, $id)
                 $validated['reason']
             );
 
-            \Log::info("✅ Leave request ID: {$id} recalled by admin. New dates: {$validated['new_leave_date_from']} to {$validated['new_leave_date_to']}");
+            $daysRestored = $restorationResult['days_restored'] ?? 0;
+            $daysWithoutPay = $restorationResult['days_without_pay_ignored'] ?? 0;
+            
+            \Log::info("✅ Leave request ID: {$id} recalled by admin. Restored {$daysRestored} credits, ignored {$daysWithoutPay} days without pay.");
         });
 
-        return redirect()->back()->with('success', 'Leave request recalled successfully. Leave credits have been restored.');
+        return redirect()->back()->with('success', 'Leave request recalled successfully. Only days with pay have been restored to leave credits.');
 
     } catch (\Exception $e) {
         \Log::error('❌ Recall error: ' . $e->getMessage());
@@ -1156,6 +1280,10 @@ public function recallLeaveRequest(Request $request, $id)
  */
 /**
  * Restore leave credits for recalled leave request
+ */
+/**
+ * Restore leave credits for recalled leave request - CORRECTED VERSION
+ * Only restores the days that were actually deducted (days with pay)
  */
 private function restoreLeaveCredits(LeaveRequest $leaveRequest)
 {
@@ -1174,39 +1302,57 @@ private function restoreLeaveCredits(LeaveRequest $leaveRequest)
         throw new \Exception('No leave credits found for this employee.');
     }
 
-    // Calculate working days to restore
-    $period = \Carbon\CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
-    $workingDays = collect($period)->filter(function ($date) {
-        return !$date->isWeekend();
-    })->count();
+    // Get the actual days that were deducted (days with pay)
+    $daysToRestore = $leaveRequest->days_with_pay ?? 0;
+    $daysWithoutPay = $leaveRequest->days_without_pay ?? 0;
+    $totalDays = $leaveRequest->total_days ?? ($daysToRestore + $daysWithoutPay);
+
+    \Log::info("📊 Recall analysis for leave ID {$leaveRequest->id}:");
+    \Log::info("   - Total days: {$totalDays}");
+    \Log::info("   - Days with pay: {$daysToRestore}");
+    \Log::info("   - Days without pay: {$daysWithoutPay}");
+
+    // If no days were with pay, nothing to restore
+    if ($daysToRestore <= 0) {
+        \Log::info("⏭️ No days with pay to restore for recalled leave request ID: {$leaveRequest->id}");
+        return;
+    }
 
     // Store balance before restoration
     $balanceBefore = $leaveCredit->vl_balance;
 
-    // Restore VL credits
-    $leaveCredit->vl_balance += $workingDays;
+    // Restore only the VL credits that were actually deducted (days with pay)
+    $leaveCredit->vl_balance += $daysToRestore;
     $leaveCredit->last_updated = now();
     $leaveCredit->save();
 
     // Store balance after restoration
     $balanceAfter = $leaveCredit->vl_balance;
 
-    // Log the restoration - USE THE CORRECT FIELD NAME
+    // Log the restoration
     LeaveCreditLog::create([
         'employee_id' => $leaveRequest->employee_id,
         'type' => 'VL',
         'date' => now(),
         'year' => now()->year,
         'month' => now()->month,
-        'points_deducted' => -$workingDays, // Use negative value to indicate addition
+        'points_deducted' => -$daysToRestore, // Use negative value to indicate addition
         'balance_before' => $balanceBefore,
         'balance_after' => $balanceAfter,
-        'remarks' => "Credits restored after admin recall of leave request ID #{$leaveRequest->id}",
+        'remarks' => "Credits restored after admin recall of leave request ID #{$leaveRequest->id}. Restored {$daysToRestore} days (with pay) out of {$totalDays} total days. {$daysWithoutPay} days without pay were not restored.",
     ]);
 
-    \Log::info("✅ Restored {$workingDays} VL credits for employee {$leaveRequest->employee_id}. New balance: {$leaveCredit->vl_balance}");
-}
+    \Log::info("✅ Successfully restored {$daysToRestore} VL credits for employee {$leaveRequest->employee_id}");
+    \Log::info("💰 Balance before: {$balanceBefore}, After: {$balanceAfter}, Net change: +{$daysToRestore}");
+    \Log::info("📝 Note: {$daysWithoutPay} days without pay were NOT restored (as expected)");
 
+    return [
+        'days_restored' => $daysToRestore,
+        'days_without_pay_ignored' => $daysWithoutPay,
+        'balance_before' => $balanceBefore,
+        'balance_after' => $balanceAfter
+    ];
+}
 
 
 /**

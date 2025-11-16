@@ -1,5 +1,5 @@
 import HRLayout from '@/Layouts/HRLayout';
-import { useForm, usePage, router } from '@inertiajs/react';
+import { useForm, usePage, router,Link } from '@inertiajs/react';
 import { useState, useMemo } from 'react';
 import Swal from 'sweetalert2';
 import LeaveForm from '@/Components/LeaveForm';
@@ -137,7 +137,7 @@ const isDeptHeadRequest = (request) => {
 
 export default function LeaveRequests() {
   const { props } = usePage();
-  const { leaveRequests, filters, flash, departments } = props;
+  const { leaveRequests, filters, flash, departments, rescheduleRequestsCount } = props;
 
   const [selectedRequests, setSelectedRequests] = useState([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
@@ -581,8 +581,8 @@ export default function LeaveRequests() {
   return (
     <HRLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header Section */}
-        <div className="mb-8">
+       {/* Header Section - UPDATED */}
+       <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
             <div className="relative">
               <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-indigo-900 bg-clip-text text-transparent mb-2">
@@ -591,6 +591,28 @@ export default function LeaveRequests() {
               <p className="text-gray-600 text-lg">Monitor and manage all employee leave requests in one place</p>
               <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"></div>
             </div>
+            
+           {/* UPDATED BUTTON CONTAINER WITH BADGE */}
+           <div className="mt-4 md:mt-0 flex space-x-3">
+              {/* Reschedule Requests Button with Badge */}
+              <Link
+                href="/hr/reschedule-requests"
+                className="relative inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-medium rounded-2xl hover:shadow-2xl transition-all duration-300 hover:scale-105 shadow-lg group"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Reschedule Requests
+                
+                {/* Status Badge */}
+                {rescheduleRequestsCount > 0 && (
+                  <span className="absolute -top-2 -right-2 flex items-center justify-center min-w-6 h-6 bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs font-bold rounded-full px-1.5 py-0.5 shadow-lg transform group-hover:scale-110 transition-transform duration-200 border-2 border-white">
+                    {rescheduleRequestsCount > 99 ? '99+' : rescheduleRequestsCount}
+                  </span>
+                )}
+              </Link>
+              </div>
+
             {showBulkActions && (
               <div className="mt-4 md:mt-0 flex space-x-3">
                 <button

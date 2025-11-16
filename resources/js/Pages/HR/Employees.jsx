@@ -2,6 +2,8 @@ import HRLayout from '@/Layouts/HRLayout';
 import { useForm, usePage, Link, router } from '@inertiajs/react';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { debounce } from 'lodash';
+import PDFPreviewModal from '@/Components/PDFPreviewModal'; // Adjust path as needed
+import { generateEmployeePDF } from '@/Utils/pdfGenerator'; // Adjust path as needed
 
 // Avatar component for male/female
 const EmployeeAvatar = ({ gender, className = "w-8 h-8" }) => {
@@ -100,6 +102,7 @@ const capitalizeWords = (str) => {
 export default function Employees({ employees, departments, filters }) {
     const { flash } = usePage().props;
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isPDFPreviewOpen, setIsPDFPreviewOpen] = useState(false); // New state for PDF preview
     const [selectedDepartment, setSelectedDepartment] = useState(filters?.department || '');
     const [searchTerm, setSearchTerm] = useState(filters?.search || '');
     const [isLoading, setIsLoading] = useState(false);
@@ -181,6 +184,20 @@ export default function Employees({ employees, departments, filters }) {
         }, 300),
         []
     );
+
+     // PDF Preview Handler
+     const handlePDFPreview = () => {
+        if (!employees.data || employees.data.length === 0) {
+            return;
+        }
+        setIsPDFPreviewOpen(true);
+    };
+
+    // PDF Download Handler
+    const handlePDFDownload = () => {
+        generateEmployeePDF(employees, departments, selectedDepartment, searchTerm);
+        setIsPDFPreviewOpen(false);
+    };
     
     const handleSearchChange = (term) => {
         setSearchTerm(term);
@@ -295,8 +312,8 @@ export default function Employees({ employees, departments, filters }) {
     return (
         <HRLayout>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Header Section */}
-                <div className="mb-8">
+                             {/* Header Section */}
+                             <div className="mb-8">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                         <div className="relative">
                             <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-indigo-900 bg-clip-text text-transparent mb-2">
@@ -305,14 +322,32 @@ export default function Employees({ employees, departments, filters }) {
                             <p className="text-gray-600 text-lg">Manage your workforce efficiently</p>
                             <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"></div>
                         </div>
-                        <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="mt-4 md:mt-0 px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-2xl hover:shadow-2xl transition-all duration-300 hover:scale-105 shadow-lg"
-                        >
-                            + Add Employee
-                        </button>
+                        <div className="flex space-x-3 mt-4 md:mt-0">
+                            {/* Download PDF Button */}
+                            <button
+                                onClick={handlePDFPreview}
+                                disabled={!employees.data || employees.data.length === 0}
+                                className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white font-medium rounded-2xl hover:shadow-2xl transition-all duration-300 hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center"
+                            >
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Download Employee List
+                            </button>
+                            
+                            {/* Add Employee Button */}
+                            <button
+                                onClick={() => setIsModalOpen(true)}
+                                className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-2xl hover:shadow-2xl transition-all duration-300 hover:scale-105 shadow-lg"
+                            >
+                                + Add Employee
+                            </button>
+                        </div>
                     </div>
                 </div>
+
+
+
 
                 {/* Success Message */}
                 {flash?.success && (
@@ -402,6 +437,17 @@ export default function Employees({ employees, departments, filters }) {
 
                 {/* Loading Overlay */}
                 {isLoading && <LoadingSpinner />}
+
+                {/* PDF Preview Modal */}
+<PDFPreviewModal
+    isOpen={isPDFPreviewOpen}
+    onClose={() => setIsPDFPreviewOpen(false)}
+    onConfirm={handlePDFDownload}
+    employees={employees}
+    departments={departments}
+    selectedDepartment={selectedDepartment}
+    searchTerm={searchTerm}
+/>
 
                 {/* Modal */}
                 {isModalOpen && (
@@ -757,6 +803,8 @@ export default function Employees({ employees, departments, filters }) {
                                                             </div>
                                                         </div>
                                                     )}
+
+            
                                                 </div>
                                             </div>
                                         </div>
@@ -872,6 +920,8 @@ export default function Employees({ employees, departments, filters }) {
                             </tbody>
                         </table>
                     </div>
+
+           
                     
                     {/* Pagination */}
                     {renderPagination()}

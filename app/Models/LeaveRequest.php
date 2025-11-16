@@ -41,4 +41,32 @@ class LeaveRequest extends Model
     {
         return $this->hasMany(LeaveRecall::class, 'leave_request_id');
     }
+
+
+// app/Models/LeaveRequest.php - Add these methods
+
+public function rescheduleRequests()
+{
+    return $this->hasMany(LeaveRescheduleRequest::class, 'original_leave_request_id');
+}
+
+public function latestReschedule()
+{
+    return $this->hasOne(LeaveRescheduleRequest::class, 'original_leave_request_id')->latest();
+}
+
+public function hasRescheduleHistory()
+{
+    return $this->rescheduleRequests()->exists();
+}
+
+public function isRescheduled()
+{
+    return $this->rescheduleRequests()->where('status', 'approved')->exists();
+}
+
+public function getRescheduleHistoryAttribute()
+{
+    return $this->rescheduleRequests()->orderBy('created_at', 'desc')->get();
+}
 }

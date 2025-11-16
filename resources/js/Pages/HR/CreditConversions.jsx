@@ -430,8 +430,6 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Department</th>
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Leave Type</th>
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Days</th>
-                                    {/* <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Cash Equivalent</th> */}
-                                    {/* <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Date Submitted</th> */}
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                     <th className="p-4 font-medium text-gray-500 uppercase tracking-wider text-right">Actions</th>
                                 </tr>
@@ -455,6 +453,7 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                     safeConversions.map((conversion) => {
                                         const isVL = conversion.leave_type_code === 'VL';
                                         const isPending = conversion.status === 'pending';
+                                        const isFullyApproved = conversion.status === 'admin_approved';
                                         const employee = conversion.employee || {};
                                         
                                         return (
@@ -491,16 +490,6 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                                         {conversion.credits_requested || 0} days
                                                     </div>
                                                 </td>
-                                                {/* <td className="p-4">
-                                                    <div className="text-lg font-bold text-emerald-600">
-                                                        {formatCurrency(conversion.equivalent_cash)}
-                                                    </div>
-                                                </td> */}
-                                                {/* <td className="p-4">
-                                                    <div className="text-sm text-gray-900">
-                                                        {formatDate(conversion.submitted_at)}
-                                                    </div>
-                                                </td> */}
                                                 <td className="p-4">
                                                     <StatusBadge status={conversion.status} />
                                                 </td>
@@ -516,6 +505,21 @@ export default function CreditConversions({ auth, conversions, stats, filters })
                                                             </svg>
                                                             View
                                                         </Link>
+                                                        
+                                                        {/* Download PDF Button for Fully Approved Conversions */}
+                                                        {isFullyApproved && (
+                                                            <Link 
+                                                                href={route('hr.credit-conversions.form', conversion.conversion_id)}
+                                                                className="px-3 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-medium rounded-xl hover:shadow-lg transition-all duration-300 text-sm flex items-center"
+                                                            >
+                                                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                                </svg>
+                                                                PDF
+                                                            </Link>
+                                                        )}
+
+                                                        {/* Approve/Reject Buttons for Pending Conversions */}
                                                         {isPending && (
                                                             <>
                                                                 <Link 

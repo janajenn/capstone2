@@ -18,6 +18,8 @@ use App\Models\LeaveCredit;
 use App\Models\LeaveBalance;
 use App\Models\CreditConversion;
 use App\Services\CreditConversionService;
+use App\Models\AttendanceCorrection; // Add this import
+use App\Models\LeaveRescheduleRequest;
 
 
 class DeptHeadController extends Controller
@@ -36,48 +38,80 @@ class DeptHeadController extends Controller
 
 
     public function dashboard(Request $request)
-    {
-        $user = $request->user();
-        
-        // Get department ID with null check
-        $departmentId = $user->employee->department_id ?? null;
+{
+    $user = $request->user();
+    
+    // Get department ID with null check
+    $departmentId = $user->employee->department_id ?? null;
 
-        if (!$departmentId) {
-            return Inertia::render('DeptHead/Dashboard', [
-                'leaveRequests' => [],
-                'departmentName' => 'No Department Assigned',
-                'stats' => [
-                    'totalEmployees' => 0,
-                    'approvedLeaveRequests' => 0,
-                    'rejectedLeaveRequests' => 0
-                ],
-                'chartData' => [
-                    'leaveTypeData' => [],
-                    'monthlyData' => []
-                ],
-                'selectedYear' => date('Y'),
-                'availableYears' => []
-            ]);
-        }
+    if (!$departmentId) {
+        return Inertia::render('DeptHead/Dashboard', [
+            'initialLeaveRequests' => [],
+            'departmentName' => 'No Department Assigned',
+            'stats' => [
+                'totalEmployees' => 0,
+                'approvedLeaveRequests' => 0,
+                'rejectedLeaveRequests' => 0,
+                'pendingLeaveRequestsCount' => 0 // NEW
+            ],
+            'chartData' => [
+                'leaveTypeData' => [],
+                'monthlyData' => []
+            ],
+            'selectedYear' => date('Y'),
+            'availableYears' => []
+        ]);
+    }
 
-        // Calculate statistics
-        $stats = $this->getDepartmentStats($departmentId);
+    // Calculate statistics
+    $stats = $this->getDepartmentStats($departmentId);
 
-        // Get chart data
-        $selectedYear = $request->get('year', date('Y'));
-        $chartData = $this->getChartData($departmentId, $selectedYear);
-        $availableYears = $this->getAvailableYears($departmentId);
+    // Get chart data
+    $selectedYear = $request->get('year', date('Y'));
+    $chartData = $this->getChartData($departmentId, $selectedYear);
+    $availableYears = $this->getAvailableYears($departmentId);
 
-        // Minimal data for dashboard since content moved to leave request page
-        $recentRequests = LeaveRequest::with([
-            'employee.user', 
-            'leaveType:id,name',
-        ])
-        ->whereHas('employee', function($query) use ($departmentId) {
-            $query->where('department_id', $departmentId);
+    // 🔔 NEW: Get pending counts instead of full list
+    $pendingLeaveRequestsCount = LeaveRequest::whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId)
+                  ->whereHas('user', function($userQuery) {
+                      $userQuery->whereNotIn('role', ['admin', 'dept_head']);
+                  });
+        })
+        ->where(function($query) {
+            $query->where('status', 'pending')
+                  ->orWhere('status', 'pending_dept_head')
+                  ->orWhere('status', 'pending_hr_to_dept');
+        })
+        ->whereDoesntHave('approvals', function($q) {
+            $q->where('role', 'dept_head');
+        })
+        ->count();
+
+    // Add the pending count to stats
+    $stats['pendingLeaveRequestsCount'] = $pendingLeaveRequestsCount;
+
+    // Keep the existing recent requests for the dashboard display (optional)
+    $pendingRequests = LeaveRequest::with([
+        'employee.user', 
+        'leaveType:id,name',
+    ])
+    ->whereHas('employee', function($query) use ($departmentId) {
+        $query->where('department_id', $departmentId)
+              ->whereHas('user', function($userQuery) {
+                  $userQuery->whereNotIn('role', ['admin', 'dept_head']);
+              });
+    })
+        ->where(function($query) {
+            $query->where('status', 'pending')
+                  ->orWhere('status', 'pending_dept_head')
+                  ->orWhere('status', 'pending_hr_to_dept');
+        })
+        ->whereDoesntHave('approvals', function($q) {
+            $q->where('role', 'dept_head');
         })
         ->orderBy('created_at', 'desc')
-        ->limit(5)
+        ->limit(3) // Show only 3 recent ones
         ->get()
         ->map(function ($request) {
             return [
@@ -91,71 +125,86 @@ class DeptHeadController extends Controller
                 ] : null,
                 'leaveType' => $request->leaveType ? [
                     'name' => $request->leaveType->name
-                ] : null
+                ] : null,
+                'created_at' => $request->created_at,
             ];
         });
 
-        return Inertia::render('DeptHead/Dashboard', [
-            'recentRequests' => $recentRequests,
-            'departmentName' => $user->employee->department->name ?? 'Department',
-            'stats' => $stats,
-            'chartData' => $chartData,
-            'selectedYear' => (int)$selectedYear,
-            'availableYears' => $availableYears
-        ]);
-    }
+    return Inertia::render('DeptHead/Dashboard', [
+        'initialLeaveRequests' => $pendingRequests,
+        'departmentName' => $user->employee->department->name ?? 'Department',
+        'stats' => $stats,
+        'chartData' => $chartData,
+        'selectedYear' => (int)$selectedYear,
+        'availableYears' => $availableYears
+    ]);
+}
 
-    public function getUpdatedRequests(Request $request)
-    {
-        $user = $request->user();
-        $departmentId = $user->employee->department_id ?? null;
 
-        if (!$departmentId) {
-            return response()->json([
-                'recentRequests' => [],
-                'stats' => [
-                    'totalEmployees' => 0,
-                    'approvedLeaveRequests' => 0,
-                    'rejectedLeaveRequests' => 0,
-                ]
-            ]);
-        }
 
-        // Get stats
-        $stats = $this->getDepartmentStats($departmentId);
 
-        // Get recent requests
-        $recentRequests = LeaveRequest::with([
-                'employee.user',
-                'leaveType:id,name',
-            ])
-            ->whereHas('employee', function ($query) use ($departmentId) {
-                $query->where('department_id', $departmentId);
-            })
-            ->orderBy('created_at', 'desc')
-            ->limit(5)
-            ->get()
-            ->map(function ($request) {
-                return [
-                    'id' => $request->id,
-                    'date_from' => $request->date_from,
-                    'date_to' => $request->date_to,
-                    'status' => $request->status,
-                    'employee' => $request->employee ? [
-                        'firstname' => $request->employee->firstname,
-                        'lastname' => $request->employee->lastname,
-                    ] : null,
-                    'leaveType' => $request->leaveType ? [
-                        'name' => $request->leaveType->name,
-                    ] : null,
-                ];
-            });
 
+
+public function getUpdatedRequests(Request $request)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
         return response()->json([
-            'recentRequests' => $recentRequests,
-            'stats' => $stats,
+            'newRequests' => [],
+            'stats' => [
+                'totalEmployees' => 0,
+                'approvedLeaveRequests' => 0,
+                'rejectedLeaveRequests' => 0,
+            ]
         ]);
     }
+
+    // Get stats
+    $stats = $this->getDepartmentStats($departmentId);
+
+    // Get pending requests (same query as dashboard)
+    $newRequests = LeaveRequest::with([
+            'employee.user',
+            'leaveType:id,name',
+        ])
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId);
+        })
+        ->where(function($query) {
+            $query->where('status', 'pending')
+                  ->orWhere('status', 'pending_dept_head')
+                  ->orWhere('status', 'pending_hr_to_dept');
+        })
+        ->whereDoesntHave('approvals', function($q) {
+            $q->where('role', 'dept_head');
+        })
+        ->orderBy('created_at', 'desc')
+        ->limit(10)
+        ->get()
+        ->map(function ($request) {
+            return [
+                'id' => $request->id,
+                'date_from' => $request->date_from,
+                'date_to' => $request->date_to,
+                'status' => $request->status,
+                'employee' => $request->employee ? [
+                    'firstname' => $request->employee->firstname,
+                    'lastname' => $request->employee->lastname,
+                ] : null,
+                'leaveType' => $request->leaveType ? [
+                    'name' => $request->leaveType->name,
+                ] : null,
+                'created_at' => $request->created_at,
+            ];
+        });
+
+    return response()->json([
+        'newRequests' => $newRequests,
+        'stats' => $stats,
+    ]);
+}
 
     /**
      * Get chart data for dashboard
@@ -290,24 +339,40 @@ class DeptHeadController extends Controller
             return Inertia::render('DeptHead/LeaveRequests', [
                 'leaveRequests' => ['data' => [], 'links' => []],
                 'departmentName' => 'No Department Assigned',
-                'filters' => $request->only(['status', 'search'])
+                'filters' => $request->only(['status', 'search']),
+                'pendingRescheduleCount' => 0 // Add this
             ]);
         }
+
+         // Get pending reschedule count for the badge
+    $pendingRescheduleCount = LeaveRescheduleRequest::where('status', 'pending_dept_head')
+    ->whereHas('employee', function($query) use ($departmentId) {
+        $query->where('department_id', $departmentId)
+              ->whereHas('user', function($userQuery) {
+                  $userQuery->whereIn('role', ['employee', 'hr']);
+              });
+    })
+    ->count();
+
     
         $currentDeptHeadEmployeeId = $user->employee_id;
     
         $query = LeaveRequest::with([
-                'employee.user', 
-                'leaveType:id,name,code',
-                'approvals' => function($query) {
-                    $query->with('approver');
-                }
-            ])
-            ->whereHas('employee', function($query) use ($departmentId, $currentDeptHeadEmployeeId) {
-                $query->where('department_id', $departmentId)
-                      ->where('employee_id', '!=', $currentDeptHeadEmployeeId);
-            })
-            ->orderBy('created_at', 'desc');
+            'employee.user', 
+            'leaveType:id,name,code',
+            'approvals' => function($query) {
+                $query->with('approver');
+            }
+        ])
+        ->whereHas('employee', function($query) use ($departmentId, $currentDeptHeadEmployeeId) {
+            $query->where('department_id', $departmentId)
+                  ->where('employee_id', '!=', $currentDeptHeadEmployeeId)
+                  ->whereHas('user', function($userQuery) {
+                      // Exclude employees with Admin or Dept Head roles
+                      $userQuery->whereNotIn('role', ['admin', 'dept_head']);
+                  });
+        })
+        ->orderBy('created_at', 'desc');
     
         // FIXED: Better status filtering logic
         if ($request->has('status') && $request->status !== 'all') {
@@ -422,7 +487,8 @@ class DeptHeadController extends Controller
         return Inertia::render('DeptHead/LeaveRequests', [
             'leaveRequests' => $leaveRequests,
             'departmentName' => $user->employee->department->name ?? 'Department',
-            'filters' => $request->only(['status', 'search'])
+            'filters' => $request->only(['status', 'search']),
+            'pendingRescheduleCount' => $pendingRescheduleCount // Add this
         ]);
     }
     /**
@@ -441,7 +507,7 @@ class DeptHeadController extends Controller
             DB::transaction(function () use ($request, $id, $user) {
                 $leaveRequest = LeaveRequest::with(['employee', 'leaveType', 'employee.user'])->findOrFail($id);
         
-                // FIXED: Check if request is in correct status for dept head approval
+                // Check if request is in correct status for dept head approval
                 $allowedStatuses = ['pending', 'pending_dept_head', 'pending_hr_to_dept'];
                 if (!in_array($leaveRequest->status, $allowedStatuses)) {
                     throw new \Exception('This request is not pending department head approval. Current status: ' . $leaveRequest->status);
@@ -466,16 +532,26 @@ class DeptHeadController extends Controller
                     'approved_at' => now(),
                 ]);
     
-                // FIXED: Update status based on the current workflow
-                if ($leaveRequest->status === 'pending_hr_to_dept' || $leaveRequest->status === 'pending_dept_head') {
-                    // Request came from HR, so after dept head approval it goes to admin
+                // ✅ FIXED: Simplified logic based on employee role
+                $employeeRole = $leaveRequest->employee->user->role;
+                
+                if ($employeeRole === 'dept_head' || $employeeRole === 'admin') {
+                    // Department heads and admins go directly to admin after dept head approval
                     $leaveRequest->update(['status' => 'pending_admin']);
+                    \Log::info("Department Head/Admin request approved by Dept Head. Status: pending_admin", [
+                        'request_id' => $id,
+                        'employee_role' => $employeeRole
+                    ]);
                 } else {
-                    // Regular flow: dept head -> HR -> admin
-                    $leaveRequest->update(['status' => 'pending_hr']);
+                    // Regular employees: After Dept Head approval, it should go to Admin
+                    $leaveRequest->update(['status' => 'pending_admin']);
+                    \Log::info("Regular employee request approved by Dept Head. Status: pending_admin", [
+                        'request_id' => $id,
+                        'employee_role' => $employeeRole
+                    ]);
                 }
     
-                // FIXED: Use the centralized notification service instead of creating multiple notifications manually
+                // Use the centralized notification service
                 $notificationService = new NotificationService();
                 
                 // Notify the employee about department head approval
@@ -485,10 +561,11 @@ class DeptHeadController extends Controller
                     $request->remarks
                 );
     
-                // FIXED: Remove the manual notification creation below - it's already handled in notifyDeptHeadApproval
-                // The notifyDeptHeadApproval method in NotificationService already handles:
-                // 1. Notifying the employee
-                // 2. Notifying the next approver (Admin for regular employees)
+                \Log::info("Department Head approval completed", [
+                    'request_id' => $id,
+                    'final_status' => $leaveRequest->status,
+                    'employee_role' => $employeeRole
+                ]);
             });
     
             return redirect()->back()->with('success', 'Leave request approved successfully.');
@@ -1353,4 +1430,623 @@ public function getCreditConversionStats(Request $request)
         'total_conversions' => $totalConversions
     ]);
 }
+
+
+
+
+/**
+ * Display attendance correction requests for department head review
+ */
+public function attendanceCorrections(Request $request)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return Inertia::render('DeptHead/AttendanceCorrections', [
+            'corrections' => ['data' => [], 'links' => []],
+            'departmentName' => 'No Department Assigned',
+            'stats' => [
+                'pending' => 0,
+                'reviewed' => 0,
+                'total' => 0
+            ],
+            'filters' => $request->only(['status', 'employee'])
+        ]);
+    }
+
+    $perPage = 10;
+    
+    $query = AttendanceCorrection::with([
+            'employee', 
+            'reviewer', 
+            'approver',
+            'department'
+        ])
+        ->where('department_id', $departmentId)
+        ->where('status', 'Pending'); // Only show pending corrections initially
+
+    // Apply status filters
+    if ($request->has('status') && $request->status !== 'all') {
+        $query->where('status', $request->status);
+    }
+
+    // Employee search filter
+    if ($request->has('employee') && !empty($request->employee)) {
+        $query->whereHas('employee', function ($q) use ($request) {
+            $q->where('firstname', 'like', "%{$request->employee}%")
+              ->orWhere('lastname', 'like', "%{$request->employee}%");
+        });
+    }
+
+    $corrections = $query->orderBy('created_at', 'desc')
+                        ->paginate($perPage)
+                        ->withQueryString();
+
+    // Transform corrections for frontend
+    $transformedCorrections = $corrections->getCollection()->map(function ($correction) {
+        return $this->transformCorrectionData($correction);
+    });
+
+    $corrections->setCollection($transformedCorrections);
+
+    // Statistics
+    $pendingCount = AttendanceCorrection::where('department_id', $departmentId)
+        ->where('status', 'Pending')
+        ->count();
+
+    $reviewedCount = AttendanceCorrection::where('department_id', $departmentId)
+        ->where('status', 'Reviewed')
+        ->count();
+
+    $totalCount = AttendanceCorrection::where('department_id', $departmentId)->count();
+
+    return Inertia::render('DeptHead/AttendanceCorrections', [
+        'corrections' => $corrections,
+        'departmentName' => $user->employee->department->name ?? 'Department',
+        'stats' => [
+            'pending' => $pendingCount,
+            'reviewed' => $reviewedCount,
+            'total' => $totalCount,
+        ],
+        'filters' => $request->only(['status', 'employee']),
+    ]);
+}
+
+/**
+ * Show specific attendance correction request details
+ */
+public function showAttendanceCorrection($id)
+{
+    $correction = AttendanceCorrection::with([
+        'employee.department',
+        'reviewer',
+        'approver',
+        'department'
+    ])->findOrFail($id);
+
+    $transformedCorrection = $this->transformCorrectionData($correction);
+
+    return Inertia::render('DeptHead/ShowAttendanceCorrection', [
+        'correction' => $transformedCorrection,
+    ]);
+}
+
+/**
+ * Mark correction as reviewed and forward to HR
+ */
+public function reviewAttendanceCorrection(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        $validated = $request->validate([
+            'remarks' => 'nullable|string|max:500'
+        ]);
+
+        $correction = AttendanceCorrection::with(['employee', 'department'])->findOrFail($id);
+
+        // Check if correction belongs to department head's department
+        $departmentId = $user->employee->department_id ?? null;
+        if ($correction->department_id !== $departmentId) {
+            return back()->with('error', 'You are not authorized to review this correction request.');
+        }
+
+        // Check if already processed
+        if ($correction->status !== 'Pending') {
+            return back()->with('error', 'This correction request has already been processed.');
+        }
+
+        // Update correction status to Reviewed
+        $correction->update([
+            'status' => 'Reviewed',
+            'reviewed_by' => $user->id,
+            'reviewed_at' => now(),
+            'remarks' => $validated['remarks']
+        ]);
+
+        // Send notifications
+        $this->notificationService->notifyAttendanceCorrectionReview(
+            $correction,
+            $user->id,
+            $validated['remarks']
+        );
+
+        return redirect()->route('dept_head.attendance-corrections')->with('success', 'Correction request marked as reviewed and forwarded to HR!');
+
+    } catch (\Exception $e) {
+        \Log::error('Failed to review attendance correction: ' . $e->getMessage(), [
+            'correction_id' => $id,
+            'user_id' => $request->user()->id
+        ]);
+
+        return back()->with('error', 'Failed to review correction request: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Reject attendance correction request
+ */
+public function rejectAttendanceCorrection(Request $request, $id)
+{
+    try {
+        $user = $request->user();
+        
+        $validated = $request->validate([
+            'remarks' => 'required|string|max:500'
+        ]);
+
+        $correction = AttendanceCorrection::with(['employee', 'department'])->findOrFail($id);
+
+        // Check if correction belongs to department head's department
+        $departmentId = $user->employee->department_id ?? null;
+        if ($correction->department_id !== $departmentId) {
+            return back()->with('error', 'You are not authorized to reject this correction request.');
+        }
+
+        // Check if already processed
+        if ($correction->status !== 'Pending') {
+            return back()->with('error', 'This correction request has already been processed.');
+        }
+
+        // Update correction status to Rejected
+        $correction->update([
+            'status' => 'Rejected',
+            'reviewed_by' => $user->id,
+            'reviewed_at' => now(),
+            'remarks' => $validated['remarks']
+        ]);
+
+        // Notify employee about rejection
+        $this->notificationService->createEmployeeNotification(
+            $correction->employee_id,
+            'attendance_correction_rejected',
+            'Attendance Correction Request Rejected',
+            "Your attendance correction request for {$correction->attendance_date} has been rejected by your Department Head. Reason: {$validated['remarks']}",
+            [
+                'correction_id' => $correction->id,
+                'attendance_date' => $correction->attendance_date,
+                'remarks' => $validated['remarks'],
+                'status' => 'Rejected'
+            ]
+        );
+
+        return redirect()->route('dept_head.attendance-corrections')->with('success', 'Correction request rejected successfully!');
+
+    } catch (\Exception $e) {
+        \Log::error('Failed to reject attendance correction: ' . $e->getMessage(), [
+            'correction_id' => $id,
+            'user_id' => $request->user()->id
+        ]);
+
+        return back()->with('error', 'Failed to reject correction request: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Transform correction data for display
+ */
+private function transformCorrectionData($correction)
+{
+    return [
+        'id' => $correction->id,
+        'employee_id' => $correction->employee_id,
+        'employee_name' => $correction->employee ? 
+            $correction->employee->firstname . ' ' . $correction->employee->lastname : 
+            'Unknown Employee',
+        'department' => $correction->department ? $correction->department->name : 'No Department',
+        'attendance_date' => $correction->attendance_date,
+        'attendance_date_formatted' => \Carbon\Carbon::parse($correction->attendance_date)->format('M d, Y'),
+        'explanation' => $correction->explanation,
+        'proof_image' => $correction->proof_image,
+        'status' => $correction->status,
+        'remarks' => $correction->remarks,
+        'reviewed_by' => $correction->reviewer ? $correction->reviewer->name : null,
+        'reviewed_at' => $correction->reviewed_at ? 
+            $correction->reviewed_at->format('M d, Y g:i A') : null,
+        'approved_by' => $correction->approver ? $correction->approver->name : null,
+        'approved_at' => $correction->approved_at ? 
+            $correction->approved_at->format('M d, Y g:i A') : null,
+        'created_at' => $correction->created_at->format('M d, Y g:i A'),
+        'created_at_raw' => $correction->created_at,
+    ];
+}
+
+/**
+ * Get attendance correction statistics for dashboard
+ */
+public function getAttendanceCorrectionStats(Request $request)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return response()->json([
+            'pending_corrections' => 0,
+            'total_corrections' => 0
+        ]);
+    }
+
+    $pendingCorrections = AttendanceCorrection::where('department_id', $departmentId)
+        ->where('status', 'Pending')
+        ->count();
+
+    $totalCorrections = AttendanceCorrection::where('department_id', $departmentId)->count();
+
+    return response()->json([
+        'pending_corrections' => $pendingCorrections,
+        'total_corrections' => $totalCorrections
+    ]);
+}
+
+/**
+ * View proof image for department head
+ */
+public function viewProofImage($id)
+{
+    $correction = AttendanceCorrection::findOrFail($id);
+    $user = auth()->user();
+    
+    // Check if department head has access to this correction
+    $departmentId = $user->employee->department_id ?? null;
+    if ($correction->department_id !== $departmentId) {
+        abort(403, 'Unauthorized action.');
+    }
+
+    if (!$correction->proof_image || !Storage::disk('public')->exists($correction->proof_image)) {
+        abort(404, 'Proof image not found.');
+    }
+
+    // Return the image as a response for viewing
+    $filePath = Storage::disk('public')->path($correction->proof_image);
+    $mimeType = mime_content_type($filePath);
+    
+    return response()->file($filePath, [
+        'Content-Type' => $mimeType,
+        'Content-Disposition' => 'inline; filename="' . basename($correction->proof_image) . '"'
+    ]);
+}
+
+
+
+public function rescheduleRequests(Request $request)
+{
+    $user = $request->user();
+    $departmentId = $user->employee->department_id ?? null;
+
+    if (!$departmentId) {
+        return Inertia::render('DeptHead/RescheduleRequests', [
+            'rescheduleRequests' => ['data' => []],
+            'departmentName' => 'No Department Assigned',
+            'pendingCount' => 0,
+            'filters' => $request->only(['status'])
+        ]);
+    }
+
+    $perPage = 10;
+    
+    // Get pending count for badge - only employee and hr roles
+    $pendingCount = LeaveRescheduleRequest::where('status', 'pending_dept_head')
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId)
+                  ->whereHas('user', function($userQuery) {
+                      $userQuery->whereIn('role', ['employee', 'hr']);
+                  });
+        })
+        ->count();
+
+    // Get reschedule requests for display - FIXED RELATIONSHIP NAMES
+    $query = LeaveRescheduleRequest::with([
+            'employee.department',
+            'employee.user',
+            'originalLeaveRequest.leaveType',
+            'hrReviewedBy' // CHANGED FROM hrApprover TO hrReviewedBy
+        ])
+        ->where('status', 'pending_dept_head')
+        ->whereHas('employee', function($query) use ($departmentId) {
+            $query->where('department_id', $departmentId)
+                  ->whereHas('user', function($userQuery) {
+                      $userQuery->whereIn('role', ['employee', 'hr']);
+                  });
+        })
+        ->orderBy('submitted_at', 'desc');
+
+    $rescheduleRequests = $query->paginate($perPage)
+        ->through(function ($request) {
+            return [
+                'id' => $request->id,
+                'employee' => $request->employee ? [
+                    'id' => $request->employee->id,
+                    'firstname' => $request->employee->firstname,
+                    'lastname' => $request->employee->lastname,
+                    'department' => $request->employee->department ? [
+                        'id' => $request->employee->department->id,
+                        'name' => $request->employee->department->name,
+                    ] : null,
+                    'user' => $request->employee->user ? [
+                        'role' => $request->employee->user->role,
+                    ] : null,
+                ] : null,
+                'original_leave_request' => $request->originalLeaveRequest ? [
+                    'id' => $request->originalLeaveRequest->id,
+                    'date_from' => $request->originalLeaveRequest->date_from,
+                    'date_to' => $request->originalLeaveRequest->date_to,
+                    'total_days' => $request->originalLeaveRequest->total_days,
+                    'reason' => $request->originalLeaveRequest->reason,
+                    'leave_type' => $request->originalLeaveRequest->leaveType ? [
+                        'id' => $request->originalLeaveRequest->leaveType->id,
+                        'name' => $request->originalLeaveRequest->leaveType->name,
+                        'code' => $request->originalLeaveRequest->leaveType->code,
+                    ] : null,
+                ] : null,
+                'proposed_dates' => $request->proposed_dates,
+                'reason' => $request->reason,
+                'status' => $request->status,
+                'submitted_at' => $request->submitted_at,
+                'hr_reviewed_at' => $request->hr_reviewed_at,
+                'dept_head_reviewed_at' => $request->dept_head_reviewed_at,
+                'hr_remarks' => $request->hr_remarks,
+                'dept_head_remarks' => $request->dept_head_remarks,
+                'hr_approver' => $request->hrReviewedBy ? [ // CHANGED FROM hrApprover TO hrReviewedBy
+                    'name' => $request->hrReviewedBy->name,
+                ] : null,
+            ];
+        });
+
+    return Inertia::render('DeptHead/RescheduleRequests', [
+        'rescheduleRequests' => $rescheduleRequests,
+        'departmentName' => $user->employee->department->name ?? 'Department',
+        'pendingCount' => $pendingCount,
+        'filters' => $request->only(['status']),
+    ]);
+}
+    /**
+     * Show specific reschedule request details
+     */
+   /**
+ * Show specific reschedule request details
+ */
+public function showRescheduleRequest($id)
+{
+    $rescheduleRequest = LeaveRescheduleRequest::with([
+        'employee.department',
+        'employee.user',
+        'originalLeaveRequest.leaveType',
+        'hrReviewedBy', // CHANGED FROM hrApprover
+        'deptHeadReviewedBy' // CHANGED FROM deptHeadApprover
+    ])->findOrFail($id);
+
+    $transformedRequest = [
+        'id' => $rescheduleRequest->id,
+        'employee' => $rescheduleRequest->employee ? [
+            'id' => $rescheduleRequest->employee->id,
+            'firstname' => $rescheduleRequest->employee->firstname,
+            'lastname' => $rescheduleRequest->employee->lastname,
+            'department' => $rescheduleRequest->employee->department ? [
+                'id' => $rescheduleRequest->employee->department->id,
+                'name' => $rescheduleRequest->employee->department->name,
+            ] : null,
+            'user' => $rescheduleRequest->employee->user ? [
+                'role' => $rescheduleRequest->employee->user->role,
+            ] : null,
+        ] : null,
+        'original_leave_request' => $rescheduleRequest->originalLeaveRequest ? [
+            'id' => $rescheduleRequest->originalLeaveRequest->id,
+            'date_from' => $rescheduleRequest->originalLeaveRequest->date_from,
+            'date_to' => $rescheduleRequest->originalLeaveRequest->date_to,
+            'total_days' => $rescheduleRequest->originalLeaveRequest->total_days,
+            'reason' => $rescheduleRequest->originalLeaveRequest->reason,
+            'leave_type' => $rescheduleRequest->originalLeaveRequest->leaveType ? [
+                'id' => $rescheduleRequest->originalLeaveRequest->leaveType->id,
+                'name' => $rescheduleRequest->originalLeaveRequest->leaveType->name,
+                'code' => $rescheduleRequest->originalLeaveRequest->leaveType->code,
+            ] : null,
+        ] : null,
+        'proposed_dates' => $rescheduleRequest->proposed_dates,
+        'reason' => $rescheduleRequest->reason,
+        'status' => $rescheduleRequest->status,
+        'submitted_at' => $rescheduleRequest->submitted_at,
+        'hr_reviewed_at' => $rescheduleRequest->hr_reviewed_at,
+        'dept_head_reviewed_at' => $rescheduleRequest->dept_head_reviewed_at,
+        'hr_remarks' => $rescheduleRequest->hr_remarks,
+        'dept_head_remarks' => $rescheduleRequest->dept_head_remarks,
+        'hr_approver' => $rescheduleRequest->hrReviewedBy ? [ // CHANGED FROM hrApprover
+            'name' => $rescheduleRequest->hrReviewedBy->name,
+        ] : null,
+        'dept_head_approver' => $rescheduleRequest->deptHeadReviewedBy ? [ // CHANGED FROM deptHeadApprover
+            'name' => $rescheduleRequest->deptHeadReviewedBy->name,
+        ] : null,
+    ];
+
+    return Inertia::render('DeptHead/ShowRescheduleRequest', [
+        'rescheduleRequest' => $transformedRequest,
+    ]);
+}
+
+    /**
+     * Approve a reschedule request (Dept Head action)
+     */
+    public function approveRescheduleRequest(Request $request, $id)
+    {
+        $rescheduleRequest = LeaveRescheduleRequest::with(['employee', 'originalLeaveRequest'])->findOrFail($id);
+
+        // Check if request is pending department head approval
+        if ($rescheduleRequest->status !== 'pending_dept_head') {
+            return back()->with('error', 'This reschedule request has already been processed.');
+        }
+
+        try {
+            $user = $request->user();
+
+            DB::transaction(function () use ($rescheduleRequest, $user) {
+                // Update reschedule request - Dept Head approval is final for employee/hr requests
+                $rescheduleRequest->update([
+                    'status' => 'approved',
+                    'dept_head_reviewed_by' => $user->id,
+                    'dept_head_reviewed_at' => now(),
+                    'processed_by' => $user->id,
+                    'processed_at' => now(),
+                    'dept_head_remarks' => $request->remarks ?? 'Approved by Department Head',
+                ]);
+
+                // Update the original leave request with new dates
+                $this->updateLeaveRequestDates($rescheduleRequest);
+            });
+
+            // Send notifications
+            // $this->notificationService->notifyRescheduleDeptHeadApproval($rescheduleRequest);
+
+            return redirect()->route('dept_head.reschedule-requests')
+                ->with('success', 'Reschedule request approved successfully.');
+
+        } catch (\Exception $e) {
+            \Log::error('Dept Head reschedule approval failed: ' . $e->getMessage());
+            return back()->with('error', 'Failed to approve reschedule request: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Reject a reschedule request (Dept Head action)
+     */
+    public function rejectRescheduleRequest(Request $request, $id)
+    {
+        $rescheduleRequest = LeaveRescheduleRequest::with(['employee'])->findOrFail($id);
+
+        // Check if request is pending department head approval
+        if ($rescheduleRequest->status !== 'pending_dept_head') {
+            return back()->with('error', 'This reschedule request has already been processed.');
+        }
+
+        $validated = $request->validate([
+            'remarks' => ['required', 'string', 'max:1000'],
+        ]);
+
+        try {
+            $user = $request->user();
+
+            $rescheduleRequest->update([
+                'status' => 'rejected',
+                'dept_head_reviewed_by' => $user->id,
+                'dept_head_reviewed_at' => now(),
+                'processed_by' => $user->id,
+                'processed_at' => now(),
+                'dept_head_remarks' => $validated['remarks'],
+            ]);
+
+            // Send notifications
+            // $this->notificationService->notifyRescheduleDeptHeadRejection($rescheduleRequest);
+
+            return redirect()->route('dept_head.reschedule-requests')
+                ->with('success', 'Reschedule request rejected successfully.');
+
+        } catch (\Exception $e) {
+            \Log::error('Dept Head reschedule rejection failed: ' . $e->getMessage());
+            return back()->with('error', 'Failed to reject reschedule request: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update original leave request with new dates
+     */
+    private function updateLeaveRequestDates($rescheduleRequest)
+    {
+        try {
+            $originalLeave = $rescheduleRequest->originalLeaveRequest;
+            $dates = collect($rescheduleRequest->proposed_dates)->sort()->values();
+            $dateFrom = $dates->first();
+            $dateTo = $dates->last();
+
+            // Calculate working days (excluding weekends)
+            $workingDays = 0;
+            foreach ($dates as $date) {
+                $dateObj = new \DateTime($date);
+                $dayOfWeek = $dateObj->format('N');
+                if ($dayOfWeek < 6) { // 1-5 are weekdays
+                    $workingDays++;
+                }
+            }
+
+            // Store the original dates in reschedule history
+            $rescheduleHistory = array_merge(
+                json_decode($originalLeave->reschedule_history ?? '[]', true),
+                [
+                    [
+                        'reschedule_id' => $rescheduleRequest->id,
+                        'original_dates' => [
+                            'date_from' => $originalLeave->date_from,
+                            'date_to' => $originalLeave->date_to,
+                            'total_days' => $originalLeave->total_days,
+                        ],
+                        'new_dates' => [
+                            'date_from' => $dateFrom,
+                            'date_to' => $dateTo,
+                            'total_days' => $workingDays,
+                        ],
+                        'rescheduled_at' => now()->toISOString(),
+                        'reason' => $rescheduleRequest->reason,
+                        'approved_by' => $rescheduleRequest->processed_by,
+                        'remarks' => $rescheduleRequest->dept_head_remarks
+                    ]
+                ]
+            );
+
+            // Update the original leave request
+            $originalLeave->update([
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'total_days' => $workingDays,
+                'selected_dates' => json_encode($dates),
+                'reschedule_history' => json_encode($rescheduleHistory)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to update leave request dates: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Get pending reschedule count for badge
+     */
+    public function getPendingRescheduleCount(Request $request)
+    {
+        $user = $request->user();
+        $departmentId = $user->employee->department_id ?? null;
+
+        if (!$departmentId) {
+            return response()->json(['count' => 0]);
+        }
+
+        $pendingCount = LeaveRescheduleRequest::where('status', 'pending_dept_head')
+            ->whereHas('employee', function($query) use ($departmentId) {
+                $query->where('department_id', $departmentId)
+                      ->whereHas('user', function($userQuery) {
+                          $userQuery->whereIn('role', ['employee', 'hr']);
+                      });
+            })
+            ->count();
+
+        return response()->json(['count' => $pendingCount]);
+    }
+
 }

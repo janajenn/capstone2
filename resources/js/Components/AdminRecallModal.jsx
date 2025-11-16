@@ -1,38 +1,78 @@
-import { useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { useForm } from '@inertiajs/react';
+import Swal from 'sweetalert2';
 
 export default function AdminRecallModal({ isOpen, onClose, leaveRequest }) {
     const { data, setData, post, processing, errors, reset } = useForm({
-        reason: '',
-        new_leave_date_from: '',
-        new_leave_date_to: '',
+        reason: '', // Simple reason field
     });
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        post(route('admin.recall-leave', leaveRequest.id), {
-            onSuccess: () => {
-                reset();
-                onClose();
+        
+        Swal.fire({
+            title: "Recall this leave request?",
+            text: "This will recall the leave request and automatically return the deducted leave credits to the employee.",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Yes, recall",
+            cancelButtonText: "Cancel",
+            background: '#ffffff',
+            customClass: {
+                popup: 'rounded-2xl shadow-2xl border border-gray-200',
+                title: 'text-xl font-bold text-gray-800',
+                confirmButton: 'px-6 py-2 bg-gradient-to-r from-orange-500 to-amber-600 text-white rounded-xl hover:shadow-lg transition-all duration-300 font-medium',
+                cancelButton: 'px-6 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition-all duration-300 font-medium'
             },
+            buttonsStyling: false
+        }).then((result) => {
+            if (result.isConfirmed) {
+                post(route('admin.recall-leave', leaveRequest.id), {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        Swal.fire({
+                            title: "Recalled!",
+                            text: "The leave request has been recalled and leave credits have been returned.",
+                            icon: "success",
+                            confirmButtonColor: '#10B981',
+                            background: '#ffffff',
+                            customClass: {
+                                popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                            }
+                        });
+                        reset();
+                        onClose();
+                    },
+                    onError: (errors) => {
+                        console.error('Recall error:', errors);
+                        let errorMessage = "There was a problem recalling the request";
+
+                        if (errors.error) {
+                            errorMessage = errors.error;
+                        } else if (errors.message) {
+                            errorMessage = errors.message;
+                        }
+
+                        Swal.fire({
+                            title: "Error",
+                            text: errorMessage,
+                            icon: "error",
+                            confirmButtonColor: '#EF4444',
+                            background: '#ffffff',
+                            customClass: {
+                                popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                            }
+                        });
+                    },
+                });
+            }
         });
     };
 
     const handleClose = () => {
         reset();
         onClose();
-    };
-
-    // Calculate minimum date (today)
-    const getTodayDate = () => {
-        return new Date().toISOString().split('T')[0];
-    };
-
-    // Calculate minimum end date based on start date
-    const getMinEndDate = () => {
-        return data.new_leave_date_from || getTodayDate();
     };
 
     if (!leaveRequest) return null;
@@ -68,108 +108,74 @@ export default function AdminRecallModal({ isOpen, onClose, leaveRequest }) {
                                     as="h3"
                                     className="text-lg font-medium leading-6 text-gray-900"
                                 >
-                                    Recall & Reschedule Leave Request
+                                    Recall Leave Request
                                 </Dialog.Title>
 
                                 <div className="mt-4">
-                                    <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
+                                    <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4 mb-4">
                                         <div className="flex">
                                             <div className="flex-shrink-0">
-                                                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                                <svg className="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
                                                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                                                 </svg>
                                             </div>
                                             <div className="ml-3">
-                                                <h3 className="text-sm font-medium text-yellow-800">
-                                                    Admin Recall & Reschedule
+                                                <h3 className="text-sm font-medium text-orange-800">
+                                                    Admin Recall
                                                 </h3>
-                                                <div className="mt-2 text-sm text-yellow-700">
+                                                <div className="mt-2 text-sm text-orange-700">
                                                     <p>
-                                                        This action will recall the original leave, restore vacation leave credits, 
-                                                        and allow you to specify new dates for the leave.
+                                                        This action will recall the approved leave request and automatically 
+                                                        return the deducted vacation leave credits to the employee.
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="bg-gray-50 rounded-md p-4 mb-4">
-                                        <h4 className="text-sm font-medium text-gray-900 mb-2">Original Leave Details</h4>
-                                        <div className="grid grid-cols-2 gap-2 text-sm">
-                                            <div>
+                                    <div className="bg-gray-50 rounded-xl p-4 mb-4">
+                                        <h4 className="text-sm font-medium text-gray-900 mb-2">Leave Request Details</h4>
+                                        <div className="space-y-3 text-sm">
+                                            <div className="flex justify-between">
                                                 <span className="text-gray-500">Employee:</span>
-                                                <p className="font-medium">{leaveRequest.employee.firstname} {leaveRequest.employee.lastname}</p>
+                                                <span className="font-medium text-gray-900">
+                                                    {leaveRequest.employee.firstname} {leaveRequest.employee.lastname}
+                                                </span>
                                             </div>
-                                            <div>
+                                            <div className="flex justify-between">
                                                 <span className="text-gray-500">Leave Type:</span>
-                                                <p className="font-medium">{leaveRequest.leaveType.name}</p>
+                                                <span className="font-medium text-gray-900">{leaveRequest.leaveType.name}</span>
                                             </div>
-                                            <div className="col-span-2">
-                                                <span className="text-gray-500">Original Date Range:</span>
-                                                <p className="font-medium">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Date Range:</span>
+                                                <span className="font-medium text-gray-900">
                                                     {new Date(leaveRequest.date_from).toLocaleDateString()} - {new Date(leaveRequest.date_to).toLocaleDateString()}
-                                                </p>
+                                                </span>
                                             </div>
-                                            <div>
+                                            <div className="flex justify-between">
                                                 <span className="text-gray-500">Duration:</span>
-                                                <p className="font-medium">{leaveRequest.total_days} days</p>
+                                                <span className="font-medium text-gray-900">{leaveRequest.total_days} days</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Status:</span>
+                                                <span className="font-medium text-green-600">Approved</span>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
                                 <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-                                    {/* New Date Range Fields */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label htmlFor="new_leave_date_from" className="block text-sm font-medium text-gray-700">
-                                                New Start Date *
-                                            </label>
-                                            <input
-                                                type="date"
-                                                id="new_leave_date_from"
-                                                name="new_leave_date_from"
-                                                min={getTodayDate()}
-                                                value={data.new_leave_date_from}
-                                                onChange={(e) => setData('new_leave_date_from', e.target.value)}
-                                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                required
-                                            />
-                                            {errors.new_leave_date_from && (
-                                                <p className="mt-1 text-sm text-red-600">{errors.new_leave_date_from}</p>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <label htmlFor="new_leave_date_to" className="block text-sm font-medium text-gray-700">
-                                                New End Date *
-                                            </label>
-                                            <input
-                                                type="date"
-                                                id="new_leave_date_to"
-                                                name="new_leave_date_to"
-                                                min={getMinEndDate()}
-                                                value={data.new_leave_date_to}
-                                                onChange={(e) => setData('new_leave_date_to', e.target.value)}
-                                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                                required
-                                            />
-                                            {errors.new_leave_date_to && (
-                                                <p className="mt-1 text-sm text-red-600">{errors.new_leave_date_to}</p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Reason Field */}
+                                    {/* Simple Reason Field */}
                                     <div>
-                                        <label htmlFor="reason" className="block text-sm font-medium text-gray-700">
-                                            Reason for Recall & Reschedule *
+                                        <label htmlFor="reason" className="block text-sm font-medium text-gray-700 mb-2">
+                                            Reason for Recall <span className="text-red-500">*</span>
                                         </label>
                                         <textarea
                                             id="reason"
                                             name="reason"
                                             rows={4}
-                                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                            placeholder="Please provide a reason for recalling and rescheduling this leave request..."
+                                            className="block w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300"
+                                            placeholder="Please provide a reason for recalling this leave request..."
                                             value={data.reason}
                                             onChange={(e) => setData('reason', e.target.value)}
                                             required
@@ -182,7 +188,7 @@ export default function AdminRecallModal({ isOpen, onClose, leaveRequest }) {
                                     <div className="mt-6 flex justify-end space-x-3">
                                         <button
                                             type="button"
-                                            className="inline-flex justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                            className="inline-flex justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                                             onClick={handleClose}
                                         >
                                             Cancel
@@ -190,9 +196,9 @@ export default function AdminRecallModal({ isOpen, onClose, leaveRequest }) {
                                         <button
                                             type="submit"
                                             disabled={processing}
-                                            className="inline-flex justify-center px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                                            className="inline-flex justify-center px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-orange-500 to-amber-600 border border-transparent rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50"
                                         >
-                                            {processing ? 'Processing...' : 'Recall & Reschedule'}
+                                            {processing ? 'Processing...' : 'Confirm Recall'}
                                         </button>
                                     </div>
                                 </form>

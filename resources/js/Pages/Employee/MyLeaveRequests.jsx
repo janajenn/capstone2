@@ -71,6 +71,11 @@ export default function MyLeaveRequests() {
         <EmployeeLayout>
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-100 py-8">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                   
+                   
+                   
+                   
+                   
                     {/* Header Section */}
                     <motion.div
                         className="mb-8"
@@ -106,6 +111,35 @@ export default function MyLeaveRequests() {
                                 </svg>
                                 Leave History
                             </Link>
+                        </div>
+                    </motion.div>
+
+                        {/* INFORMATION BANNER - ADDED THIS SECTION */}
+                        <motion.div
+                        className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm"
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <div className="flex items-start">
+                            <div className="flex-shrink-0">
+                                <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                            <div className="ml-3">
+                                <h3 className="text-sm font-medium text-blue-800">
+                                    Leave Request Tracking
+                                </h3>
+                                <div className="mt-1 text-sm text-blue-700">
+                                    <p>
+                                        This page displays the current status of your leave requests. You can track the approval progress and view details, but no actions can be performed here.
+                                    </p>
+                                    <p className="mt-1 font-medium">
+                                        To reschedule or modify leave requests, please visit the <Link href={route('employee.leave-history')} className="underline hover:text-blue-900">Leave History</Link> page.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </motion.div>
 

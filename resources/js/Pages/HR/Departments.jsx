@@ -1,5 +1,5 @@
 import HRLayout from '@/Layouts/HRLayout';
-import { usePage, useForm, router } from '@inertiajs/react';
+import { usePage, useForm, router,Link } from '@inertiajs/react';
 import { useState, useEffect, useRef } from 'react';
 
 export default function Departments({ departments, employees }) {
@@ -12,11 +12,13 @@ export default function Departments({ departments, employees }) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [showTransferConfirm, setShowTransferConfirm] = useState(false);
     const [transferInfo, setTransferInfo] = useState(null);
+    const [requestStatus, setRequestStatus] = useState('idle'); // 'idle', 'processing', 'success', 'error'
     const dropdownRef = useRef(null);
 
     const { data, setData, post, put, reset, delete: destroy, processing, errors } = useForm({
         name: '',
         head_employee_id: '',
+        status: 'active',
     });
 
     // Close dropdown when clicking outside
@@ -30,6 +32,21 @@ export default function Departments({ departments, employees }) {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Debug state changes
+    useEffect(() => {
+        console.log('isModalOpen state changed to:', isModalOpen);
+    }, [isModalOpen]);
+
+    useEffect(() => {
+        console.log('=== STATE UPDATE ===', {
+            isModalOpen,
+            isEditing,
+            editingDepartment: editingDepartment?.id,
+            searchTerm,
+            departmentsTotal: departments.total
+        });
+    }, [isModalOpen, isEditing, editingDepartment, searchTerm, departments]);
 
     // Filter departments based on search term
     const filteredDepartments = departments.data?.filter(dept => 
@@ -57,40 +74,57 @@ export default function Departments({ departments, employees }) {
     };
 
     const openAddModal = () => {
+        console.log('Opening add modal');
         setIsEditing(false);
         setEditingDepartment(null);
         reset();
         setHeadSearchTerm('');
+        setRequestStatus('idle');
         setIsModalOpen(true);
     };
 
     const openEditModal = (department) => {
+        console.log('Opening edit modal for department:', department.id);
         setIsEditing(true);
         setEditingDepartment(department);
         const selectedHead = employees.find(emp => emp.employee_id === department.head_employee_id);
         setData({
             name: department.name,
             head_employee_id: department.head_employee_id || '',
+            status: department.status || 'active',
         });
         setHeadSearchTerm(selectedHead ? selectedHead.name : '');
+        setRequestStatus('idle');
         setIsModalOpen(true);
     };
 
     const closeModal = () => {
+        console.log('Closing modal completely');
         setIsModalOpen(false);
         setEditingDepartment(null);
+        setIsEditing(false);
         setHeadSearchTerm('');
         setShowTransferConfirm(false);
         setTransferInfo(null);
+        setRequestStatus('idle');
         reset();
         setIsDropdownOpen(false);
     };
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        e.stopPropagation();
     
+        console.log('Form submitted:', {
+            isEditing,
+            data,
+            selectedEmployee,
+            editingDepartment
+        });
+
         // Check if the selected employee is already a department head in another department
         if (selectedEmployee && checkIfEmployeeIsAlreadyHead()) {
+            console.log('Employee is already head, showing transfer confirm');
             setTransferInfo({
                 employeeName: selectedEmployee.name,
                 currentDepartment: selectedEmployee.current_head_department,
@@ -108,21 +142,35 @@ export default function Departments({ departments, employees }) {
     const proceedWithSubmit = () => {
         const submitData = {
             name: data.name,
-            head_employee_id: data.head_employee_id
+            head_employee_id: data.head_employee_id,
+            status: data.status
+        };
+    
+        console.log('Submitting department data');
+        setRequestStatus('processing');
+    
+        // Always close after 3 seconds (fallback)
+        const fallbackClose = setTimeout(() => {
+            console.log('Fallback: Closing modal after timeout');
+            setRequestStatus('success');
+            setTimeout(() => closeModal(), 1000);
+        }, 3000);
+    
+        const config = {    
+            preserveScroll: true,
+            preserveState: false,
+            onFinish: () => {
+                console.log('Request finished');
+                clearTimeout(fallbackClose);
+                setRequestStatus('success');
+                setTimeout(() => closeModal(), 2000);
+            }
         };
     
         if (isEditing) {
-            put(route('hr.departments.update', editingDepartment.id), submitData, {
-                preserveScroll: true,
-                onSuccess: () => closeModal(),
-                onError: () => {/* Error handled by Inertia */}
-            });
+            put(route('hr.departments.update', editingDepartment.id), submitData, config);
         } else {
-            post(route('hr.departments.store'), submitData, {
-                preserveScroll: true,
-                onSuccess: () => closeModal(),
-                onError: () => {/* Error handled by Inertia */}
-            });
+            post(route('hr.departments.store'), submitData, config);
         }
     };
     
@@ -131,28 +179,64 @@ export default function Departments({ departments, employees }) {
             name: data.name,
             head_employee_id: transferInfo.employeeId,
             transfer_from: transferInfo.currentDepartmentId,
-            transfer_employee_id: transferInfo.employeeId
+            transfer_employee_id: transferInfo.employeeId,
+            status: data.status
         };
-    
+
+        setRequestStatus('processing');
+        setShowTransferConfirm(false);
+
         if (isEditing) {
             put(route('hr.departments.update', editingDepartment.id), transferData, {
                 preserveScroll: true,
+                preserveState: false,
                 onSuccess: () => {
-                    closeModal();
-                    setShowTransferConfirm(false);
+                    console.log('Transfer successful');
+                    setRequestStatus('success');
                     setTransferInfo(null);
+                    
+                    setTimeout(() => {
+                        closeModal();
+                    }, 2000);
                 },
-                onError: () => setShowTransferConfirm(false)
+                onError: (errors) => {
+                    console.log('Transfer errors:', errors);
+                    setRequestStatus('error');
+                    setTransferInfo(null);
+                    if (errors.error) {
+                        alert('Error: ' + errors.error);
+                    }
+                    
+                    setTimeout(() => {
+                        setRequestStatus('idle');
+                    }, 3000);
+                }
             });
         } else {
             post(route('hr.departments.store'), transferData, {
                 preserveScroll: true,
+                preserveState: false,
                 onSuccess: () => {
-                    closeModal();
-                    setShowTransferConfirm(false);
+                    console.log('Transfer creation successful');
+                    setRequestStatus('success');
                     setTransferInfo(null);
+                    
+                    setTimeout(() => {
+                        closeModal();
+                    }, 2000);
                 },
-                onError: () => setShowTransferConfirm(false)
+                onError: (errors) => {
+                    console.log('Transfer creation errors:', errors);
+                    setRequestStatus('error');
+                    setTransferInfo(null);
+                    if (errors.error) {
+                        alert('Error: ' + errors.error);
+                    }
+                    
+                    setTimeout(() => {
+                        setRequestStatus('idle');
+                    }, 3000);
+                }
             });
         }
     };
@@ -259,7 +343,7 @@ export default function Departments({ departments, employees }) {
                 )}
 
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                     <StatCard 
                         icon="department" 
                         value={departments.total} 
@@ -270,6 +354,12 @@ export default function Departments({ departments, employees }) {
                         icon="head" 
                         value={departments.data?.filter(dept => dept.head !== null).length || 0} 
                         label="Departments with Heads" 
+                        color="from-green-500 to-emerald-500"
+                    />
+                    <StatCard 
+                        icon="active" 
+                        value={departments.data?.filter(dept => dept.status === 'active').length || 0} 
+                        label="Active Departments" 
                         color="from-green-500 to-emerald-500"
                     />
                     <StatCard 
@@ -367,6 +457,7 @@ export default function Departments({ departments, employees }) {
                     onClose={closeModal}
                     dropdownRef={dropdownRef}
                     RoleBadge={RoleBadge}
+                    requestStatus={requestStatus}
                 />
 
                 {/* Transfer Confirmation Modal */}
@@ -376,6 +467,7 @@ export default function Departments({ departments, employees }) {
                     processing={processing}
                     onConfirm={handleTransferConfirm}
                     onCancel={() => setShowTransferConfirm(false)}
+                    requestStatus={requestStatus}
                 />
             </div>
         </HRLayout>
@@ -390,6 +482,9 @@ const StatCard = ({ icon, value, label, color }) => {
         ),
         head: (
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        ),
+        active: (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         ),
         warning: (
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -423,7 +518,10 @@ const DepartmentRow = ({ department, onEdit, onDelete }) => (
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
                 </div>
-                <div className="font-medium text-gray-900">{department.name}</div>
+                <div>
+                    <div className="font-medium text-gray-900">{department.name}</div>
+                    <div className="text-sm text-gray-500">{department.employees.length} employees</div>
+                </div>
             </div>
         </td>
         <td className="p-4">
@@ -446,18 +544,19 @@ const DepartmentRow = ({ department, onEdit, onDelete }) => (
             )}
         </td>
         <td className="p-4">
-            {department.head ? (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                    Active
-                </span>
-            ) : (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
-                    Needs Attention
-                </span>
-            )}
+            <StatusBadge status={department.status} />
         </td>
         <td className="p-4 text-right">
             <div className="flex items-center justify-end space-x-3">
+                <Link
+                    href={route('hr.departments.employees', department.id)}
+                    className="inline-flex items-center px-4 py-2 text-blue-600 font-medium rounded-xl hover:bg-blue-50 transition-all duration-300"
+                >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    View Employees
+                </Link>
                 <button
                     onClick={() => onEdit(department)}
                     className="inline-flex items-center px-4 py-2 text-indigo-600 font-medium rounded-xl hover:bg-indigo-50 transition-all duration-300"
@@ -480,6 +579,30 @@ const DepartmentRow = ({ department, onEdit, onDelete }) => (
         </td>
     </tr>
 );
+
+// Status Badge Component
+const StatusBadge = ({ status }) => {
+    const statusConfig = {
+        active: {
+            bg: 'bg-green-100',
+            text: 'text-green-800',
+            label: 'Active'
+        },
+        inactive: {
+            bg: 'bg-red-100',
+            text: 'text-red-800',
+            label: 'Inactive'
+        }
+    };
+
+    const config = statusConfig[status] || statusConfig.active;
+
+    return (
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${config.bg} ${config.text}`}>
+            {config.label}
+        </span>
+    );
+};
 
 // Empty State Component
 const EmptyState = ({ searchTerm, onAddDepartment }) => (
@@ -528,12 +651,27 @@ const DepartmentModal = ({
     onSubmit, 
     onClose, 
     dropdownRef,
-    RoleBadge 
+    RoleBadge,
+    requestStatus 
 }) => {
-    if (!isOpen) return null;
+    console.log('DepartmentModal rendered, isOpen:', isOpen, 'requestStatus:', requestStatus);
+    
+    if (!isOpen) {
+        return null;
+    }
+
+    const handleBackdropClick = (e) => {
+        if (e.target === e.currentTarget && requestStatus !== 'processing') {
+            console.log('Backdrop clicked, closing modal');
+            onClose();
+        }
+    };
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm z-50 transition-opacity duration-300 flex items-start justify-center p-4 pt-20">
+        <div 
+            className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm z-50 transition-opacity duration-300 flex items-start justify-center p-4 pt-20"
+            onClick={handleBackdropClick}
+        >
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-auto overflow-hidden transform transition-all">
                 <div className="px-8 py-6 border-b border-gray-200 bg-white flex justify-between items-center">
                     <div>
@@ -544,25 +682,98 @@ const DepartmentModal = ({
                             {isEditing ? 'Update department details and assign department head' : 'Create a new department in the system'}
                         </p>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+                    <button 
+                        onClick={onClose} 
+                        disabled={requestStatus === 'processing'}
+                        className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                    >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
+                
                 <form onSubmit={onSubmit} className="px-8 py-6">
+                    {/* Status Messages */}
+                    {requestStatus === 'processing' && (
+                        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                            <div className="flex items-center">
+                                <div className="p-2 rounded-xl bg-blue-500 text-white mr-3">
+                                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p className="text-blue-800 font-medium">Processing...</p>
+                                    <p className="text-blue-700 text-sm">Updating department information. Please wait.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {requestStatus === 'success' && (
+                        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+                            <div className="flex items-center">
+                                <div className="p-2 rounded-xl bg-green-500 text-white mr-3">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p className="text-green-800 font-medium">Success!</p>
+                                    <p className="text-green-700 text-sm">Department {isEditing ? 'updated' : 'created'} successfully.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {requestStatus === 'error' && (
+                        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                            <div className="flex items-center">
+                                <div className="p-2 rounded-xl bg-red-500 text-white mr-3">
+                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p className="text-red-800 font-medium">Error</p>
+                                    <p className="text-red-700 text-sm">There was a problem processing your request.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Form Fields */}
                     <div className="mb-6">
                         <label className="block text-sm font-medium text-gray-700 mb-2">Department Name</label>
                         <input
                             type="text"
                             value={data.name}
                             onChange={(e) => setData('name', e.target.value)}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm disabled:opacity-50"
                             placeholder="Enter department name"
                             required
+                            disabled={requestStatus === 'processing'}
                             autoFocus
                         />
                     </div>
+
+                    {/* Status Field - Only show in edit mode */}
+                    {isEditing && (
+                        <div className="mb-6">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                            <select
+                                value={data.status}
+                                onChange={(e) => setData('status', e.target.value)}
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm disabled:opacity-50"
+                                disabled={requestStatus === 'processing'}
+                            >
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                    )}
 
                     {/* Department Head Assignment */}
                     <div className="mb-6" ref={dropdownRef}>
@@ -582,7 +793,8 @@ const DepartmentModal = ({
                                     }}
                                     onFocus={() => setIsDropdownOpen(true)}
                                     placeholder="Type to search all active employees..."
-                                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm pr-10"
+                                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm pr-10 disabled:opacity-50"
+                                    disabled={requestStatus === 'processing'}
                                 />
                                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                                     <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -598,15 +810,17 @@ const DepartmentModal = ({
                                             <div
                                                 key={employee.employee_id}
                                                 onClick={() => {
-                                                    setData('head_employee_id', employee.employee_id);
-                                                    setHeadSearchTerm(employee.name);
-                                                    setIsDropdownOpen(false);
+                                                    if (requestStatus !== 'processing') {
+                                                        setData('head_employee_id', employee.employee_id);
+                                                        setHeadSearchTerm(employee.name);
+                                                        setIsDropdownOpen(false);
+                                                    }
                                                 }}
                                                 className={`px-4 py-3 cursor-pointer hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-b-0 ${
                                                     data.head_employee_id === employee.employee_id 
                                                         ? 'bg-indigo-100 border-l-4 border-indigo-500' 
                                                         : ''
-                                                }`}
+                                                } ${requestStatus === 'processing' ? 'opacity-50 cursor-not-allowed' : ''}`}
                                             >
                                                 <div className="flex justify-between items-start">
                                                     <div className="font-medium text-gray-900">{employee.name}</div>
@@ -666,10 +880,13 @@ const DepartmentModal = ({
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            setData('head_employee_id', '');
-                                            setHeadSearchTerm('');
+                                            if (requestStatus !== 'processing') {
+                                                setData('head_employee_id', '');
+                                                setHeadSearchTerm('');
+                                            }
                                         }}
-                                        className="text-green-600 hover:text-green-800 text-sm font-medium"
+                                        className="text-green-600 hover:text-green-800 text-sm font-medium disabled:opacity-50"
+                                        disabled={requestStatus === 'processing'}
                                     >
                                         Clear
                                     </button>
@@ -686,16 +903,27 @@ const DepartmentModal = ({
                         <button 
                             type="button" 
                             onClick={onClose}
-                            className="px-8 py-3 border-2 border-gray-300 text-gray-700 font-medium rounded-2xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition"
+                            disabled={requestStatus === 'processing'}
+                            className="px-8 py-3 border-2 border-gray-300 text-gray-700 font-medium rounded-2xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition disabled:opacity-50"
                         >
                             Cancel
                         </button>
                         <button 
                             type="submit" 
-                            disabled={processing}
-                            className="px-8 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-2xl hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition shadow-lg hover:scale-105 disabled:opacity-75 disabled:cursor-not-allowed"
+                            disabled={processing || requestStatus === 'processing'}
+                            className="px-8 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-2xl hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition shadow-lg hover:scale-105 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center min-w-[160px]"
                         >
-                            {processing ? 'Processing...' : isEditing ? 'Update Department' : 'Add Department'}
+                            {requestStatus === 'processing' ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Processing...
+                                </>
+                            ) : (
+                                isEditing ? 'Update Department' : 'Add Department'
+                            )}
                         </button>
                     </div>
                 </form>
@@ -705,7 +933,7 @@ const DepartmentModal = ({
 };
 
 // Transfer Modal Component
-const TransferModal = ({ isOpen, transferInfo, processing, onConfirm, onCancel }) => {
+const TransferModal = ({ isOpen, transferInfo, processing, onConfirm, onCancel, requestStatus }) => {
     if (!isOpen || !transferInfo) return null;
 
     return (
@@ -742,17 +970,28 @@ const TransferModal = ({ isOpen, transferInfo, processing, onConfirm, onCancel }
                         <button 
                             type="button" 
                             onClick={onCancel}
-                            className="px-6 py-2 border-2 border-gray-300 text-gray-700 font-medium rounded-2xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition"
+                            disabled={requestStatus === 'processing'}
+                            className="px-6 py-2 border-2 border-gray-300 text-gray-700 font-medium rounded-2xl hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition disabled:opacity-50"
                         >
                             Cancel
                         </button>
                         <button 
                             type="button" 
                             onClick={onConfirm}
-                            disabled={processing}
-                            className="px-6 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-medium rounded-2xl hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition shadow-lg hover:scale-105 disabled:opacity-75 disabled:cursor-not-allowed"
+                            disabled={processing || requestStatus === 'processing'}
+                            className="px-6 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-medium rounded-2xl hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 transition shadow-lg hover:scale-105 disabled:opacity-75 disabled:cursor-not-allowed flex items-center justify-center min-w-[120px]"
                         >
-                            {processing ? 'Transferring...' : 'Yes, Transfer'}
+                            {requestStatus === 'processing' ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Transferring...
+                                </>
+                            ) : (
+                                'Yes, Transfer'
+                            )}
                         </button>
                     </div>
                 </div>

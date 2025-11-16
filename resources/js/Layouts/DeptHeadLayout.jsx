@@ -66,6 +66,7 @@ export default function DeptHeadLayout({ children }) {
         { href: '/dept-head/employees', label: 'Team Management', icon: UserGroupIcon },
         { href: '/dept-head/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
         { href: '/dept-head/credit-conversions', label: 'Credit Conversion', icon: CurrencyDollarIcon }, // Add this line
+        { href: '/dept-head/attendance-corrections', label: 'Attendance Corrections', icon: ClipboardDocumentListIcon }, // Add this line
     ];
 
     const employeeNavigation = [
@@ -323,6 +324,7 @@ function getDeptHeadPageTitle(url) {
         '/dept-head/employees': 'Team Management',
         '/dept-head/leave-calendar': 'Leave Calendar',
         '/dept-head/credit-conversions': 'Credit Conversion Approvals', // Add this line
+        '/dept-head/attendance-corrections': 'Attendance Correction Requests', // Add this line
         '/employee/dashboard': 'My Dashboard',
         '/employee/my-leave-requests': 'My Leave Requests',
         '/employee/leave-calendar': 'Leave Calendar',
@@ -342,12 +344,14 @@ function getDeptHeadPageSubtitle(url, userName) {
         return `Welcome back, ${userName}. Comprehensive department insights and analytics.`;
     } else if (url.startsWith('/dept-head/leave-requests')) {
         return 'Review and approve leave requests from your team';
+    } else if (url.startsWith('/dept-head/attendance-corrections')) {
+        return 'Review and validate attendance correction requests from your team members'; // Add this line
     } else if (url.startsWith('/dept-head/employees')) {
         return 'Manage team members and department structure';
     } else if (url.startsWith('/dept-head/leave-calendar')) {
         return 'Visualize and manage department leave schedule';
     } else if (url.startsWith('/dept-head/credit-conversions')) {
-        return 'Approve credit conversion requests from your team members'; // Add this line
+        return 'Approve credit conversion requests from your team members';
     }
     return `Welcome, ${userName}. Streamlined employee self-service portal.`;
 }

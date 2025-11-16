@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class AdminNotificationController extends Controller
 {
@@ -30,14 +31,88 @@ class AdminNotificationController extends Controller
             ]);
         }
 
-        // Use 'admin' mode filtering
         $notifications = $this->notificationService->getNotificationsByMode($employeeId, 'admin', 20);
+        
+        // Transform notifications to include redirect URLs
+        $transformedNotifications = $notifications->map(function ($notification) {
+            return $this->transformNotification($notification);
+        });
+
         $unreadCount = $this->notificationService->getUnreadCountByMode($employeeId, 'admin');
 
         return response()->json([
-            'notifications' => $notifications,
+            'notifications' => $transformedNotifications,
             'unread_count' => $unreadCount,
         ]);
+    }
+
+    /**
+     * Transform notification to include redirect URL
+     */
+    private function transformNotification($notification)
+    {
+        $data = $notification->data ?? [];
+        
+        // If redirect_url is already in data, use it
+        if (isset($data['redirect_url'])) {
+            $redirectUrl = $data['redirect_url'];
+        } else {
+            // Generate redirect URL based on type and data
+            $redirectUrl = $this->notificationService->generateRedirectUrl(
+                $notification->type, 
+                $data, 
+                'admin'
+            );
+        }
+
+        return [
+            'id' => $notification->id,
+            'type' => $notification->type,
+            'title' => $notification->title,
+            'message' => $notification->message,
+            'data' => $data,
+            'is_read' => $notification->is_read,
+            'read_at' => $notification->read_at,
+            'created_at' => $notification->created_at,
+            'redirect_url' => $redirectUrl,
+        ];
+    }
+    public function handleClick(Request $request, $id)
+    {
+        $user = $request->user()->load('employee');
+        $employeeId = $user->employee?->employee_id;
+
+        if (!$employeeId) {
+            return redirect()->back()->with('error', 'Employee profile not found.');
+        }
+
+        // Mark notification as read
+        $this->notificationService->markAsRead($id, $employeeId);
+
+        // Get notification to extract redirect URL
+        $notification = \App\Models\Notification::where('id', $id)
+            ->where('employee_id', $employeeId)
+            ->first();
+
+        if (!$notification) {
+            return redirect()->back()->with('error', 'Notification not found.');
+        }
+
+        $data = $notification->data ?? [];
+        
+        // Determine redirect URL
+        if (isset($data['redirect_url'])) {
+            $redirectUrl = $data['redirect_url'];
+        } else {
+            $redirectUrl = $this->notificationService->generateRedirectUrl(
+                $notification->type, 
+                $data, 
+                'admin'
+            );
+        }
+
+        // Use Inertia redirect
+        return Inertia::location($redirectUrl);
     }
 
     /**

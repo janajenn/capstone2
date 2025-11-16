@@ -1,6 +1,7 @@
 import DeptHeadLayout from '@/Layouts/DeptHeadLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, useForm, router, Link } from '@inertiajs/react';
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 
 const statusColors = {
     pending: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
@@ -24,11 +25,12 @@ const formatDate = (dateString) => {
     });
 };
 
-export default function LeaveRequests({ leaveRequests, departmentName, filters, flash }) {
+export default function LeaveRequests({ leaveRequests, departmentName, filters, flash, pendingRescheduleCount = 0 }) {
     const [selectedStatus, setSelectedStatus] = useState(filters.status || 'all');
     const [rejectingId, setRejectingId] = useState(null);
     const [rejectRemarks, setRejectRemarks] = useState('');
     const { post } = useForm();
+    
 
     // Handle status filter change
     const handleStatusChange = (status) => {
@@ -41,29 +43,117 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
         });
     };
 
-    const handleApprove = (id) => {
-        if (confirm('Are you sure you want to approve this leave request?')) {
+    const handleApprove = async (id) => {
+        const result = await Swal.fire({
+            title: 'Approve Leave Request?',
+            text: 'Are you sure you want to approve this leave request?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Approve!',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#10b981',
+            cancelButtonColor: '#6b7280',
+            background: '#ffffff',
+            customClass: {
+                popup: 'rounded-2xl shadow-2xl border border-gray-200',
+                confirmButton: 'px-6 py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300',
+                cancelButton: 'px-6 py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300'
+            }
+        });
+
+        if (result.isConfirmed) {
             post(route('dept_head.leave-requests.approve', id), {
                 onSuccess: () => {
-                    // Success handled by flash message
+                    Swal.fire({
+                        title: 'Approved!',
+                        text: 'The leave request has been approved successfully.',
+                        icon: 'success',
+                        confirmButtonColor: '#10b981',
+                        background: '#ffffff',
+                        customClass: {
+                            popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                        }
+                    });
+                },
+                onError: () => {
+                    Swal.fire({
+                        title: 'Error!',
+                        text: 'There was a problem approving the request.',
+                        icon: 'error',
+                        confirmButtonColor: '#ef4444',
+                        background: '#ffffff',
+                        customClass: {
+                            popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                        }
+                    });
                 }
             });
         }
     };
 
-    const handleReject = (id) => {
+    const handleReject = async (id) => {
         if (!rejectRemarks.trim()) {
-            alert('Please provide rejection remarks.');
+            await Swal.fire({
+                title: 'Remarks Required',
+                text: 'Please provide rejection remarks.',
+                icon: 'warning',
+                confirmButtonColor: '#f59e0b',
+                background: '#ffffff',
+                customClass: {
+                    popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                }
+            });
             return;
         }
 
-        post(route('dept_head.leave-requests.reject', id), {
-            remarks: rejectRemarks,
-            onSuccess: () => {
-                setRejectingId(null);
-                setRejectRemarks('');
+        const result = await Swal.fire({
+            title: 'Reject Leave Request?',
+            text: 'Are you sure you want to reject this leave request?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Reject!',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            background: '#ffffff',
+            customClass: {
+                popup: 'rounded-2xl shadow-2xl border border-gray-200',
+                confirmButton: 'px-6 py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300',
+                cancelButton: 'px-6 py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300'
             }
         });
+
+        if (result.isConfirmed) {
+            post(route('dept_head.leave-requests.reject', id), {
+                remarks: rejectRemarks,
+                onSuccess: () => {
+                    setRejectingId(null);
+                    setRejectRemarks('');
+                    Swal.fire({
+                        title: 'Rejected!',
+                        text: 'The leave request has been rejected successfully.',
+                        icon: 'success',
+                        confirmButtonColor: '#10b981',
+                        background: '#ffffff',
+                        customClass: {
+                            popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                        }
+                    });
+                },
+                onError: () => {
+                    Swal.fire({
+                        title: 'Error!',
+                        text: 'There was a problem rejecting the request.',
+                        icon: 'error',
+                        confirmButtonColor: '#ef4444',
+                        background: '#ffffff',
+                        customClass: {
+                            popup: 'rounded-2xl shadow-2xl border border-gray-200'
+                        }
+                    });
+                }
+            });
+        }
     };
 
     const getRequestStatus = (request) => {
@@ -103,7 +193,23 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
                             <p className="text-gray-600 text-lg">Manage leave requests for {departmentName} department</p>
                             <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full"></div>
                         </div>
-                        <div className="mt-4 md:mt-0">
+                        <div className="mt-4 md:mt-0 flex flex-col sm:flex-row gap-4 items-end">
+                            {/* Reschedule Requests Button */}
+                            <Link
+                                href={route('dept_head.reschedule-requests')}
+                                className="relative inline-flex items-center px-6 py-3 bg-gradient-to-r from-yellow-600 to-amber-700 text-white font-semibold rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 shadow-md"
+                            >
+                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                Reschedule Requests
+                                {pendingRescheduleCount > 0 && (
+                                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center animate-pulse border-2 border-white">
+                                        {pendingRescheduleCount}
+                                    </span>
+                                )}
+                            </Link>
+                            
                             <p className="text-sm text-gray-500 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-xl border border-white/20">
                                 Showing <span className="font-semibold text-gray-800">{leaveRequests.from || 0}</span> to{' '}
                                 <span className="font-semibold text-gray-800">{leaveRequests.to || 0}</span> of{' '}
