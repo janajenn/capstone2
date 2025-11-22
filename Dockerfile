@@ -1,55 +1,49 @@
+# Use PHP 8.3 with FPM
 FROM php:8.3-fpm
 
 # Install system dependencies
-# Added nginx and netcat-openbsd (required for your start.sh check)
 RUN apt-get update && apt-get install -y \
-    nginx \
-    zip \
-    unzip \
-    git \
-    curl \
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    libwebp-dev \
-    libonig-dev \
-    libxml2-dev \
-    libzip-dev \
-    supervisor \
-    netcat-openbsd \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    zip unzip git curl \
+    libpng-dev libjpeg-dev libfreetype6-dev libwebp-dev \
+    libonig-dev libxml2-dev libzip-dev \
+    supervisor
 
 # Install PHP extensions
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
-    && docker-php-ext-install gd pdo pdo_mysql mbstring exif bcmath zip opcache
+    && docker-php-ext-install gd
+
+RUN docker-php-ext-install pdo pdo_mysql mbstring exif bcmath zip
 
 # Install Composer
 COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
 
 # Set working directory
-WORKDIR /var/www/html
+WORKDIR /var/www
 
-# Copy Nginx configuration
-COPY docker/nginx.conf /etc/nginx/sites-available/default
-
-# Copy Supervisor configuration
-COPY docker/supervisor.conf /etc/supervisor/conf.d/supervisor.conf
-
-# Copy startup script
-COPY docker/start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
-
-# Copy application files
+# Copy project files (EXCLUDE .env if you have one)
 COPY . .
 
+# Remove any existing .env file to prevent conflicts
+
+
 # Install composer dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+RUN composer install --no-dev --optimize-autoloader
 
-# Permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Fix Laravel permissions
+RUN chown -R www-data:www-data storage bootstrap/cache
 
-# Expose port 8080 (Railway default)
+# Clear any cached config
+RUN php artisan config:clear
+
+# Expose port
 EXPOSE 8080
 
-# Start command
-CMD ["/usr/local/bin/start.sh"]
+# Supervisor config
+RUN mkdir -p /etc/supervisor/conf.d
+COPY ./railway/supervisor.conf /etc/supervisor/conf.d/supervisor.conf
+
+# Create a startup script that handles database connection issues
+COPY railway/start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
+
+CMD ["/bin/bash", "/usr/local/bin/start.sh"]

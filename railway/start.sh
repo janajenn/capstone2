@@ -2,15 +2,19 @@
 
 set -e
 
-echo "🚀 Starting application setup (Apache)..."
+echo "Starting application on Railway..."
 
-# 1. Safety Check: Ensure .env exists
-if [ ! -f .env ]; then
-    echo "⚠️  No .env found, creating empty file..."
-    touch .env
-fi
+# Wait a moment for environment variables to be injected
+sleep 2
 
-# 2. Database Connection Check
+# Display database connection info for debugging
+echo "Database Configuration:"
+echo "DB_HOST: $DB_HOST"
+echo "DB_PORT: $DB_PORT" 
+echo "DB_DATABASE: $DB_DATABASE"
+echo "DB_USERNAME: $DB_USERNAME"
+
+# Wait for database to be ready (max 30 seconds)
 if [ ! -z "$DB_HOST" ] && [ ! -z "$DB_PORT" ]; then
     echo "Waiting for database at $DB_HOST:$DB_PORT..."
     
@@ -24,22 +28,22 @@ if [ ! -z "$DB_HOST" ] && [ ! -z "$DB_PORT" ]; then
         fi
     done
     echo "✅ Database is ready!"
-else
-    echo "⚠️  DB_HOST or DB_PORT not set, skipping database check."
 fi
 
-# 3. Cache Configuration
-echo "Caching configuration..."
-php artisan config:cache
-php artisan event:cache
-php artisan route:cache
-php artisan view:cache
+# Clear any cached configuration
+php artisan config:clear
+php artisan cache:clear
 
-# 4. Run Migrations
+# Generate app key if not exists
+if [ -z "$(grep APP_KEY=.base64 .env 2>/dev/null)" ]; then
+    php artisan key:generate --force
+fi
+
+# Run database migrations
 echo "Running database migrations..."
 php artisan migrate --force
 
-echo "✅ Setup complete. Starting Supervisor..."
+echo "✅ Application setup complete!"
+echo "Starting supervisor..."
 
-# 5. Start Supervisor (Runs Apache + Scheduler)
 exec supervisord -c /etc/supervisor/conf.d/supervisor.conf
