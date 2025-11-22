@@ -1216,32 +1216,31 @@ private function getAvailableYears()
     return $years;
 }
 
+
+
 public function leaveRequests(Request $request)
 {
-    $perPage = 15;
+    $perPage = 15; // This should be consistent across all tabs
     
     $query = LeaveRequest::with([
-            'leaveType',
-            'employee.department',
-            'employee.user',
-            'details',
-            'approvals.approver',
-            'employee.leaveCreditLogs' => function($query) {
-                $query->orderBy('created_at', 'desc');
-            }
-        ])
-        ->orderBy('created_at', 'desc');
+        'leaveType',
+        'employee.department',
+        'employee.user',
+        'details',
+        'approvals.approver',
+        'employee.leaveCreditLogs' => function($query) {
+            $query->orderBy('created_at', 'desc');
+        },
+        'rescheduleRequests'
+    ]);
 
-    // Filter by status using database status and approval relationships
+    // 🔥 CRITICAL: Apply filters BEFORE pagination
     if ($request->filled('status') && $request->status !== 'all') {
         switch ($request->status) {
             case 'hr_pending':
-                // All requests pending HR approval (status = 'pending')
                 $query->where('status', 'pending');
                 break;
-
             case 'dept_head_pending':
-                // Department head requests that need HR approval
                 $query->where('status', 'pending')
                       ->where(function($q) {
                           $q->where('is_dept_head_request', true)
@@ -1252,75 +1251,29 @@ public function leaveRequests(Request $request)
                             });
                       });
                 break;
-
             case 'approved_by_hr':
-                // Show ALL requests that have HR approval, regardless of final status
                 $query->whereHas('approvals', function($q) {
                     $q->where('role', 'hr')->where('status', 'approved');
                 });
                 break;
-
-            case 'dept_head_to_admin':
-                // Dept head requests that went directly to admin after HR approval
-                $query->where('status', 'pending_admin')
-                      ->whereHas('employee.user', function($q) {
-                          $q->where('role', 'dept_head');
-                      })
-                      ->whereHas('approvals', function($q) {
-                          $q->where('role', 'hr')->where('status', 'approved');
-                      });
-                break;
-
             case 'rejected':
                 $query->where('status', 'rejected');
                 break;
-
             case 'fully_approved':
-                // Show all fully approved requests - both regular employees and department heads
                 $query->where('status', 'approved')
-                      ->where(function($q) {
-                          $q->where(function($q2) {
-                              // Regular employees: Need HR, Dept Head, and Admin approval
-                              $q2->whereHas('approvals', function($q3) {
-                                      $q3->where('role', 'hr')->where('status', 'approved');
-                                  })
-                                  ->whereHas('approvals', function($q3) {
-                                      $q3->where('role', 'dept_head')->where('status', 'approved');
-                                  })
-                                  ->whereHas('approvals', function($q3) {
-                                      $q3->where('role', 'admin')->where('status', 'approved');
-                                  })
-                                  ->whereHas('employee.user', function($q3) {
-                                      $q3->where('role', '!=', 'dept_head');
-                                  });
-                          })->orWhere(function($q2) {
-                              // Department heads: Only need HR and Admin approval (bypass dept head)
-                              $q2->whereHas('approvals', function($q3) {
-                                      $q3->where('role', 'hr')->where('status', 'approved');
-                                  })
-                                  ->whereHas('approvals', function($q3) {
-                                      $q3->where('role', 'admin')->where('status', 'approved');
-                                  })
-                                  ->whereHas('employee.user', function($q3) {
-                                      $q3->where('role', 'dept_head');
-                                  });
-                          });
+                      ->whereHas('approvals', function($q) {
+                          $q->where('role', 'admin')->where('status', 'approved');
                       });
                 break;
-            default:
+            case 'rescheduled':
+                $query->whereHas('rescheduleRequests', function($q) {
+                    $q->where('status', 'approved');
+                });
                 break;
         }
     }
 
-    // Filter by date range - use filled() to check if values exist and are not empty
-    if ($request->filled('date_from')) {
-        $query->where('date_from', '>=', $request->date_from);
-    }
-    if ($request->filled('date_to')) {
-        $query->where('date_to', '<=', $request->date_to);
-    }
-
-    // Search by employee name
+    // Apply other filters (search, date range, department)
     if ($request->filled('search')) {
         $search = $request->search;
         $query->whereHas('employee', function ($q) use ($search) {
@@ -1329,23 +1282,55 @@ public function leaveRequests(Request $request)
         });
     }
 
-    // ADD DEPARTMENT FILTER - FIXED POSITION
     if ($request->filled('department')) {
         $query->whereHas('employee', function ($q) use ($request) {
             $q->where('department_id', $request->department);
         });
     }
 
+    if ($request->filled('date_from')) {
+        $query->where('date_from', '>=', $request->date_from);
+    }
+    if ($request->filled('date_to')) {
+        $query->where('date_to', '<=', $request->date_to);
+    }
+
+    // 🔥 CRITICAL: Order before pagination
+    $query->orderBy('created_at', 'desc');
+
+    // 🔥 PAGINATE the filtered results
     $leaveRequests = $query->paginate($perPage)->withQueryString();
 
-
-    $rescheduleRequestsCount = LeaveRescheduleRequest::where('status', 'pending_hr')->count();
-
+    // Get tab counts (your existing code)
+    $tabCounts = [
+        'hr_pending' => LeaveRequest::where('status', 'pending')->count(),
+        'dept_head_pending' => LeaveRequest::where('status', 'pending')
+            ->where(function($q) {
+                $q->where('is_dept_head_request', true)
+                  ->orWhereHas('employee', function($employeeQuery) {
+                      $employeeQuery->whereHas('user', function($userQuery) {
+                          $userQuery->where('role', 'dept_head');
+                      });
+                  });
+            })->count(),
+        'approved_by_hr' => LeaveRequest::whereHas('approvals', function($q) {
+            $q->where('role', 'hr')->where('status', 'approved');
+        })->count(),
+        'rejected' => LeaveRequest::where('status', 'rejected')->count(),
+        'fully_approved' => LeaveRequest::where('status', 'approved')
+            ->whereHas('approvals', function($q) {
+                $q->where('role', 'admin')->where('status', 'approved');
+            })->count(),
+        'rescheduled' => LeaveRequest::whereHas('rescheduleRequests', function($q) {
+            $q->where('status', 'approved');
+        })->count(),
+    ];
 
     return Inertia::render('HR/LeaveRequests', [
         'leaveRequests' => $leaveRequests,
         'departments' => Department::all(),
-        'rescheduleRequestsCount' => $rescheduleRequestsCount, // Add this
+        'rescheduleRequestsCount' => LeaveRescheduleRequest::where('status', 'pending_hr')->count(),
+        'tabCounts' => $tabCounts,
         'filters' => $request->only(['status', 'date_from', 'date_to', 'search', 'department']),
     ]);
 }
@@ -2506,12 +2491,19 @@ public function leaveRecordings(Request $request)
 /**
  * Display specific employee's leave recordings
  */
+// In your HRController - update the showEmployeeRecordings method
 public function showEmployeeRecordings($employeeId, Request $request)
 {
     $year = $request->year ?? now()->year;
     
     $employee = Employee::with(['department'])->findOrFail($employeeId);
     $recordings = $this->getEmployeeLeaveRecordings($employeeId, $year);
+    
+    // Add leave credit logs for the year
+    $leaveCreditLogs = \App\Models\LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('year', $year)
+        ->get()
+        ->toArray();
 
     return Inertia::render('HR/EmployeeRecordings', [
         'employee' => [
@@ -2520,8 +2512,10 @@ public function showEmployeeRecordings($employeeId, Request $request)
             'lastname' => $employee->lastname,
             'department' => $employee->department->name,
             'position' => $employee->position,
+            'date_hired' => $employee->date_hired, // Make sure this is included
         ],
         'recordings' => $recordings,
+        'leaveCreditLogs' => $leaveCreditLogs,
         'year' => $year,
         'years' => $this->getAvailableYears(),
     ]);
@@ -2582,38 +2576,40 @@ private function getMonthlyUsed($employeeId, $type, $year, $month)
  */
 private function getLeaveEarned($employeeId, $type, $year, $month)
 {
-    $currentDate = Carbon::now();
-    $targetDate = Carbon::create($year, $month, 1);
-    
-    // If target month is in the future, return null
-    if ($targetDate->gt($currentDate->endOfMonth())) {
-        return null;
-    }
-    
-    // Check if monthly credits were actually added for this period
-    $creditsAdded = MonthlyCreditLog::where('year', $year)
+    // Calculate earned leave from leave_credit_logs
+    // Look for entries with "Daily earned leave credit" in remarks
+    $earnedLogs = LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', $type)
+        ->where('year', $year)
         ->where('month', $month)
-        ->exists();
+        ->where('remarks', 'like', '%Daily earned leave credit%')
+        ->get();
     
-    if (!$creditsAdded) {
-        return null;
+    // Calculate total earned by summing the difference between balance_after and balance_before
+    $totalEarned = 0;
+    
+    foreach ($earnedLogs as $log) {
+        $earnedAmount = $log->balance_after - $log->balance_before;
+        $totalEarned += $earnedAmount;
     }
     
-    // Check employee status and import date
-    $employee = Employee::find($employeeId);
-    if (!$employee || $employee->status !== 'active') {
-        return 0;
-    }
-    
-    $importedAt = $employee->leaveCredit->imported_at ?? null;
-    
-    if ($importedAt && $targetDate->lt($importedAt->startOfMonth())) {
-        return null;
-    }
-    
-    return 1.25;
+    return $totalEarned;
 }
 
+
+private function getLeaveUsageFromLogs($employeeId, $type, $year, $month)
+{
+    // Get used leave from logs (positive points_deducted that are NOT earned credits)
+    $usedLogs = LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', $type)
+        ->where('year', $year)
+        ->where('month', $month)
+        ->where('points_deducted', '>', 0)
+        ->where('remarks', 'not like', '%Daily earned leave credit%')
+        ->get();
+    
+    return $usedLogs->sum('points_deducted');
+}
 
 private function getEmployeeLeaveRecordings($employeeId, $year)
 {
@@ -2828,16 +2824,19 @@ public function triggerDebugLog(Request $request)
  */
 private function getLateDeductions($employeeId, $year, $month)
 {
-    return LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', 'VL') // Late deductions affect VL balance
+    // Get late deductions (VL deductions with "late" in remarks)
+    $lateLogs = LeaveCreditLog::where('employee_id', $employeeId)
+        ->where('type', 'VL')
         ->where('year', $year)
         ->where('month', $month)
+        ->where('points_deducted', '>', 0)
         ->where(function($query) {
-            $query->where('remarks', 'like', '%Late%')
-                  ->orWhere('remarks', 'like', '%late%')
-                  ->orWhere('remarks', 'like', '%LATE%');
+            $query->where('remarks', 'like', '%late%')
+                  ->orWhere('remarks', 'like', '%Late%');
         })
-        ->sum('points_deducted');
+        ->get();
+    
+    return $lateLogs->sum('points_deducted');
 }
 /**
  * Get inclusive dates from leave requests (SL and VL only)
@@ -3509,62 +3508,139 @@ public function rejectRescheduleRequest(Request $request, $id)
 /**
  * Update original leave request with new dates
  */
+/**
+ * Update original leave request with new dates
+ */
 private function updateLeaveRequestDates($rescheduleRequest)
 {
+    DB::beginTransaction();
     try {
         $originalLeave = $rescheduleRequest->originalLeaveRequest;
         $dates = collect($rescheduleRequest->proposed_dates)->sort()->values();
         $dateFrom = $dates->first();
         $dateTo = $dates->last();
 
-        // Calculate working days (excluding weekends)
-        $workingDays = 0;
-        foreach ($dates as $date) {
-            $dateObj = new \DateTime($date);
-            $dayOfWeek = $dateObj->format('N');
-            if ($dayOfWeek < 6) { // 1-5 are weekdays
-                $workingDays++;
-            }
-        }
+        // Calculate working days
+        $workingDays = count($dates);
 
         // Store the original dates in reschedule history
-        $rescheduleHistory = array_merge(
-            json_decode($originalLeave->reschedule_history ?? '[]', true),
-            [
-                [
-                    'reschedule_id' => $rescheduleRequest->id,
-                    'original_dates' => [
-                        'date_from' => $originalLeave->date_from,
-                        'date_to' => $originalLeave->date_to,
-                        'total_days' => $originalLeave->total_days,
-                    ],
-                    'new_dates' => [
-                        'date_from' => $dateFrom,
-                        'date_to' => $dateTo,
-                        'total_days' => $workingDays,
-                    ],
-                    'rescheduled_at' => now()->toISOString(),
-                    'reason' => $rescheduleRequest->reason,
-                    'approved_by' => $rescheduleRequest->processed_by,
-                    'remarks' => $rescheduleRequest->hr_remarks
-                ]
-            ]
-        );
+        $rescheduleHistory = $this->buildRescheduleHistory($originalLeave, $rescheduleRequest, $dates, $workingDays);
 
-        // Update the original leave request
+        // ✅ CRITICAL: Set status to 'rescheduled' not 'approved'
         $originalLeave->update([
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
-            'total_days' => $workingDays,
-            'selected_dates' => json_encode($dates),
-            'reschedule_history' => json_encode($rescheduleHistory)
+            'selected_dates' => $dates->toArray(),
+            'reschedule_history' => $rescheduleHistory,
+            'status' => 'rescheduled', // ✅ THIS IS THE KEY FIX
+            'rescheduled_at' => now(),
         ]);
 
+        \Log::info("✅ Original leave request rescheduled", [
+            'leave_request_id' => $originalLeave->id,
+            'new_status' => 'rescheduled', // Should be 'rescheduled'
+            'reschedule_history_set' => !empty($rescheduleHistory),
+            'reschedule_history_count' => count($rescheduleHistory),
+        ]);
+
+        DB::commit();
+
     } catch (\Exception $e) {
-        \Log::error('Failed to update leave request dates: ' . $e->getMessage());
+        DB::rollback();
+        \Log::error('❌ Failed to update leave request dates: ' . $e->getMessage());
         throw $e;
     }
 }
+
+
+/**
+ * Check if a leave request has been rescheduled
+ */
+private function isRescheduledLeave($leaveRequest)
+{
+    // Check if it has reschedule history
+    if ($leaveRequest->reschedule_history && 
+        is_array($leaveRequest->reschedule_history) && 
+        count($leaveRequest->reschedule_history) > 0) {
+        return true;
+    }
+    
+    // Check if status is rescheduled
+    if ($leaveRequest->status === 'rescheduled') {
+        return true;
+    }
+    
+    // Check if it has approved reschedule requests
+    if ($leaveRequest->rescheduleRequests && 
+        $leaveRequest->rescheduleRequests->where('status', 'approved')->count() > 0) {
+        return true;
+    }
+    
+    return false;
+}
+/**
+ * Calculate working days from proposed dates (excluding weekends)
+ */
+
+
+/**
+ * Build reschedule history array
+ */
+/**
+ * Build reschedule history array
+ */
+private function buildRescheduleHistory($originalLeave, $rescheduleRequest, $dates, $workingDays)
+{
+    $dateFrom = $dates->first();
+    $dateTo = $dates->last();
+
+    $historyEntry = [
+        'reschedule_id' => $rescheduleRequest->id,
+        'original_dates' => [
+            'date_from' => $originalLeave->getOriginal('date_from'),
+            'date_to' => $originalLeave->getOriginal('date_to'),
+            'total_days' => count($originalLeave->getOriginal('selected_dates') ?? []), // ✅ Use selected_dates count
+        ],
+        'new_dates' => [
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'total_days' => $workingDays,
+        ],
+        'rescheduled_at' => now()->toISOString(),
+        'reason' => $rescheduleRequest->reason,
+        'approved_by' => $rescheduleRequest->processed_by,
+        'approver_role' => $rescheduleRequest->employee->user->role === 'dept_head' || $rescheduleRequest->employee->user->role === 'admin' ? 'hr' : 'dept_head',
+        'remarks' => $rescheduleRequest->hr_remarks ?? $rescheduleRequest->dept_head_remarks
+    ];
+
+    // Get existing history and append new entry
+    $existingHistory = $originalLeave->reschedule_history ?? [];
+    $existingHistory[] = $historyEntry;
+
+    return $existingHistory;
+}
+/**
+ * Update related approvals to reflect the rescheduled status
+ */
+private function updateRelatedApprovals($leaveRequest)
+{
+    // You can update approval remarks to mention rescheduling if needed
+    $approvals = $leaveRequest->approvals;
+    
+    foreach ($approvals as $approval) {
+        // Add reschedule note to the latest approval
+        if ($approval->approved_at && $approval->status === 'approved') {
+            $approval->update([
+                'remarks' => ($approval->remarks ?? '') . " [Leave was rescheduled on " . now()->format('M d, Y') . "]"
+            ]);
+        }
+    }
+}
+
+
+
+
+
 }
 
 

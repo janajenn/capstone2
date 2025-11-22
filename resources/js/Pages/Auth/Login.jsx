@@ -874,23 +874,38 @@ export default function Login({ status, canResetPassword }) {
                     </motion.div>
                 </motion.div>
 
-                {/* Footer Wave Effect */}
-                <div className="absolute bottom-0 left-0 w-full overflow-hidden">
-                    <svg className="relative block w-full h-24" viewBox="0 0 1420 100" preserveAspectRatio="none">
-                        <path
-                            fill={waveFill}
-                            d="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
-                        >
-                            <animate
-                                attributeName="d"
-                                values="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z; M0,0 C400,50 1020,250 1420,0 L1420,100 L0,100 Z; M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
-                                dur="10s"
-                                repeatCount="indefinite"
-                            />
-                        </path>
-                    </svg>
-                </div>
-            </div>
+               {/* Footer Wave Effect */}
+<div className="absolute bottom-0 left-0 w-full overflow-hidden">
+    <svg className="relative block w-full h-24" viewBox="0 0 1420 100" preserveAspectRatio="none">
+        <path
+            fill={waveFill}
+            d="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
+        >
+            <animate
+                attributeName="d"
+                values="M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z; M0,0 C400,50 1020,250 1420,0 L1420,100 L0,100 Z; M0,0 C200,150 1220,150 1420,0 L1420,100 L0,100 Z"
+                dur="10s"
+                repeatCount="indefinite"
+            />
+        </path>
+    </svg>
+</div>
+{/* Minimal Footer */}
+<motion.footer 
+    className={`absolute bottom-4 left-0 right-0 text-center ${subTextColor}`}
+    variants={itemVariants}
+    initial="hidden"
+    animate="visible"
+>
+    <div className="max-w-4xl mx-auto px-4">
+        <p className="opacity-70 whitespace-nowrap text-xs">
+            © 2025 DEBO Capstone Development Team — 
+            Programmer: Dela cruz, BJ | Technical Writer: Espanol, Jahna | Project Manager: Bete, Mark | System Analyst: Origines, Julie  
+        </p>
+    </div>
+</motion.footer>
+</div> {/* This closes the main container */}
+          
         </GuestLayout>
     );
 }

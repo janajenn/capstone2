@@ -72,6 +72,7 @@ export default function AdminNotificationDropdown() {
             }
         }
     };
+    
 
     const markAsRead = async (notificationId) => {
         try {
@@ -135,7 +136,35 @@ export default function AdminNotificationDropdown() {
         }
     };
 
-    // ... keep existing useEffect hooks and helper functions ...
+   // Add these useEffect hooks after your state declarations
+useEffect(() => {
+    fetchNotifications();
+    fetchUnreadCount();
+    
+    // Set up polling for real-time updates
+    const interval = setInterval(fetchUnreadCount, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(interval);
+}, []);
+
+useEffect(() => {
+    // Play sound when new notifications arrive
+    if (unreadCount > previousUnreadCount && audioRef.current) {
+        audioRef.current.play().catch(e => console.log('Audio play failed:', e));
+    }
+    setPreviousUnreadCount(unreadCount);
+}, [unreadCount]);
+
+useEffect(() => {
+    const handleClickOutside = (event) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+            setIsOpen(false);
+        }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+}, []);
 
     const formatTime = (dateString) => {
         const date = new Date(dateString);

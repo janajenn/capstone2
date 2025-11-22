@@ -1,6 +1,7 @@
 // resources/js/Components/HRNotificationDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell } from 'lucide-react';
+import { router } from '@inertiajs/react'; // ADD THIS IMPORT
 
 export default function HRNotificationDropdown() {
     const [isOpen, setIsOpen] = useState(false);
@@ -9,6 +10,20 @@ export default function HRNotificationDropdown() {
     const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
     const dropdownRef = useRef(null);
     const audioRef = useRef(null);
+
+    // Add the missing playNotificationSound function
+    const playNotificationSound = () => {
+        if (audioRef.current) {
+            // Reset the audio to beginning in case it's already playing
+            audioRef.current.currentTime = 0;
+            
+            // Play the sound with error handling
+            audioRef.current.play().catch(error => {
+                console.warn('Failed to play notification sound:', error);
+                // This is normal in some browsers if the user hasn't interacted with the page first
+            });
+        }
+    };
 
     const fetchNotifications = async () => {
         try {
@@ -49,6 +64,30 @@ export default function HRNotificationDropdown() {
         }
     };
 
+    // NEW: Handle notification click
+    const handleNotificationClick = async (notification) => {
+        try {
+            // Close dropdown first
+            setIsOpen(false);
+    
+            // Mark as read via API (optional - you can also rely on the redirect endpoint to mark as read)
+            if (!notification.is_read) {
+                await markAsRead(notification.id);
+            }
+    
+            // Use Inertia to handle the redirect via the new click route - FIXED ROUTE
+            router.visit(`/hr/notifications/${notification.id}/click`);
+            
+        } catch (error) {
+            console.error('Error handling notification click:', error);
+            
+            // Fallback: try to redirect directly if the click route fails
+            if (notification.redirect_url) {
+                router.visit(notification.redirect_url);
+            }
+        }
+    };
+
     const markAsRead = async (notificationId) => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -82,62 +121,59 @@ export default function HRNotificationDropdown() {
         }
     };
 
-    // In HRNotificationDropdown.jsx - FIXED VERSION
-const markAllAsRead = async () => {
-    try {
-        // Get CSRF token properly
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-        
-        if (!csrfToken) {
-            console.error('CSRF token not found');
-            return;
-        }
+    const markAllAsRead = async () => {
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            
+            if (!csrfToken) {
+                console.error('CSRF token not found');
+                return;
+            }
 
-        console.log('Making mark all as read request with CSRF token:', csrfToken ? 'Found' : 'Missing');
+            console.log('Making mark all as read request with CSRF token:', csrfToken ? 'Found' : 'Missing');
 
-        const response = await fetch('/hr/notifications/mark-all-read', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrfToken,
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            credentials: 'include', // Important: use 'include' not 'same-origin'
-        });
-        
-        console.log('Response status:', response.status);
-        
-        if (response.status === 419) {
-            console.log('CSRF token invalid - reloading page');
-            window.location.reload();
-            return;
+            const response = await fetch('/hr/notifications/mark-all-read', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'include',
+            });
+            
+            console.log('Response status:', response.status);
+            
+            if (response.status === 419) {
+                console.log('CSRF token invalid - reloading page');
+                window.location.reload();
+                return;
+            }
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Response error:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+            
+            const data = await response.json();
+            console.log('Mark all as read response:', data);
+            
+            if (data.success) {
+                setUnreadCount(0);
+                setNotifications(prev => 
+                    prev.map(notif => ({ ...notif, is_read: true, read_at: new Date().toISOString() }))
+                );
+                setPreviousUnreadCount(0);
+            }
+        } catch (error) {
+            console.error('Error marking all HR notifications as read:', error);
+            
+            if (error.message.includes('419')) {
+                window.location.reload();
+            }
         }
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Response error:', errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-        
-        const data = await response.json();
-        console.log('Mark all as read response:', data);
-        
-        if (data.success) {
-            setUnreadCount(0);
-            setNotifications(prev => 
-                prev.map(notif => ({ ...notif, is_read: true, read_at: new Date().toISOString() }))
-            );
-            setPreviousUnreadCount(0);
-        }
-    } catch (error) {
-        console.error('Error marking all HR notifications as read:', error);
-        
-        // If it's a 419 error, reload the page
-        if (error.message.includes('419')) {
-            window.location.reload();
-        }
-    }
-};
+    };
 
     useEffect(() => {
         fetchUnreadCount();
@@ -212,8 +248,10 @@ const markAllAsRead = async () => {
                 )}
             </button>
 
+            {/* Audio element for notification sound */}
             <audio ref={audioRef} preload="auto">
                 <source src="/sounds/mixkit-bell-notification-933.wav" type="audio/wav" />
+                Your browser does not support the audio element.
             </audio>
 
             {isOpen && (
@@ -242,10 +280,10 @@ const markAllAsRead = async () => {
                             notifications.map((notification) => (
                                 <div
                                     key={notification.id}
-                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors group ${
                                         !notification.is_read ? 'bg-blue-50' : ''
                                     }`}
-                                    onClick={() => markAsRead(notification.id)}
+                                    onClick={() => handleNotificationClick(notification)} // CHANGED THIS
                                 >
                                     <div className="flex items-start space-x-3">
                                         <div className="text-2xl">
@@ -267,6 +305,10 @@ const markAllAsRead = async () => {
                                             }`}>
                                                 {notification.message}
                                             </p>
+                                            {/* ADD REDIRECT HINT */}
+                                            <div className="mt-1 flex items-center text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span>Click to view →</span>
+                                            </div>
                                             {!notification.is_read && (
                                                 <div className="mt-2">
                                                     <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>

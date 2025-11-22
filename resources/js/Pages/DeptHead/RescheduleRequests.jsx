@@ -48,14 +48,42 @@ const getStatusText = (status) => {
   }
 };
 
-export default function RescheduleRequests({ rescheduleRequests, departmentName, pendingCount, flash }) {
+export default function RescheduleRequests({ rescheduleRequests, departmentName, pendingCount, flash, filters }) {
   const { props } = usePage();
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [rejectRemarks, setRejectRemarks] = useState('');
   const [rejectingId, setRejectingId] = useState(null);
+  const [activeTab, setActiveTab] = useState(filters?.status || 'pending');
 
   const { post } = useForm();
+
+  // Update URL when tab changes
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeTab === 'pending') {
+      url.searchParams.delete('status');
+    } else {
+      url.searchParams.set('status', activeTab);
+    }
+    router.visit(url.toString(), { preserveState: true, preserveScroll: true });
+  }, [activeTab]);
+
+  // Filter requests based on active tab (now handled by backend)
+  const filteredRequests = useMemo(() => {
+    return rescheduleRequests.data || [];
+  }, [rescheduleRequests.data]);
+
+  // Count requests by status (for tab badges)
+  const requestCounts = useMemo(() => {
+    if (!rescheduleRequests.data) return { pending: 0, approved: 0, rejected: 0 };
+    
+    return {
+      pending: rescheduleRequests.data.filter(request => request.status === 'pending_dept_head').length,
+      approved: rescheduleRequests.data.filter(request => request.status === 'approved').length,
+      rejected: rescheduleRequests.data.filter(request => request.status === 'rejected').length,
+    };
+  }, [rescheduleRequests.data]);
 
   const handleViewDetails = (request) => {
     setSelectedRequest(request);
@@ -165,6 +193,13 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
     setRejectRemarks('');
   };
 
+  // Tab configuration
+  const tabs = [
+    { id: 'pending', name: 'Pending', count: requestCounts.pending, color: 'yellow' },
+    { id: 'approved', name: 'Approved', count: requestCounts.approved, color: 'green' },
+    { id: 'rejected', name: 'Rejected', count: requestCounts.rejected, color: 'red' },
+  ];
+
   return (
     <DeptHeadLayout>
       <Head title="Reschedule Requests" />
@@ -229,6 +264,42 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
           </div>
         )}
 
+        {/* Tabs Navigation */}
+        <div className="mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`
+                    whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-all duration-200
+                    ${activeTab === tab.id
+                      ? `border-${tab.color}-500 text-${tab.color}-600`
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }
+                  `}
+                >
+                  {tab.name}
+                  {tab.count > 0 && (
+                    <span
+                      className={`
+                        ml-2 py-0.5 px-2 text-xs rounded-full font-semibold
+                        ${activeTab === tab.id
+                          ? `bg-${tab.color}-100 text-${tab.color}-800`
+                          : 'bg-gray-100 text-gray-600'
+                        }
+                      `}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+
         {/* Reschedule Requests Table */}
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden border border-white/20">
           <div className="overflow-x-auto">
@@ -259,8 +330,8 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
                 </tr>
               </thead>
               <tbody className="bg-white/50 divide-y divide-gray-200/30">
-                {rescheduleRequests.data && rescheduleRequests.data.length > 0 ? (
-                  rescheduleRequests.data.map((request) => (
+                {filteredRequests.length > 0 ? (
+                  filteredRequests.map((request) => (
                     <tr key={request.id} className="hover:bg-yellow-50/30 transition-all duration-300 group">
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="flex items-center">
@@ -317,40 +388,84 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(request.status)}`}>
                           {getStatusText(request.status)}
                         </span>
+                        {request.dept_head_reviewed_at && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {formatDateTime(request.dept_head_reviewed_at)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-8 py-6 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
                           {formatDate(request.submitted_at)}
                         </div>
                       </td>
+                      
+                      {/* Actions Column for All Tabs */}
                       <td className="px-8 py-6 whitespace-nowrap text-right text-sm font-medium">
-                        {rejectingId === request.id ? (
-                          <div className="space-y-4 bg-red-50/50 p-4 rounded-xl border border-red-200">
-                            <textarea
-                              value={rejectRemarks}
-                              onChange={(e) => setRejectRemarks(e.target.value)}
-                              className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
-                              placeholder="Enter rejection reason (required)"
-                              rows={3}
-                              required
-                            />
-                            <div className="flex space-x-3 justify-end">
+                        {/* Pending Requests - Full Actions */}
+                        {request.status === 'pending_dept_head' && (
+                          rejectingId === request.id ? (
+                            <div className="space-y-4 bg-red-50/50 p-4 rounded-xl border border-red-200">
+                              <textarea
+                                value={rejectRemarks}
+                                onChange={(e) => setRejectRemarks(e.target.value)}
+                                className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all"
+                                placeholder="Enter rejection reason (required)"
+                                rows={3}
+                                required
+                              />
+                              <div className="flex space-x-3 justify-end">
+                                <button
+                                  onClick={() => handleReject(request.id)}
+                                  className="px-6 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl hover:shadow-lg transition-all duration-300 font-medium"
+                                >
+                                  Confirm Reject
+                                </button>
+                                <button
+                                  onClick={cancelReject}
+                                  className="px-6 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:shadow-lg transition-all duration-300 font-medium"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end space-x-4">
                               <button
-                                onClick={() => handleReject(request.id)}
-                                className="px-6 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl hover:shadow-lg transition-all duration-300 font-medium"
+                                onClick={() => handleViewDetails(request)}
+                                className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white px-6 py-2 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center font-medium"
                               >
-                                Confirm Reject
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2 15.5v-11a2 2 0 012-2h16a2 2 0 012 2v11a2 2 0 01-2 2H4a2 2 0 01-2-2z" />
+                                </svg>
+                                View Details
                               </button>
                               <button
-                                onClick={cancelReject}
-                                className="px-6 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-xl hover:shadow-lg transition-all duration-300 font-medium"
+                                onClick={() => handleApprove(request.id)}
+                                className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center font-medium"
                               >
-                                Cancel
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => startReject(request.id)}
+                                className="bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 py-2 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center font-medium"
+                              >
+                                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Reject
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end space-x-4">
+                          )
+                        )}
+
+                        {/* Approved/Rejected Requests - View Details Only */}
+                        {(request.status === 'approved' || request.status === 'rejected') && (
+                          <div className="flex items-center justify-end">
                             <button
                               onClick={() => handleViewDetails(request)}
                               className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white px-6 py-2 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center font-medium"
@@ -361,24 +476,6 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
                               </svg>
                               View Details
                             </button>
-                            <button
-                              onClick={() => handleApprove(request.id)}
-                              className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center font-medium"
-                            >
-                              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => startReject(request.id)}
-                              className="bg-gradient-to-r from-red-500 to-rose-600 text-white px-6 py-2 rounded-xl hover:shadow-lg transition-all duration-300 transform hover:scale-105 flex items-center font-medium"
-                            >
-                              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                              Reject
-                            </button>
                           </div>
                         )}
                       </td>
@@ -386,16 +483,28 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="7" className="px-8 py-16 text-center">
+                    <td colSpan={7} className="px-8 py-16 text-center">
                       <div className="flex flex-col items-center">
                         <div className="p-4 rounded-2xl bg-gradient-to-r from-yellow-100 to-amber-100 mb-4">
                           <svg className="h-16 w-16 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                         </div>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-2">No reschedule requests found</h3>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                          {activeTab === 'pending' 
+                            ? 'No pending reschedule requests'
+                            : activeTab === 'approved'
+                            ? 'No approved reschedule requests'
+                            : 'No rejected reschedule requests'
+                          }
+                        </h3>
                         <p className="text-gray-600 text-sm">
-                          There are no pending reschedule requests requiring your approval at the moment.
+                          {activeTab === 'pending'
+                            ? 'There are no pending reschedule requests requiring your approval at the moment.'
+                            : activeTab === 'approved'
+                            ? 'No reschedule requests have been approved yet.'
+                            : 'No reschedule requests have been rejected yet.'
+                          }
                         </p>
                       </div>
                     </td>
@@ -546,6 +655,17 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
                           )}
                         </div>
                       )}
+                      {selectedRequest.dept_head_reviewed_at && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-blue-700">
+                            {selectedRequest.status === 'approved' ? 'Dept Head Approved' : 'Dept Head Rejected'}
+                          </span>
+                          <span className="text-sm text-gray-900 font-semibold">{formatDateTime(selectedRequest.dept_head_reviewed_at)}</span>
+                          {selectedRequest.dept_head_approver && (
+                            <span className="text-xs text-gray-500">by {selectedRequest.dept_head_approver.name}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -638,36 +758,64 @@ export default function RescheduleRequests({ rescheduleRequests, departmentName,
                     </div>
                   </div>
                 )}
+
+                {/* Dept Head Remarks */}
+                {selectedRequest.dept_head_remarks && (
+                  <div className="bg-white rounded-2xl p-6 border border-amber-200 shadow-sm">
+                    <h3 className="text-lg font-semibold text-amber-900 mb-4">Your Remarks</h3>
+                    <div className="bg-amber-50 rounded-xl p-4 border border-amber-100">
+                      <p className="text-gray-700 leading-relaxed">
+                        {selectedRequest.dept_head_remarks}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Footer Actions */}
-              <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 rounded-b-3xl shrink-0">
-                <div className="flex justify-end space-x-4">
-                  <button
-                    onClick={() => {
-                      handleApprove(selectedRequest.id);
-                      handleCloseModal();
-                    }}
-                    className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-                  >
-                    Approve Request
-                  </button>
-                  <button
-                    onClick={() => {
-                      startReject(selectedRequest.id);
-                    }}
-                    className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                  >
-                    Reject Request
-                  </button>
-                  <button
-                    onClick={handleCloseModal}
-                    className="px-8 py-3 bg-gray-600 text-white font-semibold rounded-xl shadow-lg hover:bg-gray-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-                  >
-                    Close
-                  </button>
+              {/* Footer Actions - Only show for pending requests */}
+              {selectedRequest.status === 'pending_dept_head' && (
+                <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 rounded-b-3xl shrink-0">
+                  <div className="flex justify-end space-x-4">
+                    <button
+                      onClick={() => {
+                        handleApprove(selectedRequest.id);
+                        handleCloseModal();
+                      }}
+                      className="px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                    >
+                      Approve Request
+                    </button>
+                    <button
+                      onClick={() => {
+                        startReject(selectedRequest.id);
+                      }}
+                      className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                    >
+                      Reject Request
+                    </button>
+                    <button
+                      onClick={handleCloseModal}
+                      className="px-8 py-3 bg-gray-600 text-white font-semibold rounded-xl shadow-lg hover:bg-gray-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Close button only for approved/rejected requests */}
+              {(selectedRequest.status === 'approved' || selectedRequest.status === 'rejected') && (
+                <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 rounded-b-3xl shrink-0">
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleCloseModal}
+                      className="px-8 py-3 bg-gray-600 text-white font-semibold rounded-xl shadow-lg hover:bg-gray-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

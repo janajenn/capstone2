@@ -99,13 +99,16 @@ Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
         // Real-time Updates
         Route::get('/updated-requests', [AdminController::class, 'getUpdatedRequests'])->name('admin.updated-requests');
         
+
+        // ✅ PUT THIS BEFORE the generic /notifications route
+Route::get('/notifications/{id}/click', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'handleClick'])->name('admin.notifications.click');
+
         // Notification Routes
         Route::get('/notifications', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'index'])->name('admin.notifications');
         Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAsRead'])->name('admin.notifications.mark-read');
         Route::post('/notifications/mark-all-read', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'markAllAsRead'])->name('admin.notifications.mark-all-read');
         Route::get('/notifications/unread-count', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'getUnreadCount'])->name('admin.notifications.unread-count');
         // ✅ ADD THIS: Notification Click Route for Redirecting
-        Route::get('/notifications/{id}/click', [\App\Http\Controllers\Admin\AdminNotificationController::class, 'handleClick'])->name('admin.notifications.click');
 
 
         Route::get('/debug-routes', function() {
@@ -196,6 +199,8 @@ Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'
 
 
 
+
+
 // Leave Form Demo Route (for testing)
 Route::get('/leave-form-demo', function() {
     return Inertia::render('LeaveFormDemo');
@@ -264,11 +269,12 @@ Route::delete('/holidays/{holiday}', [HRController::class, 'destroyHoliday'])->n
 Route::get('/holiday-dates', [HRController::class, 'getHolidayDates'])->name('holiday.dates');
 
 
-     //notification routes - FIXED: Add /hr prefix
-     Route::get('/hr/notifications', [\App\Http\Controllers\HR\HRNotificationController::class, 'index'])->name('hr.notifications');
-     Route::post('/hr/notifications/{id}/mark-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAsRead'])->name('hr.notifications.mark-read');
-     Route::post('/hr/notifications/mark-all-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark-all-read');
-     Route::get('/hr/notifications/unread-count', [\App\Http\Controllers\HR\HRNotificationController::class, 'getUnreadCount'])->name('hr.notifications.unread-count');
+    // HR Notification Routes - FIXED
+Route::get('/hr/notifications', [\App\Http\Controllers\HR\HRNotificationController::class, 'index'])->name('hr.notifications');
+Route::post('/hr/notifications/{id}/mark-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAsRead'])->name('hr.notifications.mark-read');
+Route::post('/hr/notifications/mark-all-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark-all-read');
+Route::get('/hr/notifications/unread-count', [\App\Http\Controllers\HR\HRNotificationController::class, 'getUnreadCount'])->name('hr.notifications.unread-count');
+Route::get('/hr/notifications/{id}/click', [\App\Http\Controllers\HR\HRNotificationController::class, 'handleClick'])->name('hr.notifications.click'); // ADD /hr prefix
 
 
 
@@ -332,13 +338,14 @@ Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduc
 
     //notification routes
 
-   //notification routes - FIXED: Add /dept-head prefix
-   Route::get('/dept-head/notifications', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'index'])->name('dept-head.notifications');
-   Route::post('/dept-head/notifications/{id}/mark-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAsRead'])->name('dept-head.notifications.mark-read');
-   Route::post('/dept-head/notifications/mark-all-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAllAsRead'])->name('dept-head.notifications.mark-all-read');
-   Route::get('/dept-head/notifications/unread-count', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'getUnreadCount'])->name('dept-head.notifications.unread-count');
-   Route::get('/employees/{employee_id}/leave-credits', [DeptHeadController::class, 'showEmployeeLeaveCredits'])->name('employees.leave-credits');
-
+   // Department Head Notification Routes
+Route::prefix('dept-head')->group(function () {
+    Route::get('/notifications', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'index'])->name('dept-head.notifications');
+    Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAsRead'])->name('dept-head.notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'markAllAsRead'])->name('dept-head.notifications.mark-all-read');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'getUnreadCount'])->name('dept-head.notifications.unread-count');
+    Route::get('/notifications/{id}/click', [\App\Http\Controllers\DeptHead\DeptHeadNotificationController::class, 'handleClick'])->name('dept-head.notifications.click'); // ADD THIS LINE
+});
 
    // Add these to your existing dept_head routes
 Route::get('/dept-head/credit-conversions', [DeptHeadController::class, 'creditConversions'])->name('dept_head.credit-conversions');
@@ -399,10 +406,12 @@ Route::get('/dept-head/attendance-corrections/{id}/view-proof', [DeptHeadControl
         Route::get('/employee/credit-conversions', [EmployeeController::class, 'myCreditConversions'])->name('employee.credit-conversions');
         
         // Notification Routes
-        Route::get('/employee/notifications', [\App\Http\Controllers\Employee\NotificationController::class, 'index'])->name('employee.notifications');
-        Route::post('/employee/notifications/{id}/read', [\App\Http\Controllers\Employee\NotificationController::class, 'markAsRead'])->name('employee.notifications.read');
-        Route::post('/employee/notifications/read-all', [\App\Http\Controllers\Employee\NotificationController::class, 'markAllAsRead'])->name('employee.notifications.read-all');
-        Route::get('/employee/notifications/unread-count', [\App\Http\Controllers\Employee\NotificationController::class, 'getUnreadCount'])->name('employee.notifications.unread-count');
+// Notification Routes - FIXED VERSION
+Route::get('/employee/notifications', [\App\Http\Controllers\Employee\NotificationController::class, 'index'])->name('employee.notifications');
+Route::post('/employee/notifications/{id}/mark-read', [\App\Http\Controllers\Employee\NotificationController::class, 'markAsRead'])->name('employee.notifications.mark-read'); // CHANGED FROM 'read' TO 'mark-read'
+Route::post('/employee/notifications/mark-all-read', [\App\Http\Controllers\Employee\NotificationController::class, 'markAllAsRead'])->name('employee.notifications.mark-all-read'); // CHANGED FROM 'read-all' TO 'mark-all-read'
+Route::get('/employee/notifications/unread-count', [\App\Http\Controllers\Employee\NotificationController::class, 'getUnreadCount'])->name('employee.notifications.unread-count');
+Route::get('/employee/notifications/{id}/click', [\App\Http\Controllers\Employee\NotificationController::class, 'handleClick'])->name('employee.notifications.click');
         
         // Debug route (remove in production)
         Route::get('/employee/debug', [EmployeeController::class, 'debugUserEmployee'])->name('employee.debug');
@@ -445,6 +454,8 @@ Route::get('/employee/attendance-corrections/{id}/download-proof', [AttendanceCo
 // Replace the download route with this:
 Route::get('/attendance-corrections/{id}/view-proof', [AttendanceCorrectionController::class, 'viewProofImage'])->name('attendance-corrections.view-proof');
         
+
+Route::get('/employee/credits-log', [EmployeeController::class, 'creditsLog'])->name('employee.credits-log');
         // Debug route to check attendance logs
         Route::get('/employee/debug-attendance', function() {
             $user = auth()->user();

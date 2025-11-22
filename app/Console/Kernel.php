@@ -12,18 +12,18 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // // FOR TESTING - Run every minute
-        // $schedule->command('leave:daily-earn')
-        //          ->everyMinute()
-        //          ->withoutOverlapping()
-        //          ->appendOutputTo(storage_path('logs/leave-credits.log'));
-
-        //FOR PRODUCTION - Run daily at midnight
+        // FOR TESTING - Run every minute
         $schedule->command('leave:daily-earn')
-                 ->dailyAt('00:00')
-                 ->timezone('Asia/Manila')
+                 ->everyMinute()
                  ->withoutOverlapping()
                  ->appendOutputTo(storage_path('logs/leave-credits.log'));
+
+        // //FOR PRODUCTION - Run daily at midnight
+        // $schedule->command('leave:daily-earn')
+        //          ->dailyAt('00:00')
+        //          ->timezone('Asia/Manila')
+        //          ->withoutOverlapping()
+        //          ->appendOutputTo(storage_path('logs/leave-credits.log'));
     }
 
     /**

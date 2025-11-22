@@ -1,6 +1,7 @@
 import DeptHeadLayout from '@/Layouts/DeptHeadLayout';
 import { useForm, usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 
 const getStatusColor = (status) => {
   switch (status) {
@@ -32,18 +33,48 @@ export default function ShowLeaveRequest() {
     remarks: '',
   });
 
-  const handleApprove = () => {
-    if (confirm('Are you sure you want to approve this leave request?')) {
+  const handleApprove = async () => {
+    const result = await Swal.fire({
+      title: 'Approve Leave Request?',
+      text: 'Are you sure you want to approve this leave request?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Approve!',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (result.isConfirmed) {
       post(route('dept_head.leave-requests.approve', leaveRequest.id));
     }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!data.remarks.trim()) {
-      alert('Please provide rejection remarks.');
+      await Swal.fire({
+        title: 'Remarks Required',
+        text: 'Please provide rejection remarks.',
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+      });
       return;
     }
-    post(route('dept_head.leave-requests.reject', leaveRequest.id));
+
+    const result = await Swal.fire({
+      title: 'Reject Leave Request?',
+      text: 'Are you sure you want to reject this leave request?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Reject!',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (result.isConfirmed) {
+      post(route('dept_head.leave-requests.reject', leaveRequest.id));
+    }
   };
 
   const calculateTotalDays = () => {
@@ -251,7 +282,7 @@ export default function ShowLeaveRequest() {
           </div>
 
           {/* Actions */}
-          {leaveRequest.status === 'pending' && (
+          {leaveRequest.status === 'pending_dept_head' && (
             <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
               <h2 className="text-xl font-semibold text-gray-800 mb-4">Manage Request</h2>
               <div className="space-y-3">

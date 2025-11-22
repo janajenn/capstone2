@@ -230,15 +230,16 @@ export default function WelcomePage() {
             }}
         >
             {/* Animated Background Gradient */}
-            <motion.div
-                className="absolute inset-0"
-                variants={backgroundVariants}
-                animate="animate"
-                style={{
-                    background: animatedBg,
-                    backgroundSize: '200% 200%',
-                }}
-            />
+            {/* Animated Background Gradient */}
+<motion.div
+    className="absolute inset-0"
+    variants={backgroundVariants}
+    animate="animate"
+    style={{
+        backgroundImage: animatedBg,
+        backgroundSize: '200% 200%',
+    }}
+/>
 
             {/* Festive Particles and Twinkling Lights */}
             <div style={particleStyles}>

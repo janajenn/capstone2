@@ -1,6 +1,7 @@
 // resources/js/Components/DeptHeadNotificationDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell } from 'lucide-react';
+import { router } from '@inertiajs/react'; // ADD THIS IMPORT
 
 export default function DeptHeadNotificationDropdown() {
     const [isOpen, setIsOpen] = useState(false);
@@ -13,7 +14,7 @@ export default function DeptHeadNotificationDropdown() {
     const fetchNotifications = async () => {
         try {
             const response = await fetch('/dept-head/notifications', {
-                credentials: 'include', // Changed from 'same-origin'
+                credentials: 'include',
             });
             
             if (!response.ok) {
@@ -32,7 +33,7 @@ export default function DeptHeadNotificationDropdown() {
     const fetchUnreadCount = async () => {
         try {
             const response = await fetch('/dept-head/notifications/unread-count', {
-                credentials: 'include', // Changed from 'same-origin'
+                credentials: 'include',
             });
             
             if (!response.ok) {
@@ -46,6 +47,30 @@ export default function DeptHeadNotificationDropdown() {
             }
         } catch (error) {
             console.error('Error fetching Dept Head unread count:', error);
+        }
+    };
+
+    // NEW: Handle notification click
+    const handleNotificationClick = async (notification) => {
+        try {
+            // Close dropdown first
+            setIsOpen(false);
+    
+            // Mark as read via API
+            if (!notification.is_read) {
+                await markAsRead(notification.id);
+            }
+    
+            // Use Inertia to handle the redirect via the click route
+            router.visit(`/dept-head/notifications/${notification.id}/click`);
+            
+        } catch (error) {
+            console.error('Error handling notification click:', error);
+            
+            // Fallback: try to redirect directly if the click route fails
+            if (notification.redirect_url) {
+                router.visit(notification.redirect_url);
+            }
         }
     };
 
@@ -63,9 +88,9 @@ export default function DeptHeadNotificationDropdown() {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest', // Added this
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
-                credentials: 'include', // Changed from 'same-origin'
+                credentials: 'include',
             });
             
             if (response.status === 419) {
@@ -111,10 +136,10 @@ export default function DeptHeadNotificationDropdown() {
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest', // Added this
-                    'Accept': 'application/json', // Added this
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
                 },
-                credentials: 'include', // Changed from 'same-origin'
+                credentials: 'include',
             });
             
             console.log('Mark all read response status:', response.status);
@@ -209,6 +234,8 @@ export default function DeptHeadNotificationDropdown() {
                 return '📅';
             case 'leave_recall':
                 return '↩️';
+            case 'attendance_correction':
+                return '⏰';
             default:
                 return '🔔';
         }
@@ -246,24 +273,6 @@ export default function DeptHeadNotificationDropdown() {
                                     Mark all as read
                                 </button>
                             )}
-                            {/* Add debug buttons like the employee version */}
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        const response = await fetch('/dept-head/test-csrf', {
-                                            credentials: 'include'
-                                        });
-                                        const data = await response.json();
-                                        console.log('CSRF Test:', data);
-                                    } catch (error) {
-                                        console.error('CSRF Test Error:', error);
-                                    }
-                                }}
-                                className="text-xs text-gray-500 hover:text-gray-700"
-                                title="Test CSRF"
-                            >
-                                🔒
-                            </button>
                         </div>
                     </div>
 
@@ -277,10 +286,10 @@ export default function DeptHeadNotificationDropdown() {
                             notifications.map((notification) => (
                                 <div
                                     key={notification.id}
-                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors group ${
                                         !notification.is_read ? 'bg-blue-50' : ''
                                     }`}
-                                    onClick={() => markAsRead(notification.id)}
+                                    onClick={() => handleNotificationClick(notification)} // CHANGED THIS
                                 >
                                     <div className="flex items-start space-x-3">
                                         <div className="text-2xl">
@@ -302,6 +311,10 @@ export default function DeptHeadNotificationDropdown() {
                                             }`}>
                                                 {notification.message}
                                             </p>
+                                            {/* ADD REDIRECT HINT */}
+                                            <div className="mt-1 flex items-center text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span>Click to view →</span>
+                                            </div>
                                             {!notification.is_read && (
                                                 <div className="mt-2">
                                                     <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>

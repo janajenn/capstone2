@@ -1,6 +1,7 @@
 import HRLayout from '@/Layouts/HRLayout';
 import { useForm, usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 
 const getStatusColor = (status) => {
   switch (status) {
@@ -51,18 +52,48 @@ export default function ShowLeaveRequest() {
     remarks: '',
   });
 
-  const handleApprove = () => {
-    if (confirm('Are you sure you want to approve this leave request?')) {
+  const handleApprove = async () => {
+    const result = await Swal.fire({
+      title: 'Approve Leave Request?',
+      text: 'Are you sure you want to approve this leave request?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Approve!',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (result.isConfirmed) {
       post(`/hr/leave-requests/${leaveRequest.id}/approve`);
     }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!data.remarks.trim()) {
-      alert('Please provide rejection remarks.');
+      await Swal.fire({
+        title: 'Remarks Required',
+        text: 'Please provide rejection remarks.',
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+      });
       return;
     }
-    post(`/hr/leave-requests/${leaveRequest.id}/reject`);
+
+    const result = await Swal.fire({
+      title: 'Reject Leave Request?',
+      text: 'Are you sure you want to reject this leave request?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, Reject!',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (result.isConfirmed) {
+      post(`/hr/leave-requests/${leaveRequest.id}/reject`);
+    }
   };
 
   // Calculate total calendar days

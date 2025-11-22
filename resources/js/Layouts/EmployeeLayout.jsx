@@ -84,7 +84,8 @@ export default function EmployeeLayout({ children }) {
         { href: '/employee/credit-conversion', label: 'Credit Conversion', icon: CreditCardIcon },
         { href: '/employee/credit-conversions', label: 'Conversion History', icon: ClockIcon },
         { href: '/employee/attendance-logs', label: 'Attendance Logs', icon: ChartBarIcon },
-        { href: '/employee/leave-balances', label: 'Leave Balances', icon: ChartBarIcon },
+        { href: '/employee/credits-log', label: 'Credits Log', icon: ClipboardDocumentListIcon }, // Changed icon
+        { href: '/employee/leave-balances', label: 'Leave Balances', icon: CreditCardIcon }, // Changed icon
     ];
 
     return (
@@ -330,6 +331,8 @@ function getEmployeePageTitle(url) {
         '/employee/leave-calendar': 'Leave Calendar',
         '/employee/credit-conversion': 'Credit Conversion',
         '/employee/credit-conversions': 'Conversion History',
+        '/employee/credits-log': 'Credits Log', // Add this line
+
         '/employee/attendance-logs': 'Attendance Logs',
         '/employee/leave-balances': 'Leave Balances'
     };

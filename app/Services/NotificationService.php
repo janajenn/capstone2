@@ -1394,48 +1394,44 @@ public function notifyAttendanceCorrectionReview(\App\Models\AttendanceCorrectio
 }
 
 public function generateRedirectUrl($type, $data, $currentMode = 'admin')
-    {
-        $baseUrl = $currentMode === 'admin' ? '/admin' : '/employee';
-        
-        switch ($type) {
-            case 'leave_request':
-            case 'leave_request_submission':
-                if (isset($data['request_id'])) {
-                    return route('admin.leave-requests.show', ['id' => $data['request_id']]);
-                }
-                return route('admin.leave-requests.index');
-                
-            case 'credit_conversion':
-            case 'credit_conversion_submission':
-                if (isset($data['conversion_id'])) {
-                    return route('admin.credit-conversions.show', ['id' => $data['conversion_id']]);
-                }
-                return route('admin.credit-conversions');
-                
-            case 'attendance_correction_pending_review':
-            case 'attendance_correction_submitted':
-            case 'attendance_correction_reviewed':
-                if (isset($data['correction_id'])) {
-                    // If you have an attendance corrections route, use it here
-                    // return route('admin.attendance-corrections.show', ['id' => $data['correction_id']]);
-                    return route('admin.dashboard'); // Fallback for now
-                }
-                return route('admin.dashboard');
-                
-            case 'leave_recall':
-                if (isset($data['request_id'])) {
-                    return route('admin.leave-requests.show', ['id' => $data['request_id']]);
-                }
-                return route('admin.leave-requests.index');
-                
-            case 'dept_head_request':
-                return route('admin.leave-requests.index');
-                
-            default:
-                return route('admin.dashboard');
-        }
-    }
+{
+    // Set base URL based on current mode
+    $baseUrl = match($currentMode) {
+        'admin' => '/admin',
+        'hr' => '/hr', 
+        'dept_head' => '/dept-head',
+        'employee' => '/employee',
+        default => '/employee'
+    };
+    
+    switch ($type) {
+        case 'leave_request':
+        case 'leave_request_submission':
+        case 'leave_recall':
+            if (isset($data['request_id'])) {
+                // ✅ FIXED: Use correct admin leave requests route
+                return "{$baseUrl}/leave-requests?highlight={$data['request_id']}";
+            }
+            return "{$baseUrl}/leave-requests";
 
+        case 'credit_conversion':
+        case 'credit_conversion_submission':
+            if (isset($data['conversion_id'])) {
+                // ✅ FIXED: Use correct admin credit conversions route  
+                return "{$baseUrl}/credit-conversions?highlight={$data['conversion_id']}";
+            }
+            return "{$baseUrl}/credit-conversions";
+
+        case 'attendance_correction_pending_review':
+        case 'attendance_correction_submitted':
+        case 'attendance_correction_reviewed':
+            // You might need to add this route if it doesn't exist
+            return "{$baseUrl}/attendance-logs"; // or appropriate admin route
+
+        default:
+            return "{$baseUrl}/dashboard";
+    }
+}
     /**
      * Create notification with redirect URL
      */

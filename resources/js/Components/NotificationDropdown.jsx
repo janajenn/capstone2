@@ -1,5 +1,7 @@
+// resources/js/Components/NotificationDropdown.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell } from 'lucide-react';
+import { router } from '@inertiajs/react';
 
 export default function NotificationDropdown() {
     const [isOpen, setIsOpen] = useState(false);
@@ -9,7 +11,6 @@ export default function NotificationDropdown() {
     const dropdownRef = useRef(null);
     const audioRef = useRef(null);
 
-    // Fetch notifications and unread count
     const fetchNotifications = async () => {
         try {
             const response = await fetch('/employee/notifications', {
@@ -31,7 +32,6 @@ export default function NotificationDropdown() {
         }
     };
 
-    // Fetch only unread count
     const fetchUnreadCount = async () => {
         try {
             const response = await fetch('/employee/notifications/unread-count', {
@@ -54,7 +54,37 @@ export default function NotificationDropdown() {
         }
     };
 
-    // Mark notification as read
+    // Handle notification click
+    const handleNotificationClick = async (notification) => {
+        try {
+            console.log('Notification clicked:', notification);
+            
+            // Close dropdown first
+            setIsOpen(false);
+    
+            // Mark as read via API
+            if (!notification.is_read) {
+                await markAsRead(notification.id);
+            }
+    
+            // Use Inertia to handle the redirect via the click route
+            if (notification.redirect_url) {
+                console.log('Redirecting to:', notification.redirect_url);
+                router.visit(notification.redirect_url);
+            } else {
+                // Fallback to the click route
+                console.log('Using click route for notification:', notification.id);
+                router.visit(`/employee/notifications/${notification.id}/click`);
+            }
+            
+        } catch (error) {
+            console.error('Error handling notification click:', error);
+            
+            // Ultimate fallback
+            router.visit('/employee/dashboard');
+        }
+    };
+
     const markAsRead = async (notificationId) => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -64,7 +94,7 @@ export default function NotificationDropdown() {
                 return;
             }
 
-            const response = await fetch(`/employee/notifications/${notificationId}/read`, {
+            const response = await fetch(`/employee/notifications/${notificationId}/mark-read`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -102,7 +132,6 @@ export default function NotificationDropdown() {
         }
     };
 
-    // Mark all notifications as read
     const markAllAsRead = async () => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -112,7 +141,7 @@ export default function NotificationDropdown() {
                 return;
             }
 
-            const response = await fetch('/employee/notifications/read-all', {
+            const response = await fetch('/employee/notifications/mark-all-read', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -154,54 +183,29 @@ export default function NotificationDropdown() {
         }
     };
 
-    // Play notification sound only when count increases
     const playNotificationSound = () => {
         if (audioRef.current) {
             audioRef.current.play().catch(e => {
                 console.log('Audio play failed:', e);
-                // Fallback: create a simple beep sound using Web Audio API
-                try {
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const oscillator = audioContext.createOscillator();
-                    const gainNode = audioContext.createGain();
-                    
-                    oscillator.connect(gainNode);
-                    gainNode.connect(audioContext.destination);
-                    
-                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-                    oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
-                    
-                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-                    
-                    oscillator.start(audioContext.currentTime);
-                    oscillator.stop(audioContext.currentTime + 0.2);
-                } catch (fallbackError) {
-                    console.log('Fallback audio also failed:', fallbackError);
-                }
             });
         }
     };
 
-    // Check for new notifications periodically
     useEffect(() => {
+        fetchNotifications();
         fetchUnreadCount();
         
-        const interval = setInterval(() => {
-            fetchUnreadCount();
-        }, 30000);
-
+        const interval = setInterval(fetchUnreadCount, 30000);
+        
         return () => clearInterval(interval);
     }, []);
 
-    // Fetch notifications when dropdown opens
     useEffect(() => {
         if (isOpen) {
             fetchNotifications();
         }
     }, [isOpen]);
 
-    // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -213,7 +217,6 @@ export default function NotificationDropdown() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Play sound only when unread count increases (not decreases)
     useEffect(() => {
         if (unreadCount > previousUnreadCount && previousUnreadCount !== 0) {
             playNotificationSound();
@@ -238,6 +241,10 @@ export default function NotificationDropdown() {
                 return '📅';
             case 'credit_conversion':
                 return '💰';
+            case 'attendance_correction':
+                return '⏰';
+            case 'leave_recall':
+                return '↩️';
             default:
                 return '🔔';
         }
@@ -245,14 +252,12 @@ export default function NotificationDropdown() {
 
     return (
         <div className="relative" ref={dropdownRef}>
-            {/* Notification Bell */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="relative p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
             >
                 <Bell className="w-6 h-6" />
                 
-                {/* Unread Badge */}
                 {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
                         {unreadCount > 99 ? '99+' : unreadCount}
@@ -260,15 +265,12 @@ export default function NotificationDropdown() {
                 )}
             </button>
 
-            {/* Audio element for notification sound */}
             <audio ref={audioRef} preload="auto">
                 <source src="/sounds/mixkit-bell-notification-933.wav" type="audio/wav" />
             </audio>
 
-            {/* Dropdown */}
             {isOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                    {/* Header */}
                     <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
                         <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
                         <div className="flex items-center space-x-2">
@@ -280,42 +282,9 @@ export default function NotificationDropdown() {
                                     Mark all as read
                                 </button>
                             )}
-                            <button
-                                onClick={() => {
-                                    console.log('Current state:', { unreadCount, previousUnreadCount, notifications });
-                                    fetch('/employee/debug-notifications', {
-                                        credentials: 'include'
-                                    })
-                                        .then(res => res.json())
-                                        .then(data => console.log('Debug data:', data))
-                                        .catch(err => console.error('Debug error:', err));
-                                }}
-                                className="text-xs text-gray-500 hover:text-gray-700"
-                                title="Debug notifications"
-                            >
-                                🐛
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        const response = await fetch('/employee/test-csrf', {
-                                            credentials: 'include'
-                                        });
-                                        const data = await response.json();
-                                        console.log('CSRF Test:', data);
-                                    } catch (error) {
-                                        console.error('CSRF Test Error:', error);
-                                    }
-                                }}
-                                className="text-xs text-gray-500 hover:text-gray-700"
-                                title="Test CSRF"
-                            >
-                                🔒
-                            </button>
                         </div>
                     </div>
 
-                    {/* Notifications List */}
                     <div className="max-h-96 overflow-y-auto">
                         {notifications.length === 0 ? (
                             <div className="px-4 py-8 text-center text-gray-500">
@@ -326,10 +295,10 @@ export default function NotificationDropdown() {
                             notifications.map((notification) => (
                                 <div
                                     key={notification.id}
-                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors ${
+                                    className={`px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors group ${
                                         !notification.is_read ? 'bg-blue-50' : ''
                                     }`}
-                                    onClick={() => markAsRead(notification.id)}
+                                    onClick={() => handleNotificationClick(notification)}
                                 >
                                     <div className="flex items-start space-x-3">
                                         <div className="text-2xl">
@@ -351,6 +320,9 @@ export default function NotificationDropdown() {
                                             }`}>
                                                 {notification.message}
                                             </p>
+                                            <div className="mt-1 flex items-center text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <span>Click to view →</span>
+                                            </div>
                                             {!notification.is_read && (
                                                 <div className="mt-2">
                                                     <span className="inline-block w-2 h-2 bg-blue-500 rounded-full"></span>
@@ -364,7 +336,6 @@ export default function NotificationDropdown() {
                         )}
                     </div>
 
-                    {/* Footer */}
                     {notifications.length > 0 && (
                         <div className="px-4 py-3 border-t border-gray-200 text-center">
                             <button

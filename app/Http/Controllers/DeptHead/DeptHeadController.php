@@ -340,20 +340,19 @@ public function getUpdatedRequests(Request $request)
                 'leaveRequests' => ['data' => [], 'links' => []],
                 'departmentName' => 'No Department Assigned',
                 'filters' => $request->only(['status', 'search']),
-                'pendingRescheduleCount' => 0 // Add this
+                'pendingRescheduleCount' => 0
             ]);
         }
-
-         // Get pending reschedule count for the badge
-    $pendingRescheduleCount = LeaveRescheduleRequest::where('status', 'pending_dept_head')
-    ->whereHas('employee', function($query) use ($departmentId) {
-        $query->where('department_id', $departmentId)
-              ->whereHas('user', function($userQuery) {
-                  $userQuery->whereIn('role', ['employee', 'hr']);
-              });
-    })
-    ->count();
-
+    
+        // Get pending reschedule count for the badge
+        $pendingRescheduleCount = LeaveRescheduleRequest::where('status', 'pending_dept_head')
+            ->whereHas('employee', function($query) use ($departmentId) {
+                $query->where('department_id', $departmentId)
+                      ->whereHas('user', function($userQuery) {
+                          $userQuery->whereIn('role', ['employee', 'hr']);
+                      });
+            })
+            ->count();
     
         $currentDeptHeadEmployeeId = $user->employee_id;
     
@@ -372,13 +371,18 @@ public function getUpdatedRequests(Request $request)
                       $userQuery->whereNotIn('role', ['admin', 'dept_head']);
                   });
         })
+        // ✅ CRITICAL FIX: Only show requests that have HR approval
+        ->whereHas('approvals', function($query) {
+            $query->where('role', 'hr')
+                  ->where('status', 'approved');
+        })
         ->orderBy('created_at', 'desc');
     
         // FIXED: Better status filtering logic
         if ($request->has('status') && $request->status !== 'all') {
             switch ($request->status) {
                 case 'pending':
-                    // Requests that need dept head approval
+                    // Requests that have HR approval and need dept head approval
                     $query->where(function($q) {
                         $q->where('status', 'pending')
                           ->orWhere('status', 'pending_dept_head')
@@ -433,9 +437,9 @@ public function getUpdatedRequests(Request $request)
     
         $leaveRequests = $query->paginate(10)
             ->through(function ($leaveRequest) {
+                $hrApproval = $leaveRequest->approvals->firstWhere('role', 'hr');
                 $deptHeadApproval = $leaveRequest->approvals->firstWhere('role', 'dept_head');
                 $adminApproval = $leaveRequest->approvals->firstWhere('role', 'admin');
-                $hrApproval = $leaveRequest->approvals->firstWhere('role', 'hr');
                 
                 // Improved status determination
                 $displayStatus = 'pending';
@@ -462,6 +466,12 @@ public function getUpdatedRequests(Request $request)
                     'status' => $leaveRequest->status, // actual database status
                     'display_status' => $displayStatus, // calculated display status
                     'created_at' => $leaveRequest->created_at,
+                    'hr_approval' => $hrApproval ? [
+                        'status' => $hrApproval->status,
+                        'remarks' => $hrApproval->remarks,
+                        'approved_at' => $hrApproval->approved_at,
+                        'approver_name' => $hrApproval->approver->name ?? 'Unknown'
+                    ] : null,
                     'dept_head_approval' => $deptHeadApproval ? [
                         'status' => $deptHeadApproval->status,
                         'remarks' => $deptHeadApproval->remarks,
@@ -474,12 +484,6 @@ public function getUpdatedRequests(Request $request)
                         'approved_at' => $adminApproval->approved_at,
                         'approver_name' => $adminApproval->approver->name ?? 'Unknown'
                     ] : null,
-                    'hr_approval' => $hrApproval ? [
-                        'status' => $hrApproval->status,
-                        'remarks' => $hrApproval->remarks,
-                        'approved_at' => $hrApproval->approved_at,
-                        'approver_name' => $hrApproval->approver->name ?? 'Unknown'
-                    ] : null,
                     'total_days' => Carbon::parse($leaveRequest->date_from)->diffInDays(Carbon::parse($leaveRequest->date_to)) + 1
                 ];
             });
@@ -488,7 +492,7 @@ public function getUpdatedRequests(Request $request)
             'leaveRequests' => $leaveRequests,
             'departmentName' => $user->employee->department->name ?? 'Department',
             'filters' => $request->only(['status', 'search']),
-            'pendingRescheduleCount' => $pendingRescheduleCount // Add this
+            'pendingRescheduleCount' => $pendingRescheduleCount
         ]);
     }
     /**
@@ -1728,7 +1732,6 @@ public function viewProofImage($id)
 }
 
 
-
 public function rescheduleRequests(Request $request)
 {
     $user = $request->user();
@@ -1745,7 +1748,7 @@ public function rescheduleRequests(Request $request)
 
     $perPage = 10;
     
-    // Get pending count for badge - only employee and hr roles
+    // Get counts for all statuses
     $pendingCount = LeaveRescheduleRequest::where('status', 'pending_dept_head')
         ->whereHas('employee', function($query) use ($departmentId) {
             $query->where('department_id', $departmentId)
@@ -1755,23 +1758,41 @@ public function rescheduleRequests(Request $request)
         })
         ->count();
 
-    // Get reschedule requests for display - FIXED RELATIONSHIP NAMES
+    // Get reschedule requests for display - ALL STATUSES
     $query = LeaveRescheduleRequest::with([
             'employee.department',
             'employee.user',
             'originalLeaveRequest.leaveType',
-            'hrReviewedBy' // CHANGED FROM hrApprover TO hrReviewedBy
+            'hrReviewedBy',
+            'deptHeadReviewedBy' // Add this to show who approved/rejected
         ])
-        ->where('status', 'pending_dept_head')
         ->whereHas('employee', function($query) use ($departmentId) {
             $query->where('department_id', $departmentId)
                   ->whereHas('user', function($userQuery) {
                       $userQuery->whereIn('role', ['employee', 'hr']);
                   });
-        })
-        ->orderBy('submitted_at', 'desc');
+        });
 
-    $rescheduleRequests = $query->paginate($perPage)
+    // Apply status filter if provided
+    if ($request->has('status') && $request->status !== 'all') {
+        switch ($request->status) {
+            case 'pending':
+                $query->where('status', 'pending_dept_head');
+                break;
+            case 'approved':
+                $query->where('status', 'approved');
+                break;
+            case 'rejected':
+                $query->where('status', 'rejected');
+                break;
+        }
+    } else {
+        // Default: show pending requests
+        $query->where('status', 'pending_dept_head');
+    }
+
+    $rescheduleRequests = $query->orderBy('submitted_at', 'desc')
+        ->paginate($perPage)
         ->through(function ($request) {
             return [
                 'id' => $request->id,
@@ -1807,8 +1828,11 @@ public function rescheduleRequests(Request $request)
                 'dept_head_reviewed_at' => $request->dept_head_reviewed_at,
                 'hr_remarks' => $request->hr_remarks,
                 'dept_head_remarks' => $request->dept_head_remarks,
-                'hr_approver' => $request->hrReviewedBy ? [ // CHANGED FROM hrApprover TO hrReviewedBy
+                'hr_approver' => $request->hrReviewedBy ? [
                     'name' => $request->hrReviewedBy->name,
+                ] : null,
+                'dept_head_approver' => $request->deptHeadReviewedBy ? [ // Add this
+                    'name' => $request->deptHeadReviewedBy->name,
                 ] : null,
             ];
         });
@@ -1970,6 +1994,7 @@ public function showRescheduleRequest($id)
      */
     private function updateLeaveRequestDates($rescheduleRequest)
     {
+        DB::beginTransaction();
         try {
             $originalLeave = $rescheduleRequest->originalLeaveRequest;
             $dates = collect($rescheduleRequest->proposed_dates)->sort()->values();
@@ -1977,51 +2002,107 @@ public function showRescheduleRequest($id)
             $dateTo = $dates->last();
 
             // Calculate working days (excluding weekends)
-            $workingDays = 0;
-            foreach ($dates as $date) {
-                $dateObj = new \DateTime($date);
-                $dayOfWeek = $dateObj->format('N');
-                if ($dayOfWeek < 6) { // 1-5 are weekdays
-                    $workingDays++;
-                }
-            }
+            $workingDays = $this->calculateWorkingDays($dates);
 
             // Store the original dates in reschedule history
-            $rescheduleHistory = array_merge(
-                json_decode($originalLeave->reschedule_history ?? '[]', true),
-                [
-                    [
-                        'reschedule_id' => $rescheduleRequest->id,
-                        'original_dates' => [
-                            'date_from' => $originalLeave->date_from,
-                            'date_to' => $originalLeave->date_to,
-                            'total_days' => $originalLeave->total_days,
-                        ],
-                        'new_dates' => [
-                            'date_from' => $dateFrom,
-                            'date_to' => $dateTo,
-                            'total_days' => $workingDays,
-                        ],
-                        'rescheduled_at' => now()->toISOString(),
-                        'reason' => $rescheduleRequest->reason,
-                        'approved_by' => $rescheduleRequest->processed_by,
-                        'remarks' => $rescheduleRequest->dept_head_remarks
-                    ]
-                ]
-            );
+            $rescheduleHistory = $this->buildRescheduleHistory($originalLeave, $rescheduleRequest, $dates, $workingDays);
 
-            // Update the original leave request
+            // Update the original leave request with new dates and "Rescheduled" status
             $originalLeave->update([
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'total_days' => $workingDays,
                 'selected_dates' => json_encode($dates),
-                'reschedule_history' => json_encode($rescheduleHistory)
+                'reschedule_history' => json_encode($rescheduleHistory),
+                'status' => 'rescheduled', // Mark as rescheduled
+                'rescheduled_at' => now(), // Track when it was rescheduled
             ]);
 
+            // Update any related approvals to reflect the new dates
+            $this->updateRelatedApprovals($originalLeave);
+
+            \Log::info("Original leave request updated with new dates by Dept Head", [
+                'leave_request_id' => $originalLeave->id,
+                'employee_id' => $originalLeave->employee_id,
+                'original_dates' => $originalLeave->getOriginal('date_from') . ' to ' . $originalLeave->getOriginal('date_to'),
+                'new_dates' => $dateFrom . ' to ' . $dateTo,
+                'working_days' => $workingDays,
+                'reschedule_request_id' => $rescheduleRequest->id
+            ]);
+
+            DB::commit();
+
         } catch (\Exception $e) {
+            DB::rollback();
             \Log::error('Failed to update leave request dates: ' . $e->getMessage());
             throw $e;
+        }
+    }
+
+    /**
+     * Calculate working days from proposed dates (excluding weekends)
+     */
+    private function calculateWorkingDays($dates)
+    {
+        $workingDays = 0;
+        foreach ($dates as $date) {
+            $dateObj = new \DateTime($date);
+            $dayOfWeek = $dateObj->format('N');
+            if ($dayOfWeek < 6) { // 1-5 are weekdays (Monday to Friday)
+                $workingDays++;
+            }
+        }
+        return $workingDays;
+    }
+
+    /**
+     * Build reschedule history array
+     */
+    private function buildRescheduleHistory($originalLeave, $rescheduleRequest, $dates, $workingDays)
+    {
+        $dateFrom = $dates->first();
+        $dateTo = $dates->last();
+
+        $historyEntry = [
+            'reschedule_id' => $rescheduleRequest->id,
+            'original_dates' => [
+                'date_from' => $originalLeave->getOriginal('date_from'),
+                'date_to' => $originalLeave->getOriginal('date_to'),
+                'total_days' => $originalLeave->getOriginal('total_days'),
+            ],
+            'new_dates' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'total_days' => $workingDays,
+            ],
+            'rescheduled_at' => now()->toISOString(),
+            'reason' => $rescheduleRequest->reason,
+            'approved_by' => $rescheduleRequest->processed_by,
+            'approver_role' => 'dept_head',
+            'remarks' => $rescheduleRequest->dept_head_remarks ?? $rescheduleRequest->hr_remarks
+        ];
+
+        // Get existing history and append new entry
+        $existingHistory = json_decode($originalLeave->reschedule_history ?? '[]', true);
+        $existingHistory[] = $historyEntry;
+
+        return $existingHistory;
+    }
+
+    /**
+     * Update related approvals to reflect the rescheduled status
+     */
+    private function updateRelatedApprovals($leaveRequest)
+    {
+        // Update approval remarks to mention rescheduling
+        $approvals = $leaveRequest->approvals;
+        
+        foreach ($approvals as $approval) {
+            if ($approval->approved_at && $approval->status === 'approved') {
+                $approval->update([
+                    'remarks' => ($approval->remarks ?? '') . " [Dates were rescheduled and approved on " . now()->format('M d, Y') . "]"
+                ]);
+            }
         }
     }
 

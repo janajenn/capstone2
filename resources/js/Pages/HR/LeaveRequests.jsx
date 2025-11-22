@@ -1,6 +1,6 @@
 import HRLayout from '@/Layouts/HRLayout';
-import { useForm, usePage, router,Link } from '@inertiajs/react';
-import { useState, useMemo } from 'react';
+import { useForm, usePage, router, Link } from '@inertiajs/react';
+import { useState, useMemo,useEffect} from 'react';
 import Swal from 'sweetalert2';
 import LeaveForm from '@/Components/LeaveForm';
 
@@ -135,9 +135,30 @@ const isDeptHeadRequest = (request) => {
   return request.is_dept_head_request || request.employee?.user?.role === 'dept_head';
 };
 
+const isRescheduledRequest = (request) => {
+  if (!request.reschedule_requests || !Array.isArray(request.reschedule_requests)) {
+    return false;
+  }
+
+  const hasApprovedReschedule = request.reschedule_requests.some(req => {
+    // Debug each reschedule request
+    console.log(`🔍 Checking reschedule:`, {
+      reschedule_id: req.id,
+      status: req.status,
+      original_leave_request_id: req.original_leave_request_id,
+      matches_request_id: req.original_leave_request_id === request.id
+    });
+    
+    return req.status === 'approved' && req.original_leave_request_id === request.id;
+  });
+
+  return hasApprovedReschedule;
+};
+
 export default function LeaveRequests() {
   const { props } = usePage();
-  const { leaveRequests, filters, flash, departments, rescheduleRequestsCount } = props;
+  const { leaveRequests, filters, flash, departments, rescheduleRequestsCount,tabCounts  } = props;
+    
 
   const [selectedRequests, setSelectedRequests] = useState([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
@@ -172,89 +193,119 @@ export default function LeaveRequests() {
     };
   }, [leaveRequests]);
 
-  // Filter leave requests based on active tab using approval status
-  const filteredRequests = useMemo(() => {
-    if (!leaveRequests.data) return [];
+  // Update the filteredRequests logic
+// Use the data that's already filtered by backend
+// Update the filteredRequests logic
+const filteredRequests = useMemo(() => {
+  if (!leaveRequests.data) return [];
 
-    return leaveRequests.data.filter(request => {
-      const approvalStatus = getApprovalStatus(request);
-      const hasHRApproval = request.approvals?.some(approval => 
-        approval.role === 'hr' && approval.status === 'approved'
-      );
+  return leaveRequests.data.filter(request => {
+    const approvalStatus = getApprovalStatus(request);
+    const hasHRApproval = request.approvals?.some(approval => 
+      approval.role === 'hr' && approval.status === 'approved'
+    );
+    const isRescheduled = isRescheduledRequest(request);
 
-      switch (activeTab) {
-        case 'hr_pending':
-          return approvalStatus === 'hr_pending';
-        case 'dept_head_pending':
-          // Show department head AND admin requests
-          return approvalStatus === 'dept_head_pending' || 
-                 (request.employee?.user?.role === 'admin' && approvalStatus === 'hr_pending');
-        case 'approved_by_hr':
-          // Show ALL requests that have HR approval, regardless of current status
-          return hasHRApproval;
-        case 'rejected':
-          return approvalStatus === 'rejected';
-        case 'fully_approved':
-          return approvalStatus === 'fully_approved';
-        default:
-          return true;
-      }
+    switch (activeTab) {
+      case 'hr_pending':
+        return approvalStatus === 'hr_pending';
+      case 'dept_head_pending':
+        // Show department head AND admin requests
+        return approvalStatus === 'dept_head_pending' || 
+               (request.employee?.user?.role === 'admin' && approvalStatus === 'hr_pending');
+      case 'approved_by_hr':
+        // Show ALL requests that have HR approval, regardless of current status
+        return hasHRApproval;
+      case 'rejected':
+        return approvalStatus === 'rejected';
+      case 'fully_approved':
+        // Show fully approved requests that are NOT rescheduled
+        return approvalStatus === 'fully_approved' && !isRescheduled;
+        case 'rescheduled':
+          // Show ANY request that has reschedule requests (approved or not)
+          return request.reschedule_requests && 
+                 Array.isArray(request.reschedule_requests) && 
+                 request.reschedule_requests.length > 0;
+      default:
+        return true;
+    }
+  });
+}, [leaveRequests.data, activeTab]);
+
+
+
+
+
+
+
+ // Update the tabs configuration
+ const tabs = [
+  { id: 'hr_pending', name: 'HR Pending', count: tabCounts.hr_pending },
+  { id: 'dept_head_pending', name: 'Dept Head/Admin Requests', count: tabCounts.dept_head_pending },
+  { id: 'approved_by_hr', name: 'Approved by HR', count: tabCounts.approved_by_hr },
+  { id: 'rejected', name: 'Disapproved', count: tabCounts.rejected },
+  { id: 'fully_approved', name: 'Fully Approved', count: tabCounts.fully_approved },
+  { id: 'rescheduled', name: 'Rescheduled', count: tabCounts.rescheduled },
+];
+
+
+
+
+const debugRescheduleData = () => {
+  console.log('=== 🐛 RESCHEDULE DEBUG - COMPLETE DATA ===');
+  
+  if (!leaveRequests.data || leaveRequests.data.length === 0) {
+    console.log('❌ No leave requests data available');
+    return;
+  }
+
+  console.log('Total leave requests:', leaveRequests.data.length);
+  
+  // Show ALL requests and their reschedule data
+  leaveRequests.data.forEach((request, index) => {
+    const rescheduleReqs = request.reschedule_requests || [];
+    
+    console.log(`📋 Request ${index + 1}:`, {
+      id: request.id,
+      employee: `${request.employee?.firstname} ${request.employee?.lastname}`,
+      leaveStatus: request.status,
+      rescheduleRequestsCount: rescheduleReqs.length,
+      rescheduleRequests: rescheduleReqs.map(req => ({
+        reschedule_id: req.id,
+        status: req.status,
+        original_leave_request_id: req.original_leave_request_id,
+        proposed_dates: req.proposed_dates,
+        reason: req.reason
+      })),
+      isRescheduled: isRescheduledRequest(request)
     });
-  }, [leaveRequests.data, activeTab]);
+  });
 
-  // Count requests for each tab
-  const tabCounts = useMemo(() => {
-    if (!leaveRequests.data) return { hr_pending: 0, dept_head_pending: 0, approved_by_hr: 0, rejected: 0, fully_approved: 0 };
-
-    const counts = {
-      hr_pending: 0,
-      dept_head_pending: 0,
-      approved_by_hr: 0,
-      rejected: 0,
-      fully_approved: 0
-    };
-
-    leaveRequests.data.forEach(request => {
-      const approvalStatus = getApprovalStatus(request);
-      const hasHRApproval = request.approvals?.some(approval => 
-        approval.role === 'hr' && approval.status === 'approved'
-      );
-
-      switch (approvalStatus) {
-        case 'hr_pending':
-          counts.hr_pending++;
-          break;
-        case 'dept_head_pending':
-          counts.dept_head_pending++;
-          break;
-        case 'rejected':
-          counts.rejected++;
-          break;
-        case 'fully_approved':
-          counts.fully_approved++;
-          break;
-        default:
-          // For in_progress status, don't count in other tabs
-          break;
-      }
-
-      // Count for approved_by_hr tab - ALL requests with HR approval
-      if (hasHRApproval) {
-        counts.approved_by_hr++;
-      }
+  // Now show only rescheduled ones
+  console.log('=== 🎯 RESCHEDULED REQUESTS ONLY ===');
+  const rescheduledRequests = leaveRequests.data.filter(request => isRescheduledRequest(request));
+  
+  rescheduledRequests.forEach((request, index) => {
+    const approvedReschedules = (request.reschedule_requests || []).filter(req => req.status === 'approved');
+    
+    console.log(`✅ Rescheduled Request ${index + 1}:`, {
+      id: request.id,
+      employee: `${request.employee?.firstname} ${request.employee?.lastname}`,
+      approvedRescheduleCount: approvedReschedules.length,
+      approvedReschedules: approvedReschedules.map(req => ({
+        reschedule_id: req.id,
+        original_leave_request_id: req.original_leave_request_id
+      }))
     });
+  });
 
-    return counts;
-  }, [leaveRequests.data]);
+  console.log(`📊 FINAL COUNT: ${rescheduledRequests.length} rescheduled requests found`);
+  console.log('=== 🐛 DEBUG END ===');
+};
 
-  // Tab configuration - Updated tab names
-  const tabs = [
-    { id: 'hr_pending', name: 'HR Pending', count: tabCounts.hr_pending },
-    { id: 'dept_head_pending', name: 'Dept Head/Admin Requests', count: tabCounts.dept_head_pending }, // Changed name
-    { id: 'approved_by_hr', name: 'Approved by HR', count: tabCounts.approved_by_hr },
-    { id: 'rejected', name: 'Disapproved', count: tabCounts.rejected },
-    { id: 'fully_approved', name: 'Fully Approved', count: tabCounts.fully_approved },
-  ];
+
+
+
 
   const handleFilter = () => {
     router.get('/hr/leave-requests', data, {
@@ -503,70 +554,85 @@ export default function LeaveRequests() {
     return getApprovalStatus(request) === 'fully_approved';
   };
 
-  // Get available actions for a request
-  const getAvailableActions = (request) => {
-    const actions = [];
-    const approvalStatus = getApprovalStatus(request);
-    const isDeptHead = isDeptHeadRequest(request);
+  // Update the getAvailableActions function to include form generation for rescheduled requests
+const getAvailableActions = (request) => {
+  const actions = [];
+  const approvalStatus = getApprovalStatus(request);
+  const isDeptHead = isDeptHeadRequest(request);
+  const isRescheduled = isRescheduledRequest(request);
 
-    // View action is always available
+  // View action is always available
+  actions.push({
+    type: 'view',
+    label: 'View',
+    color: 'text-blue-600 hover:text-blue-900',
+    icon: (
+      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+      </svg>
+    ),
+    onClick: () => router.visit(`/hr/leave-requests/${request.id}`)
+  });
+
+  // Approve/Reject actions for pending requests
+  if (approvalStatus === 'hr_pending' || approvalStatus === 'dept_head_pending') {
     actions.push({
-      type: 'view',
-      label: 'View',
-      color: 'text-blue-600 hover:text-blue-900',
+      type: 'approve',
+      label: isDeptHead || request.employee?.user?.role === 'admin' ? 'Approve → To Admin' : 'Approve',
+      color: 'text-green-600 hover:text-green-900',
       icon: (
         <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
       ),
-      onClick: () => router.visit(`/hr/leave-requests/${request.id}`)
+      onClick: () => handleApprove(request.id)
     });
 
-    // Approve/Reject actions for pending requests
-    if (approvalStatus === 'hr_pending' || approvalStatus === 'dept_head_pending') {
-      actions.push({
-        type: 'approve',
-        label: isDeptHead || request.employee?.user?.role === 'admin' ? 'Approve → To Admin' : 'Approve',
-        color: 'text-green-600 hover:text-green-900',
-        icon: (
-          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        ),
-        onClick: () => handleApprove(request.id)
-      });
+    actions.push({
+      type: 'reject',
+      label: 'Reject',
+      color: 'text-red-600 hover:text-red-900',
+      icon: (
+        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      ),
+      onClick: () => handleReject(request.id)
+    });
+  }
 
-      actions.push({
-        type: 'reject',
-        label: 'Reject',
-        color: 'text-red-600 hover:text-red-900',
-        icon: (
-          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        ),
-        onClick: () => handleReject(request.id)
-      });
-    }
+  // Generate form action for fully approved AND rescheduled requests
+  if (approvalStatus === 'fully_approved' || isRescheduled) {
+    actions.push({
+      type: 'generate',
+      label: 'Generate Form',
+      color: 'text-purple-600 hover:text-purple-900',
+      icon: (
+        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+      onClick: () => handleGenerateForm(request)
+    });
+  }
 
-    // Generate form action for fully approved requests
-    if (approvalStatus === 'fully_approved') {
-      actions.push({
-        type: 'generate',
-        label: 'Generate Form',
-        color: 'text-purple-600 hover:text-purple-900',
-        icon: (
-          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        ),
-        onClick: () => handleGenerateForm(request)
-      });
-    }
+  return actions;
+};
 
-    return actions;
-  };
+
+useEffect(() => {
+  console.log('📄 Pagination Data:', {
+    current_page: leaveRequests.current_page,
+    per_page: leaveRequests.per_page,
+    from: leaveRequests.from,
+    to: leaveRequests.to,
+    total: leaveRequests.total,
+    last_page: leaveRequests.last_page,
+    data_length: leaveRequests.data?.length
+  });
+}, [leaveRequests]);
+
 
   // Handle pagination for each tab
   const handlePageChange = (url) => {
@@ -578,11 +644,78 @@ export default function LeaveRequests() {
     }
   };
 
+
+  // Add this inside your component temporarily to debug
+const DebugInfo = () => {
+  if (!leaveRequests.data) return null;
+  
+  const sampleRequest = leaveRequests.data[0];
+
+
+
+
+  // Add this debug effect
+useEffect(() => {
+  console.log('🔍 DATA FLOW DEBUG:');
+  console.log('Backend sent:', leaveRequests.data?.length, 'records');
+  console.log('Active tab:', activeTab);
+  
+  if (leaveRequests.data) {
+    // Check what happens with your filtering
+    const afterFiltering = leaveRequests.data.filter(request => {
+      const approvalStatus = getApprovalStatus(request);
+      const hasHRApproval = request.approvals?.some(approval => 
+        approval.role === 'hr' && approval.status === 'approved'
+      );
+      const isRescheduled = isRescheduledRequest(request);
+
+      switch (activeTab) {
+        case 'hr_pending':
+          return approvalStatus === 'hr_pending';
+        case 'dept_head_pending':
+          return approvalStatus === 'dept_head_pending' || 
+                 (request.employee?.user?.role === 'admin' && approvalStatus === 'hr_pending');
+        case 'approved_by_hr':
+          return hasHRApproval;
+        case 'rejected':
+          return approvalStatus === 'rejected';
+        case 'fully_approved':
+          return approvalStatus === 'fully_approved' && !isRescheduled;
+        case 'rescheduled':
+          return isRescheduled;
+        default:
+          return true;
+      }
+    });
+    
+    console.log('After frontend filtering:', afterFiltering.length, 'records');
+    console.log('Records that were filtered out:', leaveRequests.data.length - afterFiltering.length);
+  }
+}, [leaveRequests.data, activeTab]);
+
+
+  
+  return (
+    <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4">
+      <h3 className="font-bold text-yellow-800">Debug Info:</h3>
+      <p>Total requests: {leaveRequests.data.length}</p>
+      {sampleRequest && (
+        <>
+          <p>Sample request status: {sampleRequest.status}</p>
+          <p>Sample request reschedule_history: {JSON.stringify(sampleRequest.reschedule_history)}</p>
+          <p>Sample request rescheduled_at: {sampleRequest.rescheduled_at}</p>
+          <p>Is rescheduled? {isRescheduledRequest(sampleRequest) ? 'YES' : 'NO'}</p>
+        </>
+      )}
+    </div>
+  );
+};
+
   return (
     <HRLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-       {/* Header Section - UPDATED */}
-       <div className="mb-8">
+        {/* Header Section */}
+        <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
             <div className="relative">
               <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-indigo-900 bg-clip-text text-transparent mb-2">
@@ -592,8 +725,8 @@ export default function LeaveRequests() {
               <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"></div>
             </div>
             
-           {/* UPDATED BUTTON CONTAINER WITH BADGE */}
-           <div className="mt-4 md:mt-0 flex space-x-3">
+            {/* Button Container with Badge */}
+            <div className="mt-4 md:mt-0 flex space-x-3">
               {/* Reschedule Requests Button with Badge */}
               <Link
                 href="/hr/reschedule-requests"
@@ -611,7 +744,10 @@ export default function LeaveRequests() {
                   </span>
                 )}
               </Link>
-              </div>
+            </div>
+
+
+            
 
             {showBulkActions && (
               <div className="mt-4 md:mt-0 flex space-x-3">
@@ -644,6 +780,8 @@ export default function LeaveRequests() {
           </div>
         </div>
 
+       
+
         {/* Flash Messages */}
         {flash?.success && (
           <div className="bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 text-emerald-700 p-4 rounded-2xl mb-6 flex items-center shadow-lg">
@@ -656,7 +794,7 @@ export default function LeaveRequests() {
           </div>
         )}
 
-        {/* Stats Cards - Removed Dept Head Requests card */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <div className="bg-white/80 backdrop-blur-sm border border-white/20 p-6 rounded-3xl shadow-xl">
             <div className="flex items-center">
@@ -739,19 +877,18 @@ export default function LeaveRequests() {
             {/* Department Filter Dropdown */}
             <div className="flex flex-col md:flex-row md:items-center space-y-4 md:space-y-0 md:space-x-4 mt-4 md:mt-0">
               <div className="w-full md:w-48">
-              
-<select
-  value={data.department}
-  onChange={(e) => setData('department', e.target.value)}
-  className="block w-full pl-3 pr-10 py-3 text-base border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-2xl bg-white/50 backdrop-blur-sm"
->
-  <option value="">All Departments</option>
-  {departments && Array.isArray(departments) && departments.map((dept) => (
-    <option key={dept.id} value={dept.id}>
-      {dept.name}
-    </option>
-  ))}
-</select>
+                <select
+                  value={data.department}
+                  onChange={(e) => setData('department', e.target.value)}
+                  className="block w-full pl-3 pr-10 py-3 text-base border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-2xl bg-white/50 backdrop-blur-sm"
+                >
+                  <option value="">All Departments</option>
+                  {departments && Array.isArray(departments) && departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               
               <div className="flex space-x-3">
@@ -838,157 +975,178 @@ export default function LeaveRequests() {
                   <th className="p-4 font-medium text-gray-500 uppercase tracking-wider w-48">Actions</th>
                 </tr>
               </thead>
+             
               <tbody>
-                {filteredRequests.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="p-8 text-center">
-                      <div className="flex flex-col items-center">
-                        <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <h3 className="text-lg font-medium text-gray-600">No leave requests found</h3>
-                        <p className="text-gray-500 mt-2">
-                          Try adjusting your search or filter to find what you're looking for.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredRequests.map((request) => {
-                    const actions = getAvailableActions(request);
-                    const isDeptHead = isDeptHeadRequest(request);
-                    
-                    return (
-                      <tr key={request.id} className="border-t hover:bg-gray-50/50 transition-colors">
-                        <td className="p-4">
-                          <div className="flex items-center space-x-3">
-                            <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center">
-                              <span className="text-white font-medium">
-                                {request.employee?.firstname?.charAt(0)}{request.employee?.lastname?.charAt(0)}
-                              </span>
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {request.employee?.firstname} {request.employee?.lastname}
-                                {isDeptHead && (
-                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                    Dept Head
-                                  </span>
-                                )}
-                                {request.employee?.user?.role === 'admin' && (
-                                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                    Admin
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {request.employee?.department?.name}
-                              </div>
-                              <div className="text-xs text-blue-600">
-                                {request.employee?.user?.role === 'admin' ? 'HR → Admin' : 
-                                 isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm text-gray-900">{request.leave_type?.name}</div>
-                          <div className="text-sm text-gray-500">{request.leave_type?.code}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm text-gray-900">
-                            {formatDate(request.date_from)} - {formatDate(request.date_to)}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {Math.ceil((new Date(request.date_to) - new Date(request.date_from)) / (1000 * 60 * 60 * 24)) + 1} days
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getDisplayStatusColor(request)}`}>
-                            {getDisplayStatus(request)}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm text-gray-500">
-                            {request.approvals && request.approvals.length > 0 ? (
-                              <div className="flex space-x-2">
-                                {request.approvals.map(approval => (
-                                  <span
-                                    key={approval.approval_id}
-                                    className={`px-1 text-xs ${
-                                      approval.status === 'approved' ? 'text-green-600' :
-                                      approval.status === 'rejected' ? 'text-red-600' : 'text-gray-400'
-                                    }`}
-                                    title={`${approval.role}: ${approval.status}`}
-                                  >
-                                    {approval.role.charAt(0).toUpperCase()}
-                                  </span>
-                                ))}
-                                {/* Show bypassed approvals for special roles */}
-                                {(isDeptHead || request.employee?.user?.role === 'admin') && 
-                                 !request.approvals.find(a => a.role === 'dept_head') && (
-                                  <span className="px-1 text-xs text-gray-300" title="Department Head Approval Bypassed">
-                                    D
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              'No approvals yet'
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="flex items-center justify-start space-x-2">
-                            {actions.map((action, index) => (
-                              <button
-                                key={action.type}
-                                onClick={action.onClick}
-                                className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-300 ${action.color}`}
-                              >
-                                {action.icon}
-                                {action.label}
-                              </button>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
+  {filteredRequests.length === 0 ? (
+    <tr>
+      <td colSpan="6" className="p-8 text-center">
+        <div className="flex flex-col items-center">
+          <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <h3 className="text-lg font-medium text-gray-600">No leave requests found</h3>
+          <p className="text-gray-500 mt-2">
+            Try adjusting your search or filter to find what you're looking for.
+          </p>
+        </div>
+      </td>
+    </tr>
+  ) : (
+    filteredRequests.map((request) => {
+      const actions = getAvailableActions(request);
+      const isDeptHead = isDeptHeadRequest(request);
+      const isRescheduled = isRescheduledRequest(request);
+      
+      // Calculate total days - use selected_dates count if available, otherwise calculate from date range
+      const totalDays = request.selected_dates 
+        ? request.selected_dates.length 
+        : Math.ceil((new Date(request.date_to) - new Date(request.date_from)) / (1000 * 60 * 60 * 24)) + 1;
+      
+      // Get display status
+      const displayStatus = getDisplayStatus(request);
+      const statusColor = getDisplayStatusColor(request);
+      
+      return (
+        <tr key={request.id} className="border-t hover:bg-gray-50/50 transition-colors">
+          <td className="p-4">
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center">
+                <span className="text-white font-medium">
+                  {request.employee?.firstname?.charAt(0)}{request.employee?.lastname?.charAt(0)}
+                </span>
+              </div>
+              <div>
+                <div className="font-medium text-gray-900">
+                  {request.employee?.firstname} {request.employee?.lastname}
+                  {isDeptHead && (
+                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      Dept Head
+                    </span>
+                  )}
+                  {request.employee?.user?.role === 'admin' && (
+                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Admin
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {request.employee?.department?.name}
+                </div>
+                <div className="text-xs text-blue-600">
+                  {request.employee?.user?.role === 'admin' ? 'HR → Admin' : 
+                   isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
+                </div>
+              </div>
+            </div>
+          </td>
+          <td className="p-4">
+            <div className="text-sm text-gray-900">{request.leave_type?.name}</div>
+            <div className="text-sm text-gray-500">{request.leave_type?.code}</div>
+          </td>
+          <td className="p-4">
+            <div className="text-sm text-gray-900">
+              {formatDate(request.date_from)} - {formatDate(request.date_to)}
+            </div>
+            <div className="text-sm text-gray-500">
+              {totalDays} days
+            </div>
+           
+{isRescheduled && request.reschedule_history && request.reschedule_history.length > 0 && (
+  <div className="text-xs text-purple-600 mt-1">
+    <span className="font-medium">(Rescheduled)</span>
+    {request.reschedule_history[0]?.original_dates && (
+      <div className="text-gray-400">
+        Originally: {formatDate(request.reschedule_history[0].original_dates.date_from)} to {formatDate(request.reschedule_history[0].original_dates.date_to)}
+      </div>
+    )}
+  </div>
+)}
+          </td>
+          <td className="p-4">
+            <div className="flex flex-col space-y-1">
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${statusColor}`}>
+                {displayStatus}
+              </span>
+              {isRescheduled && (
+                <span className="text-xs text-purple-600">(Rescheduled)</span>
+              )}
+            </div>
+          </td>
+          <td className="p-4">
+            <div className="text-sm text-gray-500">
+              {request.approvals && request.approvals.length > 0 ? (
+                <div className="flex space-x-2">
+                  {request.approvals.map(approval => (
+                    <span
+                      key={approval.approval_id}
+                      className={`px-1 text-xs ${
+                        approval.status === 'approved' ? 'text-green-600' :
+                        approval.status === 'rejected' ? 'text-red-600' : 'text-gray-400'
+                      }`}
+                      title={`${approval.role}: ${approval.status}`}
+                    >
+                      {approval.role.charAt(0).toUpperCase()}
+                    </span>
+                  ))}
+                  {/* Show bypassed approvals for special roles */}
+                  {(isDeptHead || request.employee?.user?.role === 'admin') && 
+                   !request.approvals.find(a => a.role === 'dept_head') && (
+                    <span className="px-1 text-xs text-gray-300" title="Department Head Approval Bypassed">
+                      D
+                    </span>
+                  )}
+                </div>
+              ) : (
+                'No approvals yet'
+              )}
+            </div>
+          </td>
+          <td className="p-4">
+            <div className="flex items-center justify-start space-x-2">
+              {actions.map((action, index) => (
+                <button
+                  key={action.type}
+                  onClick={action.onClick}
+                  className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-xl transition-all duration-300 ${action.color}`}
+                >
+                  {action.icon}
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </td>
+        </tr>
+      );
+    })
+  )}
+</tbody>
             </table>
           </div>
 
           {/* Pagination - Fixed for each tab */}
           {leaveRequests.data && leaveRequests.data.length > 0 && (
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Showing <span className="font-medium">{leaveRequests.from}</span> to <span className="font-medium">{leaveRequests.to}</span> of{' '}
-                <span className="font-medium">{leaveRequests.total}</span> results
-              </div>
-              <div className="flex space-x-2">
-                {/* Previous Page */}
-                {leaveRequests.prev_page_url && (
-                  <button
-                    onClick={() => handlePageChange(leaveRequests.prev_page_url)}
-                    className="px-4 py-2 text-sm border-2 border-gray-200 rounded-2xl hover:bg-gray-50 transition-all duration-300 hover:shadow-lg"
-                  >
-                    Previous
-                  </button>
-                )}
-
-                {/* Page Numbers */}
-                {leaveRequests.links.slice(1, -1).map((link, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handlePageChange(link.url)}
-                    className={`px-4 py-2 text-sm border-2 rounded-2xl transition-all duration-300 ${
-                      link.active
-                        ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-indigo-500 shadow-lg'
-                        : 'border-gray-200 hover:bg-gray-50 hover:shadow-lg'
-                    }`}
-                    dangerouslySetInnerHTML={{ __html: link.label }}
+           <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+           <div className="text-sm text-gray-700">
+             Showing <span className="font-medium">{leaveRequests.from}</span> to{' '}
+             <span className="font-medium">{leaveRequests.to}</span> of{' '}
+             <span className="font-medium">{leaveRequests.total}</span> results
+           </div>
+           
+           {/* Pagination buttons */}
+           <div className="flex space-x-2">
+             {leaveRequests.links.map((link, index) => (
+               <button
+                 key={index}
+                 onClick={() => handlePageChange(link.url)}
+                 className={`px-4 py-2 text-sm border-2 rounded-2xl transition-all duration-300 ${
+                   link.active
+                     ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-indigo-500 shadow-lg'
+                     : 'border-gray-200 hover:bg-gray-50 hover:shadow-lg'
+                 }`}
+                 dangerouslySetInnerHTML={{ __html: link.label }}
                   />
+
+
                 ))}
 
                 {/* Next Page */}

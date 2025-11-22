@@ -372,9 +372,9 @@ private function createLateCreditLog($employeeId, $type, $pointsDeducted, $balan
         LeaveCreditLog::create([
             'employee_id'     => $employeeId,
             'type'            => $type,
-            'date'            => $workDate,           // Use the actual work date
-            'year'            => $workDateCarbon->year,
-            'month'           => $workDateCarbon->month,
+            'date'            => $workDate,           // ✅ Use the actual work date (August)
+            'year'            => $workDateCarbon->year,  // ✅ Correct year (2024)
+            'month'           => $workDateCarbon->month, // ✅ Correct month (8 for August)
             'points_deducted' => $pointsDeducted,
             'balance_before'  => $balanceBefore,
             'balance_after'   => $balanceAfter,
@@ -383,10 +383,12 @@ private function createLateCreditLog($employeeId, $type, $pointsDeducted, $balan
             'updated_at'      => now(),
         ]);
 
-        \Log::info("📝 Late credit log created", [
+        \Log::info("📝 Late credit log created WITH CORRECT DATE", [
             'employee_id'    => $employeeId,
             'type'           => $type,
-            'work_date'      => $workDate,
+            'work_date'      => $workDate,           // August date
+            'log_year'       => $workDateCarbon->year,
+            'log_month'      => $workDateCarbon->month,
             'points_deducted'=> $pointsDeducted,
             'balance_before' => $balanceBefore,
             'balance_after'  => $balanceAfter,
@@ -603,72 +605,80 @@ private function sendLateDeductionNotification($employeeId, $dayFraction, $lateM
         try {
             \Log::info("🔄 Processing late credits for recent imports");
             
-            // Get attendance logs from the last 30 days that have late minutes
+            // Get attendance logs with late minutes - EXTEND DATE RANGE for 2025 data
             $recentLateLogs = AttendanceLog::where('late_minutes', '>', 0)
-                ->where('work_date', '>=', now()->subDays(30))
+                ->where('work_date', '>=', '2025-01-01') // Include all of 2025
                 ->with('employee')
                 ->get();
-    
+        
             \Log::info("📊 Found late attendance logs to process", [
                 'count' => $recentLateLogs->count(),
-                'date_range' => 'last 30 days'
+                'date_range' => '2025-01-01 to present'
             ]);
-    
+        
             $processedCount = 0;
             $failedCount = 0;
             $alreadyProcessedCount = 0;
-    
+        
             foreach ($recentLateLogs as $attendanceLog) {
-                // Check if this late has already been processed
+                // ✅ FIXED: More accurate duplicate check
                 $alreadyProcessed = LeaveCreditLog::where('employee_id', $attendanceLog->employee_id)
                     ->where('type', 'VL')
                     ->where('remarks', 'like', '%Late%')
-                    ->whereDate('date', $attendanceLog->work_date)
+                    ->where('points_deducted', '>', 0)
+                    ->whereDate('date', $attendanceLog->work_date) // Match exact work date
                     ->exists();
-    
+        
                 if ($alreadyProcessed) {
                     $alreadyProcessedCount++;
                     \Log::info("⏭️ Late already processed for employee", [
                         'employee_id' => $attendanceLog->employee_id,
-                        'work_date' => $attendanceLog->work_date
+                        'work_date' => $attendanceLog->work_date,
+                        'late_minutes' => $attendanceLog->late_minutes
                     ]);
                     continue;
                 }
-    
+        
                 \Log::info("🕐 Processing late attendance", [
                     'employee_id' => $attendanceLog->employee_id,
-                    'work_date' => $attendanceLog->work_date,
-                    'late_minutes' => $attendanceLog->late_minutes
+                    'work_date' => $attendanceLog->work_date, // Should be August 2025
+                    'late_minutes' => $attendanceLog->late_minutes,
+                    'schedule_start' => $attendanceLog->schedule_start,
+                    'time_in' => $attendanceLog->time_in
                 ]);
-    
+        
+                // Process the late deduction
                 $result = $this->deductLateCredits(
                     $attendanceLog->employee_id, 
                     $attendanceLog->late_minutes,
-                    $attendanceLog->work_date // Pass the work date
+                    $attendanceLog->work_date // ✅ Pass the August work date
                 );
-    
+        
                 if ($result['success']) {
                     $processedCount++;
                     \Log::info("✅ Processed late credits", [
                         'employee_id' => $attendanceLog->employee_id,
+                        'work_date' => $attendanceLog->work_date,
+                        'late_minutes' => $attendanceLog->late_minutes,
                         'deducted_amount' => $result['deducted_amount']
                     ]);
                 } else {
                     $failedCount++;
                     \Log::warning("❌ Failed to process late credits", [
                         'employee_id' => $attendanceLog->employee_id,
+                        'work_date' => $attendanceLog->work_date,
                         'error' => $result['message']
                     ]);
                 }
             }
-    
+        
             \Log::info("🎉 Late credits processing completed", [
                 'processed_count' => $processedCount,
                 'failed_count' => $failedCount,
                 'already_processed_count' => $alreadyProcessedCount,
                 'total_found' => $recentLateLogs->count()
             ]);
-    
+        
             return [
                 'success' => true,
                 'message' => "Processed late credits for {$processedCount} employees. {$alreadyProcessedCount} were already processed.",
@@ -677,7 +687,7 @@ private function sendLateDeductionNotification($employeeId, $dayFraction, $lateM
                 'already_processed_count' => $alreadyProcessedCount,
                 'total_found' => $recentLateLogs->count()
             ];
-    
+        
         } catch (\Exception $e) {
             \Log::error('💥 Error processing late credits for recent imports: ' . $e->getMessage());
             return [

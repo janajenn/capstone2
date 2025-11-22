@@ -177,7 +177,7 @@ public function submitLeaveRequest(Request $request)
     $dateFrom = min($selectedDates);
     $dateTo = max($selectedDates);
 
-    // Calculate working days (excluding weekends)
+    // Calculate working days (excluding weekends) - ENSURE WHOLE NUMBERS
     $workingDays = $request->input('working_days') ?? 0;
     if ($workingDays === 0) {
         $workingDays = 0;
@@ -189,6 +189,9 @@ public function submitLeaveRequest(Request $request)
             }
         }
     }
+
+    // ENSURE workingDays is a whole number (remove any decimals)
+    $workingDays = (int) round($workingDays);
 
     // Validate fixed leave balance
     if (!$leaveType->earnable) {
@@ -212,11 +215,11 @@ public function submitLeaveRequest(Request $request)
         ])->withInput();
     }
 
-    // Initialize days with pay and without pay
-    $daysWithPay = $workingDays;
+    // NEW LOGIC: Initialize days with pay and without pay with WHOLE NUMBERS
+    $daysWithPay = 0;
     $daysWithoutPay = 0;
 
-    // Check balance for SL and VL leave types (for splitting, not blocking)
+    // Check balance for SL and VL leave types
     if (in_array($code, ['SL', 'VL'])) {
         $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
 
@@ -226,16 +229,29 @@ public function submitLeaveRequest(Request $request)
             $daysWithoutPay = $workingDays;
         } else {
             $availableBalance = $code === 'SL' ? $leaveCredit->sl_balance : $leaveCredit->vl_balance;
-
-            if ($workingDays > $availableBalance) {
-                // Only count whole days for paid leave (floor the available balance)
-                $wholeDaysAvailable = floor($availableBalance);
-
-                // Split days: whole available credits as with pay, remainder as without pay
-                $daysWithPay = min($wholeDaysAvailable, $workingDays);
-                $daysWithoutPay = $workingDays - $daysWithPay;
+            
+            // NEW LOGIC: Convert to whole number and reserve 1 day
+            $wholeBalance = (int) floor($availableBalance); // Remove decimals
+            $usablePaidDays = max(0, $wholeBalance - 1); // Always reserve 1 day
+            
+            if ($workingDays <= $usablePaidDays) {
+                // All days can be paid
+                $daysWithPay = $workingDays;
+                $daysWithoutPay = 0;
+            } else {
+                // Split between paid and unpaid
+                $daysWithPay = $usablePaidDays;
+                $daysWithoutPay = $workingDays - $usablePaidDays;
             }
+            
+            // ENSURE both values are integers (no decimals)
+            $daysWithPay = (int) $daysWithPay;
+            $daysWithoutPay = (int) $daysWithoutPay;
         }
+    } else {
+        // For non-SL/VL leave types, all days are with pay (if approved)
+        $daysWithPay = $workingDays;
+        $daysWithoutPay = 0;
     }
 
     // Check for overlapping requests using the date range
@@ -1389,6 +1405,59 @@ public function donateMaternityLeave(Request $request)
             'error' => $e->getMessage()
         ], 400);
     }
+}
+
+
+/**
+ * Display employee leave credits transaction log
+ */
+/**
+ * Display employee leave credits transaction log
+ */
+public function creditsLog(Request $request)
+{
+    $user = $request->user()->load('employee');
+    $employeeId = $user->employee?->employee_id;
+
+    if (!$employeeId) {
+        abort(400, 'Employee profile not found for user.');
+    }
+
+    // Get paginated credits log with employee relationship
+    $creditsLog = \App\Models\LeaveCreditLog::with('employee')
+        ->where('employee_id', $employeeId)
+        ->orderBy('date', 'desc')
+        ->orderBy('created_at', 'desc')
+        ->paginate(15)
+        ->through(function ($log) {
+            // Ensure numeric values by casting to float
+            return [
+                'id' => $log->id,
+                'type' => $log->type,
+                'date' => $log->date,
+                'year' => $log->year,
+                'month' => $log->month,
+                'points_deducted' => (float) $log->points_deducted,
+                'balance_before' => (float) $log->balance_before,
+                'balance_after' => (float) $log->balance_after,
+                'remarks' => $log->remarks,
+                'created_at' => $log->created_at,
+                'formatted_date' => \Carbon\Carbon::parse($log->date)->format('M d, Y'),
+                'formatted_created_at' => $log->created_at->format('M d, Y h:i A'),
+            ];
+        });
+
+    // Get current leave credits for summary
+    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
+
+    return Inertia::render('Employee/CreditsLog', [
+        'creditsLog' => $creditsLog,
+        'currentBalances' => [
+            'sl' => (float) ($leaveCredit->sl_balance ?? 0),
+            'vl' => (float) ($leaveCredit->vl_balance ?? 0),
+        ],
+        'employee' => $user->employee->load('user'),
+    ]);
 }
 }
 

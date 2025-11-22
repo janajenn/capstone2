@@ -40,6 +40,7 @@ class LeaveRescheduleRequest extends Model
         return $this->belongsTo(LeaveRequest::class, 'original_leave_request_id');
     }
 
+    
     public function employee()
     {
         return $this->belongsTo(Employee::class, 'employee_id', 'employee_id');
