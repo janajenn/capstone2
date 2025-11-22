@@ -3,7 +3,7 @@ FROM php:8.3-fpm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    zip unzip git curl nano \
+    zip unzip git curl \
     libpng-dev libjpeg-dev libfreetype6-dev libwebp-dev \
     libonig-dev libxml2-dev libzip-dev \
     supervisor
@@ -29,12 +29,16 @@ RUN composer install --no-dev --optimize-autoloader
 # Fix Laravel permissions
 RUN chown -R www-data:www-data storage bootstrap/cache
 
-# Expose port
+# Expose port (Railway uses PORT environment variable)
 EXPOSE 8080
 
-# Supervisor config for scheduler
+# Supervisor config
 RUN mkdir -p /etc/supervisor/conf.d
 COPY ./railway/supervisor.conf /etc/supervisor/conf.d/supervisor.conf
 
-# Start Supervisord (runs scheduler + web server)
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Start command optimized for Railway
 CMD php artisan migrate --force && supervisord -c /etc/supervisor/conf.d/supervisor.conf
