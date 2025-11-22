@@ -24,7 +24,7 @@ WORKDIR /var/www
 COPY . .
 
 # Remove any existing .env file to prevent conflicts
-RUN rm -f .env
+
 
 # Install composer dependencies
 RUN composer install --no-dev --optimize-autoloader
