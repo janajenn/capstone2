@@ -1409,7 +1409,6 @@ public function generateRedirectUrl($type, $data, $currentMode = 'admin')
         case 'leave_request_submission':
         case 'leave_recall':
             if (isset($data['request_id'])) {
-                // ✅ FIXED: Use correct admin leave requests route
                 return "{$baseUrl}/leave-requests?highlight={$data['request_id']}";
             }
             return "{$baseUrl}/leave-requests";
@@ -1417,7 +1416,6 @@ public function generateRedirectUrl($type, $data, $currentMode = 'admin')
         case 'credit_conversion':
         case 'credit_conversion_submission':
             if (isset($data['conversion_id'])) {
-                // ✅ FIXED: Use correct admin credit conversions route  
                 return "{$baseUrl}/credit-conversions?highlight={$data['conversion_id']}";
             }
             return "{$baseUrl}/credit-conversions";
@@ -1425,8 +1423,11 @@ public function generateRedirectUrl($type, $data, $currentMode = 'admin')
         case 'attendance_correction_pending_review':
         case 'attendance_correction_submitted':
         case 'attendance_correction_reviewed':
-            // You might need to add this route if it doesn't exist
-            return "{$baseUrl}/attendance-logs"; // or appropriate admin route
+            // ✅ FIXED: Use the correct nested path for HR attendance logs
+            if ($currentMode === 'hr') {
+                return "{$baseUrl}/attendance/logs"; // This matches your route: /hr/attendance/logs
+            }
+            return "{$baseUrl}/attendance-logs";
 
         default:
             return "{$baseUrl}/dashboard";

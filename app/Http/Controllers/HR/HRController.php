@@ -400,6 +400,10 @@ public function update(Request $request, $employee_id)
             ]
         );
 
+        // Store original values BEFORE update
+        $originalSl = $leaveCredit->sl_balance;
+        $originalVl = $leaveCredit->vl_balance;
+
         $leaveCredit->update([
             'sl_balance' => $request->sl_balance,
             'vl_balance' => $request->vl_balance,
@@ -407,20 +411,42 @@ public function update(Request $request, $employee_id)
             'last_updated' => now(),
         ]);
 
-        // Optional: Create a log entry for the override
-        \App\Models\LeaveCreditLog::create([
-            'employee_id' => $employee_id,
-            'type' => 'MANUAL_OVERRIDE',
-            'date' => now(),
-            'year' => now()->year,
-            'month' => now()->month,
-            'points_deducted' => 0,
-            'balance_before_sl' => $leaveCredit->getOriginal('sl_balance'),
-            'balance_after_sl' => $request->sl_balance,
-            'balance_before_vl' => $leaveCredit->getOriginal('vl_balance'),
-            'balance_after_vl' => $request->vl_balance,
-            'remarks' => 'Manual override by HR',
-        ]);
+        // Create log entries for manual override - FIXED LOGIC
+        if ($originalSl != $request->sl_balance) {
+            $slChange = $request->sl_balance - $originalSl;
+            
+            \App\Models\LeaveCreditLog::create([
+                'employee_id' => $employee_id,
+                'type' => 'SL',
+                'date' => now(),
+                'year' => now()->year,
+                'month' => now()->month,
+                'points_deducted' => $slChange > 0 ? 0 : abs($slChange), // Only positive for actual deductions
+                'balance_before' => $originalSl,
+                'balance_after' => $request->sl_balance,
+                'remarks' => $slChange > 0 
+                    ? 'Manual credit addition by HR - Sick Leave increased from ' . $originalSl . ' to ' . $request->sl_balance
+                    : 'Manual credit deduction by HR - Sick Leave decreased from ' . $originalSl . ' to ' . $request->sl_balance,
+            ]);
+        }
+
+        if ($originalVl != $request->vl_balance) {
+            $vlChange = $request->vl_balance - $originalVl;
+            
+            \App\Models\LeaveCreditLog::create([
+                'employee_id' => $employee_id,
+                'type' => 'VL',
+                'date' => now(),
+                'year' => now()->year,
+                'month' => now()->month,
+                'points_deducted' => $vlChange > 0 ? 0 : abs($vlChange), // Only positive for actual deductions
+                'balance_before' => $originalVl,
+                'balance_after' => $request->vl_balance,
+                'remarks' => $vlChange > 0 
+                    ? 'Manual credit addition by HR - Vacation Leave increased from ' . $originalVl . ' to ' . $request->vl_balance
+                    : 'Manual credit deduction by HR - Vacation Leave decreased from ' . $originalVl . ' to ' . $request->vl_balance,
+            ]);
+        }
 
         return redirect()->back()->with('success', 'Leave credits updated successfully.');
 
@@ -428,6 +454,46 @@ public function update(Request $request, $employee_id)
         \Log::error('Error updating leave credits: ' . $e->getMessage());
         return redirect()->back()->withErrors(['error' => 'Failed to update leave credits: ' . $e->getMessage()]);
     }
+}
+
+
+
+public function creditsLog(Request $request)
+{
+    $perPage = 15;
+    
+    $query = LeaveCreditLog::where('employee_id', auth()->user()->employee_id)
+        ->orderBy('date', 'desc')
+        ->orderBy('created_at', 'desc');
+
+    // Apply month filter
+    if ($request->has('month') && $request->month) {
+        $date = \Carbon\Carbon::parse($request->month);
+        $query->where('year', $date->year)
+              ->where('month', $date->month);
+    }
+
+    $creditsLog = $query->paginate($perPage)->withQueryString();
+
+    // Format dates for display
+    $formattedLogs = $creditsLog->getCollection()->map(function ($log) {
+        $log->formatted_date = \Carbon\Carbon::parse($log->date)->format('M d, Y');
+        return $log;
+    });
+
+    $creditsLog->setCollection($formattedLogs);
+
+    // Get current balances
+    $currentBalances = [
+        'sl' => LeaveCredit::where('employee_id', auth()->user()->employee_id)->value('sl_balance') ?? 0,
+        'vl' => LeaveCredit::where('employee_id', auth()->user()->employee_id)->value('vl_balance') ?? 0,
+    ];
+
+    return Inertia::render('Employee/CreditsLog', [
+        'creditsLog' => $creditsLog,
+        'currentBalances' => $currentBalances,
+        'filters' => $request->only(['month']),
+    ]);
 }
 
 

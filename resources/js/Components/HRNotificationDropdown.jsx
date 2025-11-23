@@ -64,30 +64,41 @@ export default function HRNotificationDropdown() {
         }
     };
 
-    // NEW: Handle notification click
     const handleNotificationClick = async (notification) => {
         try {
+            console.log('Notification clicked:', notification);
+            
             // Close dropdown first
             setIsOpen(false);
     
-            // Mark as read via API (optional - you can also rely on the redirect endpoint to mark as read)
+            // Mark as read via API
             if (!notification.is_read) {
                 await markAsRead(notification.id);
             }
     
-            // Use Inertia to handle the redirect via the new click route - FIXED ROUTE
-            router.visit(`/hr/notifications/${notification.id}/click`);
+            // Check if we have a redirect_url in the notification data
+            if (notification.redirect_url) {
+                console.log('Using redirect_url from notification:', notification.redirect_url);
+                router.visit(notification.redirect_url);
+            } else {
+                // Fallback to the click route
+                const clickUrl = `/hr/notifications/${notification.id}/click`;
+                console.log('Using click route:', clickUrl);
+                router.visit(clickUrl);
+            }
             
         } catch (error) {
             console.error('Error handling notification click:', error);
             
-            // Fallback: try to redirect directly if the click route fails
+            // Final fallback
             if (notification.redirect_url) {
+                console.log('Fallback to redirect_url after error:', notification.redirect_url);
                 router.visit(notification.redirect_url);
+            } else {
+                console.error('No redirect URL available for notification');
             }
         }
     };
-
     const markAsRead = async (notificationId) => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');

@@ -156,14 +156,18 @@ class AttendanceLogsController extends Controller
         })->unique()->sort()->values();
 
         return Inertia::render('Employee/AttendanceLogs', [
-            'employee' => [
-                'employee_id' => $employee->employee_id,
-                'firstname' => $employee->firstname,
-                'lastname' => $employee->lastname,
-                'biometric_id' => $employee->biometric_id,
-                'department' => $employee->department->name,
-                'position' => $employee->position
-            ],
+           'employee' => $employee->only([
+        'employee_id', 
+        'firstname', 
+        'lastname', 
+        'biometric_id', 
+        'position'
+    ]) + [
+        'department' => $employee->department ? [
+            'id' => $employee->department->id,
+            'name' => $employee->department->name
+        ] : null
+    ],
             'attendanceLogs' => $completeAttendanceView->values(),
             'summary' => [
                 'total_days' => $totalDays,

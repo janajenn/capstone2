@@ -1424,26 +1424,41 @@ public function creditsLog(Request $request)
     }
 
     // Get paginated credits log with employee relationship
-    $creditsLog = \App\Models\LeaveCreditLog::with('employee')
-        ->where('employee_id', $employeeId)
-        ->orderBy('date', 'desc')
+    $query = \App\Models\LeaveCreditLog::with('employee')
+        ->where('employee_id', $employeeId);
+
+    // Apply month filter if provided
+    if ($request->has('month') && $request->month) {
+        $date = \Carbon\Carbon::parse($request->month);
+        $query->where('year', $date->year)
+              ->where('month', $date->month);
+    }
+
+    $creditsLog = $query->orderBy('date', 'desc')
         ->orderBy('created_at', 'desc')
         ->paginate(15)
         ->through(function ($log) {
-            // Ensure numeric values by casting to float
+            // Use more precise formatting for small values
+            $points = (float) $log->points_deducted;
+            $balanceBefore = (float) $log->balance_before;
+            $balanceAfter = (float) $log->balance_after;
+            
             return [
                 'id' => $log->id,
                 'type' => $log->type,
                 'date' => $log->date,
                 'year' => $log->year,
                 'month' => $log->month,
-                'points_deducted' => (float) $log->points_deducted,
-                'balance_before' => (float) $log->balance_before,
-                'balance_after' => (float) $log->balance_after,
+                'points_deducted' => $points,
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
                 'remarks' => $log->remarks,
                 'created_at' => $log->created_at,
                 'formatted_date' => \Carbon\Carbon::parse($log->date)->format('M d, Y'),
                 'formatted_created_at' => $log->created_at->format('M d, Y h:i A'),
+                // Add calculated fields for frontend
+                'actual_balance_change' => $balanceAfter - $balanceBefore,
+                'is_late_deduction' => stripos($log->remarks ?? '', 'late') !== false,
             ];
         });
 
@@ -1457,6 +1472,7 @@ public function creditsLog(Request $request)
             'vl' => (float) ($leaveCredit->vl_balance ?? 0),
         ],
         'employee' => $user->employee->load('user'),
+        'filters' => $request->only(['month']),
     ]);
 }
 }

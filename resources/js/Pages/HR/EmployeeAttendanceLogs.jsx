@@ -148,7 +148,12 @@ const CorrectionReviewModal = ({ correction, onClose, onApprove, onReject }) => 
 
     const handleViewProof = () => {
         if (correction.log_data.correction_proof_image) {
-            window.open(`/hr/attendance-corrections/${correction.log_data.correction_request_id}/view-proof`, '_blank');
+            // ✅ Use the correct HR route
+            const proofUrl = route('hr.attendance-corrections.view-proof', { 
+                id: correction.log_data.correction_request_id 
+            });
+            console.log('Proof URL:', proofUrl); // Debug log
+            window.open(proofUrl, '_blank');
         }
     };
 

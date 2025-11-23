@@ -233,13 +233,28 @@ Route::get('/hr/credit-conversions/{id}/form', [HRController::class, 'showMoneti
 
 
         Route::get('/attendance-corrections', [AttendanceImportController::class, 'correctionRequests'])->name('hr.attendance-corrections');
-    Route::get('/attendance-corrections/{id}', [AttendanceImportController::class, 'showCorrection'])->name('hr.attendance-corrections.show');
-    Route::post('/attendance-corrections/{id}/approve', [AttendanceImportController::class, 'approveCorrection'])->name('hr.attendance-corrections.approve');
-    Route::post('/attendance-corrections/{id}/reject', [AttendanceImportController::class, 'rejectCorrection'])->name('hr.attendance-corrections.reject');
-    Route::get('/attendance-corrections/{id}/view-proof', [AttendanceImportController::class, 'viewProofImage'])
-    ->name('hr.attendance-corrections.view-proof');
-    Route::post('/attendance/{id}/update-field', [AttendanceImportController::class, 'updateAttendanceField'])
-    ->name('hr.attendance.update-field');
+        Route::get('/attendance-corrections/{id}', [AttendanceImportController::class, 'showCorrection'])->name('hr.attendance-corrections.show');
+        Route::post('/attendance-corrections/{id}/approve', [AttendanceImportController::class, 'approveCorrection'])->name('hr.attendance-corrections.approve');
+        Route::post('/attendance-corrections/{id}/reject', [AttendanceImportController::class, 'rejectCorrection'])->name('hr.attendance-corrections.reject');
+        // HR Attendance Correction Routes
+        Route::get('/hr/attendance-corrections/{id}/view-proof', [AttendanceImportController::class, 'viewProofImage'])
+        ->name('hr.attendance-corrections.view-proof');
+        Route::post('/attendance/{id}/update-field', [AttendanceImportController::class, 'updateAttendanceField'])
+        ->name('hr.attendance.update-field');
+
+
+    // Temporary debug route - remove in production
+Route::get('/debug/user-role', function() {
+    $user = auth()->user();
+    return response()->json([
+        'user_id' => $user->id,
+        'user_role' => $user->role,
+        'user_role_type' => gettype($user->role),
+        'is_hr' => $user->role === 'hr',
+        'is_admin' => $user->role === 'admin',
+        'in_array_check' => in_array($user->role, ['admin', 'hr'])
+    ]);
+})->middleware(['auth', 'role:hr']);
         
         // ✅ ADD THE COMPARE ROUTE INSIDE THE PREFIX GROUP
  Route::get('/logs/employee/{employeeId}/compare', 
@@ -269,13 +284,16 @@ Route::delete('/holidays/{holiday}', [HRController::class, 'destroyHoliday'])->n
 Route::get('/holiday-dates', [HRController::class, 'getHolidayDates'])->name('holiday.dates');
 
 
-    // HR Notification Routes - FIXED
-Route::get('/hr/notifications', [\App\Http\Controllers\HR\HRNotificationController::class, 'index'])->name('hr.notifications');
-Route::post('/hr/notifications/{id}/mark-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAsRead'])->name('hr.notifications.mark-read');
-Route::post('/hr/notifications/mark-all-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark-all-read');
-Route::get('/hr/notifications/unread-count', [\App\Http\Controllers\HR\HRNotificationController::class, 'getUnreadCount'])->name('hr.notifications.unread-count');
-Route::get('/hr/notifications/{id}/click', [\App\Http\Controllers\HR\HRNotificationController::class, 'handleClick'])->name('hr.notifications.click'); // ADD /hr prefix
-
+ // HR Notification Routes
+Route::prefix('hr')->group(function () {
+    Route::get('/notifications', [\App\Http\Controllers\HR\HRNotificationController::class, 'index'])->name('hr.notifications');
+    Route::post('/notifications/{id}/mark-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAsRead'])->name('hr.notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\HR\HRNotificationController::class, 'markAllAsRead'])->name('hr.notifications.mark-all-read');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\HR\HRNotificationController::class, 'getUnreadCount'])->name('hr.notifications.unread-count');
+    
+    // ✅ Make sure this click route exists
+    Route::get('/notifications/{id}/click', [\App\Http\Controllers\HR\HRNotificationController::class, 'handleClick'])->name('hr.notifications.click');
+});
 
 
 

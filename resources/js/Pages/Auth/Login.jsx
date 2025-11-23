@@ -674,7 +674,7 @@ export default function Login({ status, canResetPassword }) {
                                 initial="hidden"
                                 animate={['visible', 'glow']}
                             >
-                                Malipayong Pasko Opolanons!
+                                Happy Holiday's Opolanons!
                             </motion.h2>
                         )}
                         <motion.h2 

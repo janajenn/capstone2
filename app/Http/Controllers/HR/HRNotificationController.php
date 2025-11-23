@@ -84,42 +84,76 @@ class HRNotificationController extends Controller
      */
     public function handleClick(Request $request, $id)
     {
+        \Log::info('HR Notification click handled', [
+            'notification_id' => $id,
+            'user_id' => $request->user()?->id,
+            'employee_id' => $request->user()->employee?->employee_id
+        ]);
+
         $user = $request->user()->load('employee');
         $employeeId = $user->employee?->employee_id;
 
         if (!$employeeId) {
+            \Log::error('HR Notification click failed: Employee profile not found', [
+                'user_id' => $request->user()?->id,
+                'notification_id' => $id
+            ]);
             return redirect()->back()->with('error', 'Employee profile not found.');
         }
 
-        // Mark notification as read
-        $this->notificationService->markAsRead($id, $employeeId);
+        try {
+            // Mark notification as read
+            $this->notificationService->markAsRead($id, $employeeId);
 
-        // Get notification to extract redirect URL
-        $notification = \App\Models\Notification::where('id', $id)
-            ->where('employee_id', $employeeId)
-            ->first();
+            // Get notification to extract redirect URL
+            $notification = \App\Models\Notification::where('id', $id)
+                ->where('employee_id', $employeeId)
+                ->first();
 
-        if (!$notification) {
-            return redirect()->back()->with('error', 'Notification not found.');
+            if (!$notification) {
+                \Log::error('HR Notification not found', [
+                    'notification_id' => $id,
+                    'employee_id' => $employeeId
+                ]);
+                return redirect()->back()->with('error', 'Notification not found.');
+            }
+
+            $data = $notification->data ?? [];
+            
+            // Determine redirect URL for HR mode
+            if (isset($data['redirect_url'])) {
+                $redirectUrl = $data['redirect_url'];
+                \Log::info('Using redirect_url from notification data', [
+                    'redirect_url' => $redirectUrl,
+                    'notification_id' => $id
+                ]);
+            } else {
+                $redirectUrl = $this->notificationService->generateRedirectUrl(
+                    $notification->type, 
+                    $data, 
+                    'hr' // Use HR mode
+                );
+                \Log::info('Generated redirect URL', [
+                    'redirect_url' => $redirectUrl,
+                    'type' => $notification->type,
+                    'notification_id' => $id
+                ]);
+            }
+
+            // Use Inertia redirect
+            return Inertia::location($redirectUrl);
+
+        } catch (\Exception $e) {
+            \Log::error('Error in HR notification handleClick', [
+                'error' => $e->getMessage(),
+                'notification_id' => $id,
+                'user_id' => $request->user()?->id,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->back()->with('error', 'Failed to process notification click.');
         }
-
-        $data = $notification->data ?? [];
-        
-        // Determine redirect URL for HR mode
-        if (isset($data['redirect_url'])) {
-            $redirectUrl = $data['redirect_url'];
-        } else {
-            $redirectUrl = $this->notificationService->generateRedirectUrl(
-                $notification->type, 
-                $data, 
-                'hr' // Use HR mode
-            );
-        }
-
-        // Use Inertia redirect
-        return Inertia::location($redirectUrl);
     }
-
     /**
      * Mark HR notification as read
      */

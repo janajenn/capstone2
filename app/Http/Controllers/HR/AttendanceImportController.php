@@ -2265,86 +2265,75 @@ private function formatMinutesToHours($minutes)
  /**
   * View proof image for HR
   */
-  public function viewProofImage($id)
-  {
-      \Log::info('🖼️ viewProofImage called', [
-          'correction_id' => $id,
-          'user_id' => auth()->id(),
-          'user_role' => auth()->user()->role ?? 'none'
-      ]);
-  
-      try {
-          $correction = AttendanceCorrection::findOrFail($id);
-          
-          \Log::info('🔍 Correction details', [
-              'id' => $correction->id,
-              'proof_image' => $correction->proof_image,
-              'employee_id' => $correction->employee_id,
-              'status' => $correction->status
-          ]);
-  
-          // Check if user has HR role
-          $user = auth()->user();
-          if (!in_array($user->role, ['admin', 'hr'])) {
-              \Log::warning('🚫 Unauthorized access', [
-                  'user_id' => $user->id,
-                  'role' => $user->role
-              ]);
-              abort(403, 'Unauthorized action.');
-          }
-  
-          // Check if proof image exists in database
-          if (!$correction->proof_image) {
-              \Log::warning('❌ No proof image path in database', ['correction_id' => $id]);
-              abort(404, 'Proof image not found in database.');
-          }
-  
-          // Check if file exists in storage
-          $storage = Storage::disk('public');
-          $fileExists = $storage->exists($correction->proof_image);
-          
-          \Log::info('📁 Storage check', [
-              'proof_image_path' => $correction->proof_image,
-              'file_exists' => $fileExists,
-              'storage_path' => $storage->path($correction->proof_image)
-          ]);
-  
-          if (!$fileExists) {
-              // List files in attendance_corrections directory for debugging
-              $filesInDir = $storage->files('attendance_corrections');
-              \Log::warning('❌ File not found in storage. Available files:', [
-                  'directory' => 'attendance_corrections',
-                  'files_count' => count($filesInDir),
-                  'files' => $filesInDir
-              ]);
-              abort(404, 'Proof image file not found in storage.');
-          }
-  
-          // Get file info
-          $filePath = $storage->path($correction->proof_image);
-          $mimeType = mime_content_type($filePath);
-          
-          \Log::info('✅ Serving image', [
-              'file_path' => $filePath,
-              'mime_type' => $mimeType,
-              'file_size' => $storage->size($correction->proof_image)
-          ]);
-  
-          return response()->file($filePath, [
-              'Content-Type' => $mimeType,
-              'Content-Disposition' => 'inline; filename="' . basename($correction->proof_image) . '"'
-          ]);
-  
-      } catch (\Exception $e) {
-          \Log::error('❌ Error in viewProofImage', [
-              'correction_id' => $id,
-              'error' => $e->getMessage(),
-              'trace' => $e->getTraceAsString()
-          ]);
-          abort(404, 'Error loading proof image: ' . $e->getMessage());
-      }
-  }
+/**
+ * View proof image for HR - DEBUG VERSION
+ */
+/**
+ * View proof image for HR - FIXED VERSION
+ */
+public function viewProofImage($id)
+{
+    $correction = AttendanceCorrection::findOrFail($id);
+    $user = auth()->user();
+    
+    // DEBUG: Log user information for troubleshooting
+    \Log::info('🔍 HR PROOF IMAGE ACCESS DEBUG', [
+        'user_id' => $user->id,
+        'user_role' => $user->role,
+        'correction_id' => $id,
+        'correction_status' => $correction->status,
+        'employee_id' => $correction->employee_id,
+        'department_id' => $correction->department_id
+    ]);
 
+    // ✅ PROPER AUTHORIZATION FOR HR
+    $allowedRoles = ['admin', 'hr'];
+    $canAccess = in_array($user->role, $allowedRoles);
+
+    if (!$canAccess) {
+        \Log::warning('❌ UNAUTHORIZED HR ACCESS ATTEMPT', [
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'allowed_roles' => $allowedRoles
+        ]);
+        abort(403, 'Unauthorized action.');
+    }
+
+    // Check if correction is in a status that HR should be able to view
+    $allowedStatuses = ['Reviewed', 'Approved', 'Rejected'];
+    if (!in_array($correction->status, $allowedStatuses)) {
+        \Log::warning('❌ HR ATTEMPTED TO VIEW NON-REVIEWED CORRECTION', [
+            'correction_id' => $id,
+            'current_status' => $correction->status,
+            'allowed_statuses' => $allowedStatuses
+        ]);
+        abort(403, 'This correction request is not available for HR review yet.');
+    }
+
+    if (!$correction->proof_image || !Storage::disk('public')->exists($correction->proof_image)) {
+        \Log::error('❌ PROOF IMAGE NOT FOUND', [
+            'correction_id' => $id,
+            'proof_image_path' => $correction->proof_image,
+            'file_exists' => $correction->proof_image ? Storage::disk('public')->exists($correction->proof_image) : false
+        ]);
+        abort(404, 'Proof image not found.');
+    }
+
+    // Return the image as a response for viewing
+    $filePath = Storage::disk('public')->path($correction->proof_image);
+    $mimeType = mime_content_type($filePath);
+    
+    \Log::info('✅ HR PROOF IMAGE ACCESS GRANTED', [
+        'correction_id' => $id,
+        'file_path' => $correction->proof_image,
+        'mime_type' => $mimeType
+    ]);
+
+    return response()->file($filePath, [
+        'Content-Type' => $mimeType,
+        'Content-Disposition' => 'inline; filename="' . basename($correction->proof_image) . '"'
+    ]);
+}
  /**
   * Transform correction data for display
   */
