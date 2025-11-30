@@ -802,22 +802,7 @@ export default function Login({ status, canResetPassword }) {
                             </motion.div>
                         </div>
 
-                        {/* Remember Me */}
-                        <motion.div 
-                            className="flex items-center"
-                            variants={itemVariants}
-                        >
-                            <Checkbox
-                                name="remember"
-                                checked={data.remember}
-                                onChange={(e) => setData('remember', e.target.checked)}
-                                className={`h-4 w-4 ${focusRing} border-gray-300 rounded`}
-                            />
-                            <label htmlFor="remember" className={`ml-2 block text-sm ${subTextColor}`}>
-                                Remember me
-                            </label>
-                        </motion.div>
-
+                       
                         {/* Submit Button */}
                         <motion.div 
                             variants={itemVariants}

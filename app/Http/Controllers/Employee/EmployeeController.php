@@ -138,6 +138,7 @@ public function showLeaveRequest(Request $request)
             ],
             'leaveBalances' => $leaveBalances,
             'employeeGender' => $user->employee->gender ?? null,
+            'employeeCivilStatus' => $user->employee->civil_status ?? null, // Add this line
             'holidays' => $holidays,
             'prefill' => $prefill, // Pass prefill data to frontend
         ]);
@@ -152,13 +153,16 @@ public function submitLeaveRequest(Request $request)
         abort(400, 'Employee profile not found for user.');
     }
 
+    \Log::info('Leave Request Submission Data:', $request->all());
+    \Log::info('Selected Dates:', ['selectedDates' => $request->input('selectedDates')]);
+
     // Updated validation to handle selectedDates array
     $validated = $request->validate([
         'leave_type_id' => ['required', 'exists:leave_types,id'],
         'selectedDates' => ['required', 'array', 'min:1'],
         'selectedDates.*' => ['required', 'date'],
-        'date_from' => ['sometimes', 'date'], // Keep for compatibility
-        'date_to' => ['sometimes', 'date'],   // Keep for compatibility
+        'date_from' => ['sometimes', 'date'], 
+        'date_to' => ['sometimes', 'date'],   
         'reason' => ['required', 'string'],
         'details' => ['required', 'string'],
         'attachment' => ['nullable', 'file', 'max:10240'],
@@ -169,29 +173,35 @@ public function submitLeaveRequest(Request $request)
     $leaveType = LeaveType::findOrFail($validated['leave_type_id']);
     $code = strtoupper($leaveType->code);
 
-    // Use selectedDates array to calculate date range and working days
+    // Use selectedDates array as the single source of truth
     $selectedDates = $validated['selectedDates'];
     sort($selectedDates); // Ensure dates are in order
     
-    // Set date_from and date_to from the selected dates
+    \Log::info('Processed Selected Dates:', $selectedDates);
+
+    // Set date_from and date_to from the selected dates (for display purposes)
     $dateFrom = min($selectedDates);
     $dateTo = max($selectedDates);
 
-    // Calculate working days (excluding weekends) - ENSURE WHOLE NUMBERS
-    $workingDays = $request->input('working_days') ?? 0;
-    if ($workingDays === 0) {
-        $workingDays = 0;
-        foreach ($selectedDates as $date) {
-            $dateObj = new \DateTime($date);
-            $dayOfWeek = $dateObj->format('N'); // 1-7 (Monday-Sunday)
-            if ($dayOfWeek < 6) { // 1-5 are weekdays
-                $workingDays++;
-            }
+    // Calculate working days based ONLY on selected dates (excluding weekends)
+    $workingDays = 0;
+    foreach ($selectedDates as $date) {
+        $dateObj = new \DateTime($date);
+        $dayOfWeek = $dateObj->format('N'); // 1-7 (Monday-Sunday)
+        if ($dayOfWeek < 6) { // 1-5 are weekdays
+            $workingDays++;
         }
     }
 
-    // ENSURE workingDays is a whole number (remove any decimals)
+    // ENSURE workingDays is a whole number
     $workingDays = (int) round($workingDays);
+
+    \Log::info('Calculated Values:', [
+        'date_from' => $dateFrom,
+        'date_to' => $dateTo,
+        'working_days' => $workingDays,
+        'selected_dates_count' => count($selectedDates)
+    ]);
 
     // Validate fixed leave balance
     if (!$leaveType->earnable) {
@@ -254,16 +264,16 @@ public function submitLeaveRequest(Request $request)
         $daysWithoutPay = 0;
     }
 
-    // Check for overlapping requests using the date range
+    // Check for overlapping requests using the ACTUAL selected dates
     $overlappingRequest = LeaveRequest::where('employee_id', $employeeId)
         ->whereIn('status', ['pending', 'approved'])
-        ->where(function ($query) use ($dateFrom, $dateTo) {
-            $query->whereBetween('date_from', [$dateFrom, $dateTo])
-                ->orWhereBetween('date_to', [$dateFrom, $dateTo])
-                ->orWhere(function ($q) use ($dateFrom, $dateTo) {
-                    $q->where('date_from', '<=', $dateFrom)
-                        ->where('date_to', '>=', $dateTo);
+        ->where(function ($query) use ($selectedDates) {
+            foreach ($selectedDates as $date) {
+                $query->orWhere(function ($q) use ($date) {
+                    $q->whereDate('date_from', '<=', $date)
+                      ->whereDate('date_to', '>=', $date);
                 });
+            }
         })
         ->first();
 
@@ -311,20 +321,26 @@ public function submitLeaveRequest(Request $request)
     // If dept head is applying, set special status
     $status = $isDeptHead ? 'pending_hr_to_admin' : 'pending';
 
-    // Create leave request
-    $leaveRequest = LeaveRequest::create([
-        'employee_id' => $employeeId,
-        'leave_type_id' => $validated['leave_type_id'],
-        'date_from' => $dateFrom,
-        'date_to' => $dateTo,
-        'reason' => $validated['reason'],
-        'status' => $status, // Use special status for dept heads
-        'attachment_path' => $attachmentPath,
-        'days_with_pay' => $daysWithPay,
-        'days_without_pay' => $daysWithoutPay,
-        'total_days' => $workingDays,
-        'is_dept_head_request' => $isDeptHead, // Add this flag
-        'selected_dates' => json_encode($selectedDates), // Store the actual selected dates
+    // Create leave request - store the actual selected dates as the source of truth
+    // In your submitLeaveRequest method
+$leaveRequest = LeaveRequest::create([
+    'employee_id' => $employeeId,
+    'leave_type_id' => $validated['leave_type_id'],
+    'date_from' => $dateFrom,
+    'date_to' => $dateTo,
+    'selected_dates' => $selectedDates,
+    'total_days' => count($selectedDates), // This should match the actual selected dates count
+    'reason' => $validated['reason'],
+    'status' => $status,
+    'attachment_path' => $attachmentPath,
+    'days_with_pay' => $daysWithPay,
+    'days_without_pay' => $daysWithoutPay,
+    'is_dept_head_request' => $isDeptHead,
+]);
+
+    \Log::info('Leave Request Created:', [
+        'id' => $leaveRequest->id,
+        'selected_dates_stored' => $leaveRequest->selected_dates
     ]);
 
     // Save details
@@ -352,19 +368,23 @@ public function submitLeaveRequest(Request $request)
     try {
         $employeeName = $user->employee->firstname . ' ' . $user->employee->lastname;
         $leaveTypeName = $leaveRequest->leaveType->name;
-        $dateFromFormatted = \Carbon\Carbon::parse($leaveRequest->date_from)->format('M d, Y');
-        $dateToFormatted = \Carbon\Carbon::parse($leaveRequest->date_to)->format('M d, Y');
+        
+        // Format dates based on ACTUAL selected dates
+        $dateFromFormatted = \Carbon\Carbon::parse($dateFrom)->format('M d, Y');
+        $dateToFormatted = \Carbon\Carbon::parse($dateTo)->format('M d, Y');
 
         $this->notificationService->createEmployeeNotification(
             $employeeId,
             'leave_request_submitted',
             'Leave Request Submitted',
-            "Your {$leaveTypeName} leave request from {$dateFromFormatted} to {$dateToFormatted} has been submitted successfully and is pending approval.",
+            "Your {$leaveTypeName} leave request from {$dateFromFormatted} to {$dateToFormatted} ({$workingDays} days) has been submitted successfully and is pending approval.",
             [
                 'request_id' => $leaveRequest->id,
                 'leave_type' => $leaveTypeName,
-                'date_from' => $leaveRequest->date_from,
-                'date_to' => $leaveRequest->date_to,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'total_days' => $workingDays,
+                'selected_dates_count' => count($selectedDates),
             ]
         );
     } catch (\Exception $e) {
@@ -377,130 +397,150 @@ public function submitLeaveRequest(Request $request)
 
 
    // In EmployeeController.php
-// In EmployeeController.php
-// In EmployeeController.php - myLeaveRequests method
-public function myLeaveRequests(Request $request)
-{
-    $user = $request->user()->load('employee');
-    $employeeId = $user->employee?->employee_id;
-
-    if (!$employeeId) {
-        abort(400, 'Employee profile not found for user.');
+   public function myLeaveRequests(Request $request)
+   {
+       $user = $request->user()->load('employee');
+       $employeeId = $user->employee?->employee_id;
+   
+       if (!$employeeId) {
+           abort(400, 'Employee profile not found for user.');
+       }
+   
+       $leaveRequests = LeaveRequest::with([
+               'leaveType', 
+               'details', 
+               'approvals', 
+               'recalls',
+               'employee.department'
+           ])
+           ->where('employee_id', $employeeId)
+           ->orderBy('created_at', 'desc')
+           ->paginate(5)
+           ->through(function ($request) use ($user) {
+               $latestRecall = $request->recalls->sortByDesc('created_at')->first();
+               
+               // Get selected dates from the database
+              // Get selected dates from the database - handle NULL case and array input
+$selectedDates = [];
+if (!empty($request->selected_dates)) {
+    if (is_array($request->selected_dates)) {
+        // If it's already an array (due to model casting), use it directly
+        $selectedDates = $request->selected_dates;
+    } else if (is_string($request->selected_dates)) {
+        // If it's a JSON string, decode it
+        $selectedDates = json_decode($request->selected_dates, true) ?? [];
     }
-
-    $leaveRequests = LeaveRequest::with([
-            'leaveType', 
-            'details', 
-            'approvals', 
-            'recalls',
-            'employee.department'
-        ])
-        ->where('employee_id', $employeeId)
-        ->orderBy('created_at', 'desc')
-        ->paginate(5)
-        ->through(function ($request) use ($user) {
-            $latestRecall = $request->recalls->sortByDesc('created_at')->first();
-            
-            // FIXED: Calculate display status based on approvals
-            $displayStatus = $request->status;
-            $hrApproved = $request->approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
-            $deptHeadApproved = $request->approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
-            $adminApproved = $request->approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
-            
-            // Calculate user-friendly status for display
-            if ($adminApproved) {
-                $displayStatus = 'approved';
-            } elseif ($deptHeadApproved && $hrApproved) {
-                $displayStatus = 'pending_admin';
-            } elseif ($hrApproved) {
-                $displayStatus = 'pending_dept_head';
-            } else {
-                $displayStatus = 'pending';
-            }
-            
-            return [
-                'id' => $request->id,
-                'date_from' => $request->date_from,
-                'date_to' => $request->date_to,
-                'status' => $displayStatus, // Use calculated display status
-                'actual_status' => $request->status, // Keep original status
-                'total_days' => $request->total_days,
-                'created_at' => $request->created_at,
-                'reason' => $request->reason,
-                'days_with_pay' => $request->days_with_pay,
-                'days_without_pay' => $request->days_without_pay,
-                'attachment_path' => $request->attachment_path,
-                'is_dept_head_request' => $request->is_dept_head_request || $user->role === 'dept_head',
-                
-                // Add recall information
-                'is_recalled' => $request->status === 'recalled',
-                'recall_data' => $latestRecall ? [
-    'id' => $latestRecall->id,
-    'reason' => $latestRecall->reason, // Changed from reason_for_change to reason
-    'recalled_at' => $latestRecall->created_at,
-    'recalled_by' => $latestRecall->approved_by_admin,
-    'status' => $latestRecall->status,
-] : null,
-                
-                // Relationships
-                'leave_type' => $request->leaveType ? [
-                    'id' => $request->leaveType->id,
-                    'name' => $request->leaveType->name,
-                    'code' => $request->leaveType->code,
-                ] : null,
-                
-                'approvals' => $request->approvals->map(function($approval) {
-                    $approver = \App\Models\User::find($approval->approved_by);
-                    return [
-                        'id' => $approval->id,
-                        'role' => $approval->role,
-                        'status' => $approval->status,
-                        'remarks' => $approval->remarks,
-                        'approved_at' => $approval->approved_at,
-                        'approved_by' => $approval->approved_by,
-                        'approver_name' => $approver ? $approver->name : 'Unknown',
-                        'approver' => $approver ? [
-                            'name' => $approver->name,
-                            'firstname' => $approver->firstname ?? null,
-                            'lastname' => $approver->lastname ?? null,
-                        ] : null,
-                    ];
-                }),
-                
-                'recalls' => $request->recalls->map(function($recall) {
-                    return [
-                        'id' => $recall->id,
-                        'status' => $recall->status,
-                        'reason' => $recall->reason,
-                        'created_at' => $recall->created_at,
-                    ];
-                }),
-                
-                'details' => $request->details->map(function($detail) {
-                    return [
-                        'id' => $detail->id,
-                        'field_name' => $detail->field_name,
-                        'field_value' => $detail->field_value,
-                    ];
-                }),
-                
-                'employee' => $request->employee ? [
-                    'id' => $request->employee->id,
-                    'firstname' => $request->employee->firstname,
-                    'lastname' => $request->employee->lastname,
-                    'department' => $request->employee->department ? [
-                        'id' => $request->employee->department->id,
-                        'name' => $request->employee->department->name,
-                    ] : null,
-                ] : null,
-            ];
-        });
-
-        return Inertia::render('Employee/MyLeaveRequests', [
-            'leaveRequests' => $leaveRequests,
-            'employee' => $user->employee->load('user'),
-        ]);
 }
+$selectedDatesCount = count($selectedDates);
+               
+               // Use selected dates for accurate duration calculation
+               $actualDuration = $selectedDatesCount > 0 ? $selectedDatesCount : 
+                   (($request->date_from && $request->date_to) ? 
+                       \Carbon\Carbon::parse($request->date_from)->diffInDays(\Carbon\Carbon::parse($request->date_to)) + 1 : 0);
+               
+               // FIXED: Calculate display status based on approvals
+               $displayStatus = $request->status;
+               $hrApproved = $request->approvals->where('role', 'hr')->where('status', 'approved')->isNotEmpty();
+               $deptHeadApproved = $request->approvals->where('role', 'dept_head')->where('status', 'approved')->isNotEmpty();
+               $adminApproved = $request->approvals->where('role', 'admin')->where('status', 'approved')->isNotEmpty();
+               
+               // Calculate user-friendly status for display
+               if ($adminApproved) {
+                   $displayStatus = 'approved';
+               } elseif ($deptHeadApproved && $hrApproved) {
+                   $displayStatus = 'pending_admin';
+               } elseif ($hrApproved) {
+                   $displayStatus = 'pending_dept_head';
+               } else {
+                   $displayStatus = 'pending';
+               }
+               
+               return [
+                   'id' => $request->id,
+                   'date_from' => $request->date_from,
+                   'date_to' => $request->date_to,
+                   'status' => $displayStatus,
+                   'actual_status' => $request->status,
+                   'total_days' => $actualDuration, // Use actual duration based on selected dates
+                   'calculated_days' => $request->total_days, // Keep the calculated working days
+                   'created_at' => $request->created_at,
+                   'reason' => $request->reason,
+                   'days_with_pay' => $request->days_with_pay,
+                   'days_without_pay' => $request->days_without_pay,
+                   'attachment_path' => $request->attachment_path,
+                   'is_dept_head_request' => $request->is_dept_head_request || $user->role === 'dept_head',
+                   'selected_dates' => $selectedDates, // Include selected dates array
+                   'selected_dates_count' => $selectedDatesCount, // Include count for easy access
+                   
+                   // Add recall information
+                   'is_recalled' => $request->status === 'recalled',
+                   'recall_data' => $latestRecall ? [
+                       'id' => $latestRecall->id,
+                       'reason' => $latestRecall->reason,
+                       'recalled_at' => $latestRecall->created_at,
+                       'recalled_by' => $latestRecall->approved_by_admin,
+                       'status' => $latestRecall->status,
+                   ] : null,
+                   
+                   // Relationships
+                   'leave_type' => $request->leaveType ? [
+                       'id' => $request->leaveType->id,
+                       'name' => $request->leaveType->name,
+                       'code' => $request->leaveType->code,
+                   ] : null,
+                   
+                   'approvals' => $request->approvals->map(function($approval) {
+                       $approver = \App\Models\User::find($approval->approved_by);
+                       return [
+                           'id' => $approval->id,
+                           'role' => $approval->role,
+                           'status' => $approval->status,
+                           'remarks' => $approval->remarks,
+                           'approved_at' => $approval->approved_at,
+                           'approved_by' => $approval->approved_by,
+                           'approver_name' => $approver ? $approver->name : 'Unknown',
+                           'approver' => $approver ? [
+                               'name' => $approver->name,
+                               'firstname' => $approver->firstname ?? null,
+                               'lastname' => $approver->lastname ?? null,
+                           ] : null,
+                       ];
+                   }),
+                   
+                   'recalls' => $request->recalls->map(function($recall) {
+                       return [
+                           'id' => $recall->id,
+                           'status' => $recall->status,
+                           'reason' => $recall->reason,
+                           'created_at' => $recall->created_at,
+                       ];
+                   }),
+                   
+                   'details' => $request->details->map(function($detail) {
+                       return [
+                           'id' => $detail->id,
+                           'field_name' => $detail->field_name,
+                           'field_value' => $detail->field_value,
+                       ];
+                   }),
+                   
+                   'employee' => $request->employee ? [
+                       'id' => $request->employee->id,
+                       'firstname' => $request->employee->firstname,
+                       'lastname' => $request->employee->lastname,
+                       'department' => $request->employee->department ? [
+                           'id' => $request->employee->department->id,
+                           'name' => $request->employee->department->name,
+                       ] : null,
+                   ] : null,
+               ];
+           });
+   
+       return Inertia::render('Employee/MyLeaveRequests', [
+           'leaveRequests' => $leaveRequests,
+           'employee' => $user->employee->load('user'),
+       ]);
+   }
 //leave balance
 
 /**
@@ -571,7 +611,7 @@ public function leaveBalances(Request $request)
             ];
         });
 
-    // ADDED: Get eligible recipients for donation
+    // MODIFIED: Get eligible recipients for donation - only male employees
     $eligibleRecipients = Employee::with(['department', 'user'])
         ->where('gender', 'male')
         ->where('status', 'active')
@@ -583,8 +623,17 @@ public function leaveBalances(Request $request)
                 'name' => $employee->firstname . ' ' . $employee->lastname,
                 'position' => $employee->position,
                 'department' => $employee->department?->name,
+                'searchable_text' => strtolower($employee->firstname . ' ' . $employee->lastname . ' ' . $employee->position . ' ' . ($employee->department?->name ?? ''))
             ];
         });
+
+    // ADDED: Search functionality for recipients
+    if ($request->has('search_recipient') && $request->search_recipient) {
+        $searchTerm = strtolower($request->search_recipient);
+        $eligibleRecipients = $eligibleRecipients->filter(function ($recipient) use ($searchTerm) {
+            return str_contains($recipient['searchable_text'], $searchTerm);
+        });
+    }
 
     // ADDED: Check donation eligibility
     $canDonate = $this->leaveDonationService->canDonateMaternityLeave($employeeId);
@@ -595,9 +644,51 @@ public function leaveBalances(Request $request)
         'employee' => $user->employee,
         // ADDED: New props for donation functionality
         'receivedDonations' => $receivedDonations,
-        'eligibleRecipients' => $eligibleRecipients,
+        'eligibleRecipients' => $eligibleRecipients->values(), // Reset keys
         'canDonate' => $canDonate,
     ]);
+}
+
+// ADD NEW METHOD: Search recipients endpoint
+public function searchRecipients(Request $request)
+{
+    $user = $request->user()->load('employee');
+    $employeeId = $user->employee?->employee_id;
+
+    if (!$employeeId) {
+        return response()->json(['error' => 'Employee not found'], 400);
+    }
+
+    $searchTerm = $request->input('search', '');
+
+    $recipients = Employee::with(['department'])
+        ->where('gender', 'male')
+        ->where('status', 'active')
+        ->where('employee_id', '!=', $employeeId)
+        ->when($searchTerm, function ($query) use ($searchTerm) {
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('firstname', 'like', "%{$searchTerm}%")
+                  ->orWhere('lastname', 'like', "%{$searchTerm}%")
+                  ->orWhere('position', 'like', "%{$searchTerm}%")
+                  ->orWhereHas('department', function ($deptQuery) use ($searchTerm) {
+                      $deptQuery->where('name', 'like', "%{$searchTerm}%");
+                  });
+            });
+        })
+        ->orderBy('firstname')
+        ->orderBy('lastname')
+        ->limit(50) // Limit results for performance
+        ->get()
+        ->map(function ($employee) {
+            return [
+                'employee_id' => $employee->employee_id,
+                'name' => $employee->firstname . ' ' . $employee->lastname,
+                'position' => $employee->position,
+                'department' => $employee->department?->name,
+            ];
+        });
+
+    return response()->json($recipients);
 }
 
 /**
@@ -615,6 +706,9 @@ public function leaveHistory(Request $request)
         abort(400, 'Employee profile not found for user.');
     }
 
+    \Log::info('=== LEAVE HISTORY DEBUG START ===');
+    \Log::info('Employee ID: ' . $employeeId);
+
     $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
 
     $leaveHistory = LeaveRequest::with([
@@ -631,6 +725,82 @@ public function leaveHistory(Request $request)
         ->orderBy('created_at', 'desc')
         ->paginate(10)
         ->through(function ($request) use ($employeeId, $leaveCredit) {
+            \Log::info('--- Processing Leave Request ID: ' . $request->id . ' ---');
+            
+            // DEBUG: Check the problematic values
+            \Log::info('DEBUG - Problematic Values:');
+            \Log::info('  - days_with_pay: ' . $request->days_with_pay);
+            \Log::info('  - days_without_pay: ' . $request->days_without_pay);
+            \Log::info('  - total_days: ' . $request->total_days);
+
+            // FIXED: More robust selected_dates handling
+            $selectedDates = [];
+            $selectedDatesCount = 0;
+            
+            if (!empty($request->selected_dates)) {
+                if (is_array($request->selected_dates)) {
+                    $selectedDates = $request->selected_dates;
+                } elseif (is_string($request->selected_dates)) {
+                    $decoded = json_decode($request->selected_dates, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $selectedDates = $decoded;
+                    }
+                }
+            }
+            
+            // If Method 1 failed, try raw database value
+            if (empty($selectedDates)) {
+                try {
+                    $rawSelectedDates = $request->getRawOriginal('selected_dates');
+                    if (!empty($rawSelectedDates) && is_string($rawSelectedDates)) {
+                        $decoded = json_decode($rawSelectedDates, true);
+                        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                            $selectedDates = $decoded;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::info('  - Error accessing raw value: ' . $e->getMessage());
+                }
+            }
+
+            $selectedDatesCount = count($selectedDates);
+            
+            // FIXED: Use selected dates count for accurate duration
+            $actualDuration = $selectedDatesCount > 0 ? $selectedDatesCount : $request->total_days;
+            
+            // FIXED: Calculate correct days_with_pay and days_without_pay based on actual duration
+            $daysWithPay = $request->days_with_pay;
+            $daysWithoutPay = $request->days_without_pay;
+            
+            // If the values seem incorrect (like 29 and 57 for 5 total days), recalculate them
+            if ($daysWithPay + $daysWithoutPay != $actualDuration && $actualDuration > 0) {
+                \Log::info('DEBUG - Correcting days_with_pay/days_without_pay mismatch');
+                \Log::info('  - Current: with_pay=' . $daysWithPay . ', without_pay=' . $daysWithoutPay . ', total=' . ($daysWithPay + $daysWithoutPay));
+                \Log::info('  - Expected total: ' . $actualDuration);
+                
+                // For approved leaves with VL/SL, assume all days are with pay if there's sufficient balance
+                if ($request->status === 'approved' && in_array($request->leaveType->code ?? '', ['VL', 'SL'])) {
+                    $availableBalance = 0;
+                    if ($leaveCredit) {
+                        $availableBalance = ($request->leaveType->code === 'SL') ? $leaveCredit->sl_balance : $leaveCredit->vl_balance;
+                    }
+                    
+                    if ($availableBalance >= $actualDuration) {
+                        $daysWithPay = $actualDuration;
+                        $daysWithoutPay = 0;
+                    } else {
+                        $daysWithPay = $availableBalance;
+                        $daysWithoutPay = $actualDuration - $availableBalance;
+                    }
+                } else {
+                    // For other cases or if we can't determine, make them match the actual duration
+                    $daysWithPay = $actualDuration;
+                    $daysWithoutPay = 0;
+                }
+                
+                \Log::info('  - Corrected: with_pay=' . $daysWithPay . ', without_pay=' . $daysWithoutPay);
+            }
+
             // Calculate approved_at using the eager-loaded approvals collection
             $approvedAt = $request->approvals
                 ->where('status', 'approved')
@@ -638,40 +808,30 @@ public function leaveHistory(Request $request)
                 ->first()
                 ?->approved_at;
 
-            // Calculate balance before/after based on leave type
+            // FIXED: Simplified balance calculation
             $before = 'N/A';
             $after = 'N/A';
 
             $code = $request->leaveType->code ?? '';
 
-            // For balance calculation, only calculate if the request is approved
+            // Only calculate balance for approved leaves
             if ($request->status === 'approved') {
-                $subsequentSum = 0;
-                if ($approvedAt) {
-                    $subsequentSum = LeaveRequest::where('employee_id', $employeeId)
-                        ->where('leave_type_id', $request->leave_type_id)
-                        ->where('status', 'approved')
-                        ->whereRaw('(SELECT MAX(approved_at) FROM leave_approvals WHERE leave_id = leave_requests.id AND status = "approved") > ?', [$approvedAt])
-                        ->sum('days_with_pay');
-                }
-
                 if (in_array($code, ['SL', 'VL'])) {
-                    // For VL/SL, calculate from current leave_credits balances
-                    $current = 0;
+                    // For VL/SL, get current balance from leave_credits
                     if ($leaveCredit) {
-                        $current = ($code === 'SL') ? $leaveCredit->sl_balance : $leaveCredit->vl_balance;
+                        $currentBalance = ($code === 'SL') ? $leaveCredit->sl_balance : $leaveCredit->vl_balance;
+                        $after = $currentBalance;
+                        $before = $currentBalance + $daysWithPay; // Use corrected days_with_pay
                     }
-                    $after = $current + $subsequentSum;
-                    $before = $after + $request->days_with_pay;
                 } else {
-                    // For non-VL/SL (non-earnable), calculate from leave_balances table
+                    // For non-VL/SL, get from leave_balances table
                     $leaveBalance = \App\Models\LeaveBalance::where('employee_id', $employeeId)
                         ->where('leave_type_id', $request->leave_type_id)
                         ->first();
 
                     if ($leaveBalance) {
-                        $after = $leaveBalance->balance + $subsequentSum;
-                        $before = $after + $request->days_with_pay;
+                        $after = $leaveBalance->balance;
+                        $before = $leaveBalance->balance + $daysWithPay; // Use corrected days_with_pay
                     }
                 }
             }
@@ -684,21 +844,33 @@ public function leaveHistory(Request $request)
             $hasRescheduleHistory = $request->rescheduleRequests->isNotEmpty();
             $rescheduleHistory = json_decode($request->reschedule_history ?? '[]', true);
 
-            return [
+            \Log::info('DEBUG - Final Values Being Returned:');
+            \Log::info('  - total_days: ' . $actualDuration);
+            \Log::info('  - days_with_pay: ' . $daysWithPay);
+            \Log::info('  - days_without_pay: ' . $daysWithoutPay);
+            \Log::info('  - balance_before: ' . $before);
+            \Log::info('  - balance_after: ' . $after);
+
+            $result = [
                 'id' => $request->id,
                 'date_from' => $request->date_from,
                 'date_to' => $request->date_to,
-                'status' => $request->status, // This will now include all statuses
-                'total_days' => $request->total_days,
+                'status' => $request->status,
+                'total_days' => $actualDuration,
+                'calculated_days' => $request->total_days,
                 'created_at' => $request->created_at,
                 'reason' => $request->reason,
-                'days_with_pay' => $request->days_with_pay,
-                'days_without_pay' => $request->days_without_pay,
+                // FIXED: Use corrected values
+                'days_with_pay' => $daysWithPay,
+                'days_without_pay' => $daysWithoutPay,
                 'attachment_path' => $request->attachment_path,
                 'approved_at' => $approvedAt,
                 'balance_before' => $before,
                 'balance_after' => $after,
                 'is_recalled' => $request->status === 'recalled',
+                'selected_dates' => $selectedDates,
+                'selected_dates_count' => $selectedDatesCount,
+                
                 'recall_data' => $latestRecall ? [
                     'id' => $latestRecall->id,
                     'reason' => $latestRecall->reason,
@@ -707,7 +879,7 @@ public function leaveHistory(Request $request)
                     'status' => $latestRecall->status,
                 ] : null,
                 
-                // Reschedule information - ADD THIS SECTION
+                // Reschedule information
                 'has_reschedule_history' => $hasRescheduleHistory,
                 'is_rescheduled' => $latestReschedule && $latestReschedule->status === 'approved',
                 'reschedule_data' => $latestReschedule ? [
@@ -763,14 +935,19 @@ public function leaveHistory(Request $request)
                     ];
                 }),
             ];
+
+            \Log::info('--- End Processing Leave Request ID: ' . $request->id . ' ---');
+            return $result;
         });
+
+    \Log::info('=== LEAVE HISTORY DEBUG END ===');
+    \Log::info('Total records found: ' . $leaveHistory->total());
 
     return Inertia::render('Employee/LeaveHistory', [
         'leaveHistory' => $leaveHistory,
         'employee' => $user->employee->load('user'),
     ]);
 }
-
 
 
 
@@ -1358,6 +1535,7 @@ public function getEligibleRecipients(Request $request)
 /**
  * Handle maternity leave donation
  */
+// In EmployeeController - update the donateMaternityLeave method
 public function donateMaternityLeave(Request $request)
 {
     $user = $request->user()->load('employee');
@@ -1386,7 +1564,7 @@ public function donateMaternityLeave(Request $request)
 
         if ($request->header('X-Inertia')) {
             return redirect()->route('employee.leave-balances')->with([
-                'success' => $result['message'] ?? 'Donation completed successfully!',
+                'success' => $result['message'] ?? 'Donation request submitted successfully! Waiting for HR approval.',
                 'donation_data' => $result
             ]);
         }

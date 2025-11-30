@@ -65,8 +65,72 @@ class LeaveDonationService
                     throw new \Exception("Insufficient maternity leave balance. Available: {$maternityBalance->balance} days, Required: {$days} days.");
                 }
 
-                // 5. Get paternity leave balance for recipient (create if doesn't exist)
-                $paternityBalance = LeaveBalance::where('employee_id', $recipientEmployeeId)
+                // 5. Create donation record with pending_hr status
+                $donation = LeaveDonation::create([
+                    'donor_employee_id' => $donorEmployeeId,
+                    'recipient_employee_id' => $recipientEmployeeId,
+                    'days_donated' => $days,
+                    'status' => 'pending_hr', // Changed from 'completed' to 'pending_hr'
+                    'remarks' => "Maternity leave donation of {$days} days - Pending HR Approval",
+                    'donated_at' => null, // Will be set when HR approves
+                ]);
+
+                Log::info('✅ LEAVE DONATION REQUEST CREATED - PENDING HR APPROVAL', [
+                    'donation_id' => $donation->id,
+                    'status' => 'pending_hr'
+                ]);
+
+                return [
+                    'success' => true,
+                    'donation_id' => $donation->id,
+                    'days_donated' => $days,
+                    'status' => 'pending_hr',
+                    'message' => "Maternity leave donation request submitted successfully! Waiting for HR approval."
+                ];
+            });
+        } catch (\Exception $e) {
+            Log::error('💥 LEAVE DONATION FAILED: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * HR approves the donation request
+     */
+    public function approveDonation($donationId, $hrUserId, $remarks = null)
+    {
+        Log::info('🎯 HR APPROVING DONATION', [
+            'donation_id' => $donationId,
+            'hr_user_id' => $hrUserId
+        ]);
+
+        try {
+            return DB::transaction(function () use ($donationId, $hrUserId, $remarks) {
+                // 1. Get the donation request
+                $donation = LeaveDonation::with(['donor', 'recipient'])->findOrFail($donationId);
+
+                if (!$donation->isPendingHr()) {
+                    throw new \Exception('This donation request has already been processed.');
+                }
+
+                // 2. Get maternity leave balance for donor
+                $maternityBalance = LeaveBalance::where('employee_id', $donation->donor_employee_id)
+                    ->whereHas('leaveType', function($query) {
+                        $query->where('code', 'ML');
+                    })
+                    ->first();
+
+                if (!$maternityBalance) {
+                    throw new \Exception('Donor does not have maternity leave balance.');
+                }
+
+                // 3. Check if donor still has sufficient balance
+                if ($maternityBalance->balance < $donation->days_donated) {
+                    throw new \Exception("Insufficient maternity leave balance. Available: {$maternityBalance->balance} days, Required: {$donation->days_donated} days.");
+                }
+
+                // 4. Get paternity leave balance for recipient (create if doesn't exist)
+                $paternityBalance = LeaveBalance::where('employee_id', $donation->recipient_employee_id)
                     ->whereHas('leaveType', function($query) {
                         $query->where('code', 'PL');
                     })
@@ -81,7 +145,7 @@ class LeaveDonationService
 
                     // Create paternity balance record
                     $paternityBalance = LeaveBalance::create([
-                        'employee_id' => $recipientEmployeeId,
+                        'employee_id' => $donation->recipient_employee_id,
                         'leave_type_id' => $paternityLeaveType->id,
                         'year' => now()->year,
                         'total_earned' => 0,
@@ -90,49 +154,131 @@ class LeaveDonationService
                     ]);
                 }
 
-                // 6. Perform the donation transaction
+                // 5. Perform the donation transaction
                 // Deduct from donor's maternity leave
-                $maternityBalance->balance -= $days;
-                $maternityBalance->total_used += $days;
+                $maternityBalance->balance -= $donation->days_donated;
+                $maternityBalance->total_used += $donation->days_donated;
                 $maternityBalance->save();
 
                 // Add to recipient's paternity leave
-                $paternityBalance->balance += $days;
-                $paternityBalance->total_earned += $days;
+                $paternityBalance->balance += $donation->days_donated;
+                $paternityBalance->total_earned += $donation->days_donated;
                 $paternityBalance->save();
 
-                // 7. Create donation record (without donation_id)
-                $donation = LeaveDonation::create([
-                    'donor_employee_id' => $donorEmployeeId,
-                    'recipient_employee_id' => $recipientEmployeeId,
-                    'days_donated' => $days,
+                // 6. Update donation record with approval details
+                $donation->update([
                     'status' => 'completed',
-                    'remarks' => "Maternity leave donation of {$days} days",
+                    'hr_approved_by' => $hrUserId,
+                    'hr_approved_at' => now(),
+                    'hr_remarks' => $remarks,
                     'donated_at' => now(),
+                    'remarks' => "Maternity leave donation of {$donation->days_donated} days - Approved by HR"
                 ]);
 
-                // 8. Log the transaction
+                // 7. Log the transaction
                 $this->createDonationLog($donation, $maternityBalance, $paternityBalance);
 
-                Log::info('✅ LEAVE DONATION COMPLETED SUCCESSFULLY', [
-                    'donation_id' => $donation->id, // Use the auto-increment ID instead
+                Log::info('✅ LEAVE DONATION APPROVED AND COMPLETED', [
+                    'donation_id' => $donation->id,
                     'donor_balance_after' => $maternityBalance->balance,
                     'recipient_balance_after' => $paternityBalance->balance
                 ]);
 
                 return [
                     'success' => true,
-                    'donation_id' => $donation->id, // Use the auto-increment ID
-                    'days_donated' => $days,
+                    'donation_id' => $donation->id,
+                    'days_donated' => $donation->days_donated,
                     'donor_new_balance' => $maternityBalance->balance,
                     'recipient_new_balance' => $paternityBalance->balance,
-                    'message' => "Successfully donated {$days} days of maternity leave."
+                    'message' => "Maternity leave donation approved and completed successfully!"
                 ];
             });
         } catch (\Exception $e) {
-            Log::error('💥 LEAVE DONATION FAILED: ' . $e->getMessage());
+            Log::error('💥 LEAVE DONATION APPROVAL FAILED: ' . $e->getMessage());
             throw $e;
         }
+    }
+
+    /**
+     * HR rejects the donation request
+     */
+    public function rejectDonation($donationId, $hrUserId, $remarks)
+    {
+        try {
+            $donation = LeaveDonation::findOrFail($donationId);
+
+            if (!$donation->isPendingHr()) {
+                throw new \Exception('This donation request has already been processed.');
+            }
+
+            $donation->update([
+                'status' => 'cancelled',
+                'hr_approved_by' => $hrUserId,
+                'hr_approved_at' => now(),
+                'hr_remarks' => $remarks,
+                'remarks' => "Maternity leave donation cancelled by HR: {$remarks}"
+            ]);
+
+            Log::info('❌ LEAVE DONATION REJECTED BY HR', [
+                'donation_id' => $donation->id,
+                'hr_remarks' => $remarks
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Donation request rejected successfully.'
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('💥 LEAVE DONATION REJECTION FAILED: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    // ... rest of your existing methods (canDonateMaternityLeave, getEligibleRecipients, etc.)
+    
+    /**
+     * Get pending HR approval donations
+     */
+    public function getPendingHrApprovals()
+    {
+        return LeaveDonation::with(['donor', 'recipient', 'donor.department', 'recipient.department'])
+            ->where('status', 'pending_hr')
+            ->orderBy('created_at', 'desc')
+            ->get();
+    }
+
+    /**
+     * Get all donation requests for HR tracking
+     */
+    public function getAllDonationRequests($filters = [])
+    {
+        $query = LeaveDonation::with([
+            'donor', 
+            'recipient', 
+            'donor.department', 
+            'recipient.department',
+            'hrApprover'
+        ]);
+
+        if (isset($filters['status']) && $filters['status'] !== 'all') {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['search']) && $filters['search']) {
+            $search = $filters['search'];
+            $query->where(function($q) use ($search) {
+                $q->whereHas('donor', function($q) use ($search) {
+                    $q->where('firstname', 'like', "%{$search}%")
+                      ->orWhere('lastname', 'like', "%{$search}%");
+                })->orWhereHas('recipient', function($q) use ($search) {
+                    $q->where('firstname', 'like', "%{$search}%")
+                      ->orWhere('lastname', 'like', "%{$search}%");
+                });
+            });
+        }
+
+        return $query->orderBy('created_at', 'desc')->paginate(10);
     }
 
     private function createDonationLog($donation, $maternityBalance, $paternityBalance)

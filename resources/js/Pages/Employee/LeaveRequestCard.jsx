@@ -37,7 +37,7 @@ export default function LeaveRequestCard({ request }) {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    <div>
+                    {/* <div>
                         <p className="text-sm text-gray-500">Date Range</p>
                         <p className="text-sm font-medium">
                             {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} -{' '}
@@ -47,9 +47,9 @@ export default function LeaveRequestCard({ request }) {
                     <div>
                         <p className="text-sm text-gray-500">Duration</p>
                         <p className="text-sm font-medium">
-                            {duration} day{duration !== 1 ? 's' : ''}
+                        {request.selected_dates_count || duration} day{(request.selected_dates_count || duration) !== 1 ? 's' : ''}
                         </p>
-                    </div>
+                    </div> */}
                     <div>
                         <p className="text-sm text-gray-500">Reason</p>
                         <p className="text-sm font-medium line-clamp-1">

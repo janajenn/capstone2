@@ -26,7 +26,7 @@ const formatDate = (dateString) => {
 
 export default function ShowLeaveRequest() {
   const { props } = usePage();
-  const { leaveRequest, workingDays, leaveCredit, flash } = props;
+  const { leaveRequest, selectedDates, selectedDatesCount, workingDays, leaveCredit, flash } = props;
 
   const [showRejectForm, setShowRejectForm] = useState(false);
   const { data, setData, post, processing, errors } = useForm({
@@ -77,13 +77,6 @@ export default function ShowLeaveRequest() {
     }
   };
 
-  const calculateTotalDays = () => {
-    const start = new Date(leaveRequest.date_from);
-    const end = new Date(leaveRequest.date_to);
-    const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  };
-
   return (
     <DeptHeadLayout>
       <div className="mb-6">
@@ -112,8 +105,8 @@ export default function ShowLeaveRequest() {
           <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
             <div className="flex justify-between items-start mb-6">
               <div>
-
-
+                <h2 className="text-2xl font-bold text-gray-800">Leave Request</h2>
+                <p className="text-gray-600">Submitted by {leaveRequest.employee?.firstname} {leaveRequest.employee?.lastname}</p>
               </div>
               <span className={`px-4 py-2 rounded-full text-sm font-semibold ${getStatusColor(leaveRequest.status)}`}>
                 {leaveRequest.status.charAt(0).toUpperCase() + leaveRequest.status.slice(1)}
@@ -129,9 +122,59 @@ export default function ShowLeaveRequest() {
 
               <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
                 <h3 className="text-sm font-semibold text-purple-800 mb-2">Duration</h3>
-                <p className="text-lg font-bold text-purple-900">{calculateTotalDays()} day(s)</p>
+                <p className="text-lg font-bold text-purple-900">{leaveRequest.total_days} day(s)</p>
                 <p className="text-sm text-purple-600">{workingDays} working days</p>
               </div>
+            </div>
+
+            {/* Selected Dates Section - UPDATED */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Selected Dates</h3>
+              
+              {selectedDatesCount > 0 ? (
+                <div className="space-y-4">
+                  {/* Show selected dates in boxes */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto">
+                    {selectedDates.map((date, index) => (
+                      <div 
+                        key={index}
+                        className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-3 text-center"
+                      >
+                        <div className="text-sm text-blue-600 font-semibold">
+                          {new Date(date).toLocaleDateString('en-US', { 
+                            weekday: 'short'
+                          })}
+                        </div>
+                        <div className="text-xs text-blue-800 mt-1">
+                          {new Date(date).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Summary */}
+                  <div className="flex justify-between items-center text-sm text-gray-600 pt-3 border-t border-gray-200">
+                    <span>Total: {selectedDatesCount} selected date{selectedDatesCount !== 1 ? 's' : ''}</span>
+                    <span>Range: {formatDate(leaveRequest.date_from)} - {formatDate(leaveRequest.date_to)}</span>
+                  </div>
+                </div>
+              ) : (
+                /* Fallback for old records without selected dates */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Start Date</h3>
+                    <p className="text-lg font-medium text-gray-900">{formatDate(leaveRequest.date_from)}</p>
+                  </div>
+
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">End Date</h3>
+                    <p className="text-lg font-medium text-gray-900">{formatDate(leaveRequest.date_to)}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Days With/Without Pay Section */}
@@ -176,19 +219,6 @@ export default function ShowLeaveRequest() {
                   </p>
                 </div>
               )}
-            </div>
-
-            {/* Date Information */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Start Date</h3>
-                <p className="text-lg font-medium text-gray-900">{formatDate(leaveRequest.date_from)}</p>
-              </div>
-
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">End Date</h3>
-                <p className="text-lg font-medium text-gray-900">{formatDate(leaveRequest.date_to)}</p>
-              </div>
             </div>
 
             {/* Reason */}
@@ -254,7 +284,6 @@ export default function ShowLeaveRequest() {
                 <label className="block text-xs font-medium text-purple-700 mb-1">Position</label>
                 <p className="text-sm font-medium text-purple-900">{leaveRequest.employee?.position}</p>
               </div>
-
             </div>
           </div>
 

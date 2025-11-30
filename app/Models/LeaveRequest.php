@@ -9,17 +9,30 @@ class LeaveRequest extends Model
 {
     use HasFactory;
 
-     protected $fillable = ['employee_id', 'leave_type_id', 'date_from', 'date_to','selected_days', 'reason', 'status', 'attachment_path', 'days_with_pay', 'days_without_pay',
-     'rescheduled_at',
-        'reschedule_history'];
+    protected $fillable = [
+        'employee_id', 
+        'leave_type_id', 
+        'date_from', 
+        'date_to',
+        'selected_dates',
+        'total_days', // ADDED
+        'reason', 
+        'status', 
+        'attachment_path', 
+        'days_with_pay', 
+        'days_without_pay',
+        'is_dept_head_request', // ADD THIS
+        'rescheduled_at',
+        'reschedule_history'
+    ];
 
-
-     protected $casts = [
+    protected $casts = [
         'selected_dates' => 'array',
         'reschedule_history' => 'array',
         'rescheduled_at' => 'datetime'
+    ];
 
-     ];
+
 
     public function employee()
     {
@@ -54,6 +67,8 @@ public function rescheduleRequests()
 {
     return $this->hasMany(LeaveRescheduleRequest::class, 'original_leave_request_id');
 }
+
+
 public function latestReschedule()
 {
     return $this->hasOne(LeaveRescheduleRequest::class, 'original_leave_request_id')->latest();
@@ -123,11 +138,10 @@ public function getRescheduleHistoryAttribute()
     {
         if ($this->is_rescheduled && !empty($this->reschedule_history)) {
             $history = $this->reschedule_history;
-            $firstReschedule = $history[0]; // Get the first reschedule entry
+            $firstReschedule = $history[0];
             return $firstReschedule['original_dates'] ?? null;
         }
         
-        // If not rescheduled, return current dates as original
         return [
             'date_from' => $this->date_from,
             'date_to' => $this->date_to,
@@ -153,7 +167,6 @@ public function getRescheduleHistoryAttribute()
             'total_days' => $this->total_days
         ];
     }
-
     /**
      * Get reschedule history in readable format
      */
@@ -175,23 +188,6 @@ public function getRescheduleHistoryAttribute()
             ];
         })->toArray();
     }
-
-    public function getTotalDaysAttribute()
-    {
-        if (!empty($this->selected_dates) && is_array($this->selected_dates)) {
-            return count($this->selected_dates);
-        }
-        
-        // Fallback: calculate from date_from and date_to
-        if ($this->date_from && $this->date_to) {
-            $start = \Carbon\Carbon::parse($this->date_from);
-            $end = \Carbon\Carbon::parse($this->date_to);
-            return $start->diffInDays($end) + 1;
-        }
-        
-        return 0;
-    }
-
 
     
 

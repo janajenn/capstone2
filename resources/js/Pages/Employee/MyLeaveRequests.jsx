@@ -72,10 +72,6 @@ export default function MyLeaveRequests() {
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-100 py-8">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                    
-                   
-                   
-                   
-                   
                     {/* Header Section */}
                     <motion.div
                         className="mb-8"
@@ -114,8 +110,8 @@ export default function MyLeaveRequests() {
                         </div>
                     </motion.div>
 
-                        {/* INFORMATION BANNER - ADDED THIS SECTION */}
-                        <motion.div
+                    {/* INFORMATION BANNER */}
+                    <motion.div
                         className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm"
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -190,7 +186,10 @@ export default function MyLeaveRequests() {
                                         data.map((request) => {
                                             const startDate = new Date(request.date_from);
                                             const endDate = new Date(request.date_to);
-                                            const duration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                                            
+                                            // FIXED: Use total_days from backend which now uses selected_dates count
+                                            const duration = request.total_days;
+                                            
                                             const isRecalled = request.is_recalled;
                                             const recallData = request.recall_data;
 
@@ -239,19 +238,33 @@ export default function MyLeaveRequests() {
                                                                 <p className="text-xs text-gray-500 mt-2 bg-white/50 rounded-full px-2 py-1 inline-block">
                                                                     Submitted: {new Date(request.created_at).toLocaleDateString()}
                                                                 </p>
+                                                                {/* Show selected dates info */}
+                                                                {request.selected_dates_count > 0 && (
+                                                                    <p className="text-xs text-blue-600 mt-1 bg-blue-50 rounded-full px-2 py-1 inline-block">
+                                                                        {request.selected_dates_count} selected day{request.selected_dates_count !== 1 ? 's' : ''}
+                                                                    </p>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </td>
 
-                                                    {/* Duration Column */}
+                                                    {/* Duration Column - FIXED */}
                                                     <td className="px-6 py-4">
-                                                        <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium shadow-sm ${
-                                                            isRecalled 
-                                                                ? 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700' 
-                                                                : 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800'
-                                                        }`}>
-                                                            {duration} day{duration !== 1 ? 's' : ''}
-                                                        </span>
+                                                        <div className="flex flex-col space-y-1">
+                                                            <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium shadow-sm ${
+                                                                isRecalled 
+                                                                    ? 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700' 
+                                                                    : 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800'
+                                                            }`}>
+                                                                {duration} day{duration !== 1 ? 's' : ''}
+                                                            </span>
+                                                            {/* Show working days if different from total days */}
+                                                            {request.calculated_days && request.calculated_days !== duration && (
+                                                                <span className="text-xs text-gray-500">
+                                                                    ({request.calculated_days} working days)
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
 
                                                     {/* Status Column */}

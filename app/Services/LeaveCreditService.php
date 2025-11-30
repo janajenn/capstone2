@@ -31,12 +31,9 @@ class LeaveCreditService
                 return null;
             }
 
-            // Calculate working days (excluding weekends)
-            $period = CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
-            $workingDays = collect($period)->filter(function ($date) {
-                return !$date->isWeekend();
-            })->count();
-
+            // ✅ FIXED: Use selected_dates for accurate duration calculation
+            $workingDays = $this->calculateWorkingDaysFromSelectedDates($leaveRequest);
+            
             Log::info("📅 Working days to deduct: {$workingDays}");
 
             // Get leave credit record
@@ -109,6 +106,42 @@ class LeaveCreditService
         throw $e;
     }
 }
+
+// ✅ NEW METHOD: Calculate working days from selected_dates
+private function calculateWorkingDaysFromSelectedDates(LeaveRequest $leaveRequest)
+{
+    // First, try to use selected_dates for accurate calculation
+    $selectedDates = [];
+    
+    if (!empty($leaveRequest->selected_dates)) {
+        if (is_array($leaveRequest->selected_dates)) {
+            $selectedDates = $leaveRequest->selected_dates;
+        } elseif (is_string($leaveRequest->selected_dates)) {
+            $decoded = json_decode($leaveRequest->selected_dates, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $selectedDates = $decoded;
+            }
+        }
+    }
+
+    // If we have selected dates, count them (they should already exclude weekends)
+    if (!empty($selectedDates)) {
+        $workingDays = count($selectedDates);
+        Log::info("📅 Using selected_dates count: {$workingDays} days");
+        return $workingDays;
+    }
+
+    // Fallback: Calculate from date range (excluding weekends)
+    $period = CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
+    $workingDays = collect($period)->filter(function ($date) {
+        return !$date->isWeekend();
+    })->count();
+
+    Log::info("📅 Using date range calculation: {$workingDays} days");
+    return $workingDays;
+}
+
+
 
     private function getBalanceField($leaveTypeCode)
     {

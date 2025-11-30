@@ -149,7 +149,7 @@ class AdminController extends Controller
                                $q3->where('role', 'admin');
                            });
                     })->orWhere(function ($q2) {
-                        // ✅ NEW: HR employees: Approved by HR and Dept Head, waiting for Admin
+                        // Approved by HR and Dept Head, waiting for Admin
                         $q2->where('status', 'pending_admin')
                            ->whereHas('approvals', function ($q3) {
                                $q3->where('role', 'hr')->where('status', 'approved');
@@ -368,17 +368,24 @@ private function canBeRecalled(LeaveRequest $request)
                 $leaveRequest->date_to,
                 $request->input('remarks', 'Approved by ' . $currentApprover->name)
             );
-
-            // Only deduct credits if fully approved
             if ($leaveRequest->status === 'approved') {
                 // Get leave type code to determine which service to use
                 $leaveTypeCode = $leaveRequest->leaveType->code;
                 
+                // ✅ ADD DEBUG LOGGING HERE
+                \Log::info("🔍 DEBUG - Leave Request Details Before Deduction:");
+                \Log::info("  - Leave ID: " . $leaveRequest->id);
+                \Log::info("  - Date From: " . $leaveRequest->date_from);
+                \Log::info("  - Date To: " . $leaveRequest->date_to);
+                \Log::info("  - Selected Dates: " . json_encode($leaveRequest->selected_dates));
+                \Log::info("  - Total Days in DB: " . $leaveRequest->total_days);
+                \Log::info("  - Leave Type: " . $leaveTypeCode);
+                
                 // In your admin approve method:
-if (in_array($leaveTypeCode, ['SL', 'VL'])) {
-    // Process SL/VL leave types using LeaveCreditService
-    $leaveCreditService = new LeaveCreditService();
-    $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
+                if (in_array($leaveTypeCode, ['SL', 'VL'])) {
+                    // Process SL/VL leave types using LeaveCreditService
+                    $leaveCreditService = new LeaveCreditService();
+                    $result = $leaveCreditService->deductLeaveCredits($leaveRequest);
     
     // Log the result
     if (is_array($result) && isset($result['success']) && $result['success']) {
@@ -472,19 +479,55 @@ public function showLeaveRequest($id)
         ])
         ->findOrFail($id);
 
-    // Calculate working days (excluding weekends)
-    $workingDays = $this->calculateWorkingDays($leaveRequest->date_from, $leaveRequest->date_to);
+    // FIXED: Use selected_dates for accurate duration calculation
+    $selectedDates = [];
+    $selectedDatesCount = 0;
+    
+    if (!empty($leaveRequest->selected_dates)) {
+        if (is_array($leaveRequest->selected_dates)) {
+            $selectedDates = $leaveRequest->selected_dates;
+        } elseif (is_string($leaveRequest->selected_dates)) {
+            $decoded = json_decode($leaveRequest->selected_dates, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $selectedDates = $decoded;
+            }
+        }
+        $selectedDatesCount = count($selectedDates);
+    }
+
+    // Calculate working days based on selected dates (excluding weekends)
+    $workingDays = 0;
+    if ($selectedDatesCount > 0) {
+        foreach ($selectedDates as $date) {
+            $dateObj = new \DateTime($date);
+            $dayOfWeek = $dateObj->format('N'); // 1-7 (Monday-Sunday)
+            if ($dayOfWeek < 6) { // 1-5 are weekdays
+                $workingDays++;
+            }
+        }
+    } else {
+        // Fallback: calculate from date range for old records
+        $startDate = new \DateTime($leaveRequest->date_from);
+        $endDate = new \DateTime($leaveRequest->date_to);
+        for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
+            $dayOfWeek = $date->format('N');
+            if ($dayOfWeek < 6) {
+                $workingDays++;
+            }
+        }
+    }
 
     // Get leave balance information if available
     $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
 
     return Inertia::render('Admin/ShowLeaveRequest', [
         'leaveRequest' => $leaveRequest,
+        'selectedDates' => $selectedDates, // Pass selected dates to frontend
+        'selectedDatesCount' => $selectedDatesCount,
         'workingDays' => $workingDays,
         'leaveCredit' => $leaveCredit,
     ]);
 }
-
 /**
  * Check if all required approvals are complete for a leave request
  */

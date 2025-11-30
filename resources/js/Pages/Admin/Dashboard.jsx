@@ -393,7 +393,7 @@ export default function AdminDashboard() {
                 console.error('Error fetching dashboard data:', error);
                 setIsPolling(false);
             }
-        }, 10000);
+        }, 70000);
 
         return () => clearInterval(interval);
     }, [previousData, localFilters]);

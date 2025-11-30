@@ -3,7 +3,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 export default function LeaveForm({ leaveRequest, employee, approvers }) {
-    // Helper function to format date
+
     const formatDate = (dateString) => {
         if (!dateString) return '';
         const date = new Date(dateString);
@@ -13,6 +13,21 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
             day: 'numeric'
         });
     };
+
+
+    const selectedDates = leaveRequest?.selected_dates || [];
+
+   // Format the dates for display
+   const formattedDates = selectedDates.map(date => {
+    if (!date) return '';
+    const dateObj = new Date(date);
+    return dateObj.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+});
+
 
     // Helper function to get leave type display name
     const getLeaveTypeDisplay = (type) => {
@@ -38,27 +53,46 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
         return leaveRequest?.leave_type === type;
     };
 
-    // Helper function to get approver by role
-    const getApproverByRole = (role) => {
-        console.log('Getting approver for role:', role);
-        console.log('Approvers array:', approvers);
-        if (!approvers || approvers.length === 0) {
-            console.log('No approvers found, returning null');
-            return null;
-        }
-        
-        // Map the role parameter to the display role names
-        const roleMapping = {
-            'hr': 'HRMO-Designate',
-            'dept_head': 'Department Head', 
-            'admin': 'Municipal Vice Mayor'
-        };
-        
-        const displayRole = roleMapping[role];
-        const approver = approvers.find(approver => approver.role === displayRole);
-        console.log('Found approver for role', role, ':', approver);
-        return approver;
+    // Updated Helper function to get approver by role
+const getApproverByRole = (role) => {
+    console.log('Getting approver for role:', role);
+    console.log('Approvers array:', approvers);
+    if (!approvers || approvers.length === 0) {
+        console.log('No approvers found, returning null');
+        return null;
+    }
+    
+    // Map the role parameter to the display role names
+    const roleMapping = {
+        'hr': 'HRMO-Designate',
+        'dept_head': 'Department Head', 
+        'admin': 'Municipal Vice Mayor'
     };
+    
+    const displayRole = roleMapping[role];
+    const approver = approvers.find(approver => approver.role === displayRole);
+    console.log('Found approver for role', role, ':', approver);
+    return approver;
+};
+
+// Helper to get display position
+const getDisplayPosition = (approver, role) => {
+    // First priority: Use the approver's actual position if available
+    if (approver?.position) {
+        return approver.position;
+    }
+    
+    // Second priority: Role-based positions
+    const fallbackPositions = {
+        'hr': 'HRMO-Designate',
+        'dept_head': 'Department Head',
+        'admin': 'Municipal Vice Mayor'
+    };
+    
+    return fallbackPositions[role] || 'Approver';
+};
+
+
 
     // Helper function to get leave details and checkboxes from field_value
     const getLeaveDetails = () => {
@@ -87,14 +121,110 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
         };
     };
 
-    // Get working days from stored data
-    const getWorkingDays = () => {
-        // Use the stored working days from the leave request
-        const daysWithPay = leaveRequest?.days_with_pay || 0;
-        const daysWithoutPay = leaveRequest?.days_without_pay || 0;
-        const totalDays = daysWithPay + daysWithoutPay;
+// More precise function that matches the deduction amount with the leave request
+const getLeaveCreditData = (leaveType) => {
+    if (!employee?.leave_credit_logs || !leaveRequest?.id) return null;
+    
+    const totalDaysApplied = getTotalDaysApplied();
+    console.log(`Looking for ${leaveType} deduction of ${totalDaysApplied} days for request ${leaveRequest.id}`);
+    
+    // Find logs that match both the type AND the exact deduction amount
+    const matchingLogs = employee.leave_credit_logs
+        .filter(log => {
+            const typeMatches = log.type === leaveType;
+            const amountMatches = Math.round(log.points_deducted) === totalDaysApplied;
+            const isDeduction = log.points_deducted > 0;
+            const isNotLate = !log.remarks?.includes('Late');
+            const isNotManual = !log.remarks?.includes('Manual');
+            
+            return typeMatches && amountMatches && isDeduction && isNotLate && isNotManual;
+        })
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    console.log(`Matching logs for ${totalDaysApplied} days:`, matchingLogs);
+    
+    if (matchingLogs.length > 0) {
+        const exactMatch = matchingLogs[0];
+        return {
+            total_earned: Math.round(exactMatch.balance_before), // This should be balance BEFORE deduction
+            less_application: Math.round(exactMatch.points_deducted), // This is the deduction amount
+            balance: Math.round(exactMatch.balance_after) // This is balance AFTER deduction
+        };
+    }
+    
+    // Fallback: Find any deduction log for this leave type around the request time
+    const fallbackLogs = employee.leave_credit_logs
+        .filter(log => {
+            const typeMatches = log.type === leaveType;
+            const isDeduction = log.points_deducted > 0;
+            const isNotLate = !log.remarks?.includes('Late');
+            const isNotManual = !log.remarks?.includes('Manual');
+            
+            // Check if log date is close to leave request creation
+            if (leaveRequest.created_at) {
+                const logDate = new Date(log.date);
+                const requestDate = new Date(leaveRequest.created_at);
+                const timeDiff = Math.abs(logDate - requestDate);
+                const isRecent = timeDiff < (7 * 24 * 60 * 60 * 1000); // Within 7 days
+                
+                return typeMatches && isDeduction && isNotLate && isNotManual && isRecent;
+            }
+            
+            return typeMatches && isDeduction && isNotLate && isNotManual;
+        })
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    if (fallbackLogs.length > 0) {
+        const fallbackLog = fallbackLogs[0];
+        return {
+            total_earned: Math.round(fallbackLog.balance_before), // Balance BEFORE
+            less_application: Math.round(fallbackLog.points_deducted), // Points deducted
+            balance: Math.round(fallbackLog.balance_after) // Balance AFTER
+        };
+    }
+    
+    console.log(`No matching logs found for ${leaveType}`);
+    return null;
+};
+
+    // NEW: Function to format selected dates for display
+    const formatSelectedDates = () => {
+        if (!leaveRequest?.selected_dates || !Array.isArray(leaveRequest.selected_dates)) {
+            return 'No dates selected';
+        }
         
-        return totalDays > 0 ? totalDays : '';
+        const dates = leaveRequest.selected_dates;
+        
+        // If there are only a few dates, list them all
+        if (dates.length <= 5) {
+            return dates.map(date => formatDate(date)).join(', ');
+        }
+        
+        // If there are many dates, show the range of the earliest and latest
+        const sortedDates = [...dates].sort();
+        const firstDate = sortedDates[0];
+        const lastDate = sortedDates[sortedDates.length - 1];
+        
+        return `${formatDate(firstDate)} to ${formatDate(lastDate)} (${dates.length} days)`;
+    };
+
+    // NEW: Function to get individual selected dates count
+    const getSelectedDatesCount = () => {
+        if (!leaveRequest?.selected_dates || !Array.isArray(leaveRequest.selected_dates)) {
+            return 0;
+        }
+        return leaveRequest.selected_dates.length;
+    };
+
+    // NEW: Function to get total days applied for
+    const getTotalDaysApplied = () => {
+        // Use selected_dates count if available, otherwise use total_days
+        if (selectedDates && selectedDates.length > 0) {
+            return selectedDates.length;
+        }
+        
+        // Fallback to total_days from leaveRequest
+        return leaveRequest?.total_days || 0;
     };
 
     // Get HR approval date
@@ -116,69 +246,8 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
         return formatDate(new Date());
     };
 
-    // Get leave credit data from logs
-   // Get leave credit data from logs - UPDATED to show whole numbers only
-const getLeaveCreditData = (leaveType) => {
-    if (!employee?.leave_credit_logs) return null;
-    
-    // Filter out late deductions and sort by date
-    const relevantLogs = employee.leave_credit_logs
-        .filter(log => 
-            log.type === leaveType && 
-            (!log.remarks || !log.remarks.includes('Late')) // Exclude late deductions
-        )
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
-    
-    if (relevantLogs.length === 0) return null;
-    
-    const latestLog = relevantLogs[0];
-    
-    return {
-        total_earned: Math.round(latestLog.balance_before), // Round to whole number
-        less_application: Math.round(latestLog.points_deducted), // Round to whole number
-        balance: Math.round(latestLog.balance_after) // Round to whole number
-    };
-};
-
-    // Debug logging
-    console.log('=== ALL LEAVE CREDIT LOGS ===');
-    console.log('Employee ID:', employee?.employee_id);
-    if (employee?.leave_credit_logs) {
-        employee.leave_credit_logs.forEach((log, index) => {
-            console.log(`Log ${index}:`, {
-                type: log.type,
-                date: log.date,
-                balance_before: log.balance_before,
-                points_deducted: log.points_deducted,
-                balance_after: log.balance_after,
-                remarks: log.remarks
-            });
-        });
-    }
-    console.log('=============================');
-    
+    // MOVE leaveDetails definition to the top, before JSX
     const leaveDetails = getLeaveDetails();
-
-    // Debug logging
-    console.log('=== LEAVE FORM DEBUG ===');
-    console.log('leaveRequest:', leaveRequest);
-    console.log('leaveRequest.details:', leaveRequest?.details);
-    console.log('leaveDetails:', leaveDetails);
-    console.log('Field values:', leaveRequest?.details?.map(d => d.field_value).filter(Boolean));
-    console.log('Employee leave credit logs:', employee?.leave_credit_logs);
-    console.log('VL Credit Data:', getLeaveCreditData('VL'));
-    console.log('SL Credit Data:', getLeaveCreditData('SL'));
-    console.log('Specific checks:');
-    console.log('- vacationLocation:', leaveDetails.vacationLocation);
-    console.log('- sick_type:', leaveDetails.sick_type);
-    console.log('- illness:', leaveDetails.illness);
-    console.log('- studyPurpose:', leaveDetails.studyPurpose);
-    console.log('- slbwCondition:', leaveDetails.slbwCondition);
-    console.log('- expectedDeliveryDate:', leaveDetails.expectedDeliveryDate);
-    console.log('- physicianName:', leaveDetails.physicianName);
-    console.log('========================');
-
-
 
     const downloadPDF = () => {
         const formElement = document.getElementById('leave-form-content');
@@ -231,406 +300,413 @@ const getLeaveCreditData = (leaveType) => {
         });
     };
 
-
-     return (
+    return (
         <div className="leave-form-container">
             {/* SIMPLE DOWNLOAD BUTTONS */}
             <div style={{ textAlign: 'right', marginBottom: '10px' }}>
-                
                 <button onClick={downloadPDF} style={{...buttonStyle, backgroundColor: '#28a745', marginLeft: '10px'}}>
                     📄 Download PDF
                 </button>
             </div>
 
-
             <div id="leave-form-content">
-            {/* Leave Form */}
-            <div className="leave-form-page">
-               {/* Header */}
-<div className="form-header">
-    {/* Top section with form number and logo space */}
-    <div className="header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-        {/* Civil Service Form Number - Top Left */}
-        <div className="form-number" style={{ fontSize: '11px', fontWeight: 'bold' }}>
-            Civil Service Form No. 6, Revised 2020
-        </div>
-        {/* Logo Space - Top Right */}
-<div className="logo-space" style={{ width: '80px', height: '80px' }}>
-    <img 
-        src="\public\assets\Opol_logo.png" 
-        alt="Opol Logo" 
-        style={{ 
-            width: '100%', 
-            height: '100%', 
-            objectFit: 'contain' 
-        }} 
-    />
-            Opol Logo
-        </div>
-    </div>
+                {/* Leave Form */}
+                <div className="leave-form-page">
+                    {/* Header */}
+                    <div className="form-header">
+                        {/* Top section with form number and logo space */}
+                        <div className="header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                            {/* Civil Service Form Number - Top Left */}
+                            <div className="form-number" style={{ fontSize: '11px', fontWeight: 'bold' }}>
+                                Civil Service Form No. 6, Revised 2020
+                            </div>
+                            {/* Logo Space - Top Right */}
+                            <div className="logo-space" style={{ width: '80px', height: '80px' }}>
+                                <img 
+                                    src="\public\assets\Opol_logo.png" 
+                                    alt="Opol Logo" 
+                                    style={{ 
+                                        width: '100%', 
+                                        height: '100%', 
+                                        objectFit: 'contain' 
+                                    }} 
+                                />
+                                Opol Logo
+                            </div>
+                        </div>
 
-    {/* Government Info - Centered */}
-    <div className="government-info">
-        Republic of the Philippines<br />
-        Local Government Unit of Opol<br />
-        Zone 3, Poblacion Opol, Misamis Oriental<br />
-    </div>
-</div>
-                
-                
-
-                <div className="form-title">APPLICATION FOR LEAVE</div>
-
-                {/* Basic Information Table - Populated data */}
-                <table className="form-info-table">
-                    <tbody>
-                        <tr>
-                            <td className="left-section" style={{ minWidth: '500px' }}>
-                                <strong style={{ marginRight: '220px' }}>1.Office/Department: {employee?.department?.name || 'N/A'}</strong>
-                                <strong>2.Name: {employee?.full_name || 'N/A'}</strong>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td className="left-section">
-                                <strong style={{ marginRight: '216px' }}>3.Date of filing: {formatDate(leaveRequest?.created_at)}</strong>
-                                <strong style={{ marginRight: '140px' }}>4.Position: {employee?.position || 'N/A'}</strong>
-                                <strong>5.Salary: ₱{employee?.salary ? Number(employee.salary).toLocaleString() : 'N/A'}</strong>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <br />
-
-                {/* Leave Details Section */}
-                <div className="section-title">6. DETAILS OF APPLICATION</div>
-
-                <table className="form-table bordered">
-                    <tbody>
-                        <tr>
-                            <td style={{ width: '50%' }}>
-                                6.A TYPE OF LEAVE TO BE AVAILED OF:<br /><br />
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('VL') ? 'checked' : ''}`}>
-                                        {isLeaveType('VL') ? '✓' : ''}
-                                    </span> Vacation Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('FL') ? 'checked' : ''}`}>
-                                        {isLeaveType('FL') ? '✓' : ''}
-                                    </span> Forced Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('SL') ? 'checked' : ''}`}>
-                                        {isLeaveType('SL') ? '✓' : ''}
-                                    </span> Sick Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('ML') ? 'checked' : ''}`}>
-                                        {isLeaveType('ML') ? '✓' : ''}
-                                    </span> Maternity Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('PL') ? 'checked' : ''}`}>
-                                        {isLeaveType('PL') ? '✓' : ''}
-                                    </span> Paternity Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('SPL') ? 'checked' : ''}`}>
-                                        {isLeaveType('SPL') ? '✓' : ''}
-                                    </span> Special Privilege Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('SOLOPL') ? 'checked' : ''}`}>
-                                        {isLeaveType('SOLOPL') ? '✓' : ''}
-                                    </span> Solo Parent Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('STL') ? 'checked' : ''}`}>
-                                        {isLeaveType('STL') ? '✓' : ''}
-                                    </span> Study Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('10DVL') ? 'checked' : ''}`}>
-                                        {isLeaveType('10DVL') ? '✓' : ''}
-                                    </span> 10-Day VAWC Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('RL') ? 'checked' : ''}`}>
-                                        {isLeaveType('RL') ? '✓' : ''}
-                                    </span> Rehabilitation Privilege
-                                </div>
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('SLBW') ? 'checked' : ''}`}>
-                                        {isLeaveType('SLBW') ? '✓' : ''}
-                                    </span> Special Leave Benefits for Women
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className={`checkbox ${isLeaveType('AL') ? 'checked' : ''}`}>
-                                        {isLeaveType('AL') ? '✓' : ''}
-                                    </span> Adoption Leave
-                                </div>
-                                
-                                <div className="leave-type-option">
-                                    <span className="checkbox"></span> Others: 
-                                </div><br />
-                                ________________________________________
-                            </td>
-                            
-                            <td style={{ width: '50%' }}>
-                                6.B DETAILS OF LEAVE<br /><br />
-                                
-                                <div>
-                                    {/* Vacation Leave */}
-                                    <div>
-                                        In case of Vacation Leave:<br />
-                                        <span className={`checkbox ${leaveDetails.vacationLocation === 'within_philippines' ? 'checked' : ''}`}>
-                                            {leaveDetails.vacationLocation === 'within_philippines' ? '✓' : ''}
-                                        </span> Within the Philippines : _______________________________________<br />
-                                        <span className={`checkbox ${leaveDetails.vacationLocation === 'abroad' ? 'checked' : ''}`}>
-                                            {leaveDetails.vacationLocation === 'abroad' ? '✓' : ''}
-                                        </span> Abroad (Specify):_____________________________________________<br />
-                                        {leaveDetails.vacationLocation && (
-                                            <>
-                                                <strong>Location: {leaveDetails.vacationLocation === 'within_philippines' ? 'Within Philippines' : 'Abroad'}</strong><br />
-                                            </>
-                                        )}
-                                    </div>
-                                    
-                                    {/* Sick Leave */}
-                                    <div>
-                                        In case of Sick Leave:<br />
-                                        <span className={`checkbox ${leaveDetails.sick_type === 'in_hospital' ? 'checked' : ''}`}>
-                                            {leaveDetails.sick_type === 'in_hospital' ? '✓' : ''}
-                                        </span> In Hospital (Specify illness):_____________________________________<br />
-                                        <span className={`checkbox ${leaveDetails.sick_type === 'outpatient' ? 'checked' : ''}`}>
-                                            {leaveDetails.sick_type === 'outpatient' ? '✓' : ''}
-                                        </span> Out Patient (Specify illness):_____________________________________<br />
-                                        {leaveDetails.illness && ( <>
-                                            <strong>Illness/Reason: {leaveDetails.illness}</strong><br />
-                                            </>)}
-                                    </div>
-
-                                    {/* Special Leave Benefits for Women */}
-                                    <div>
-                                        In case of Special Leave Benefits for Women:<br />
-                                        Specify Illness: ___________________________________________________
-                                    </div>
-
-                                    {/* Study Leave */}
-                                    <div>
-                                        In case of Study Leave:<br />
-                                        <span className={`checkbox ${leaveDetails.studyPurpose === 'masters_completion' ? 'checked' : ''}`}>
-                                            {leaveDetails.studyPurpose === 'masters_completion' ? '✓' : ''}
-                                        </span> Completion of Master's<br />    
-                                        <span className={`checkbox ${leaveDetails.studyPurpose === 'board_exam' ? 'checked' : ''}`}>
-                                            {leaveDetails.studyPurpose === 'board_exam' ? '✓' : ''}
-                                        </span> BAR/Board Exam Review<br />
-                                        <span className={`checkbox ${leaveDetails.studyPurpose === 'continuing_education' ? 'checked' : ''}`}>
-                                            {leaveDetails.studyPurpose === 'continuing_education' ? '✓' : ''}
-                                        </span> Continuing Education<br />
-                                        {leaveDetails.studyPurpose && ( <>
-                                            <strong>Purpose: {leaveDetails.studyPurpose === 'masters_completion' ? 'Completion of Master\'s' :
-                                                     leaveDetails.studyPurpose === 'board_exam' ? 'BAR/Board Exam Review' :
-                                                     leaveDetails.studyPurpose === 'continuing_education' ? 'Continuing Education' : 'Other'}</strong><br />
-                                            </>)}
-                                    </div>
-
-                                    
-
-                                    Other Purpose:_____________________________________<br />
-                                    <span className="checkbox"></span> Monetization of Leave Credits<br />
-                                    <span className="checkbox"></span> Terminal Leave<br />
-                                    
-                                </div>
-                            </td>
-                        </tr>
-                        
-                        <tr>
-                            <td>
-                                6.C NUMBER OF WORKING DAYS APPLIED FOR<br />
-                                <strong>{(leaveRequest?.days_with_pay || 0) + (leaveRequest?.days_without_pay || 0)} days</strong><br />
-                                Inclusive Dates: <br />
-                                <strong>{formatDate(leaveRequest?.start_date)} to {formatDate(leaveRequest?.end_date)}</strong>
-                            </td>
-                            <td>
-                                6.D COMMUTATION<br />
-                                <span className="checkbox checked">✓</span> Not Requested<br />
-                                <span className="checkbox"></span> Requested
-                                
-                                <div className="signature-section">
-                                    <div className="system-signature">Digitally Signed by Applicant</div>
-                                    <div className="signature-label">(Signature of Applicant)</div>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <br />
-
-                {/* Action Details Section */}
-                <div className="section-title" style={{ textAlign: 'center' }}>
-                    7. DETAILS OF ACTION ON APPLICATION
-                </div>
-
-                <table className="form-table bordered">
-                    <tbody>
-                        <tr>
-                            <td style={{ width: '50%' }}>
-                                7.A CERTIFICATION OF LEAVE CREDITS<br />
-                                <div style={{ textAlign: 'center' }}>
-                                    As of {getHRApprovalDate()} <br />
-                                </div>
-                                
-                                <table className="leave-credits-table">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th>Vacation Leave</th>
-                                            <th>Sick Leave</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Total Earned</td>
-                                            <td>
-                                                {isLeaveType('VL') 
-                                                    ? (getLeaveCreditData('VL')?.total_earned || '__')
-                                                    : '__'
-                                                }
-                                            </td>
-                                            <td>
-                                                {isLeaveType('SL') 
-                                                    ? (getLeaveCreditData('SL')?.total_earned || '__')
-                                                    : '__'
-                                                }
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td>Less this application</td>
-                                            <td>
-                                                {isLeaveType('VL') 
-                                                    ? (getLeaveCreditData('VL')?.less_application || '0')
-                                                    : '0'
-                                                }
-                                            </td>
-                                            <td>
-                                                {isLeaveType('SL') 
-                                                    ? (getLeaveCreditData('SL')?.less_application || '0')
-                                                    : '0'
-                                                }
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td>Balance</td>
-                                            <td>
-                                                {isLeaveType('VL') 
-                                                    ? (getLeaveCreditData('VL')?.balance || '__')
-                                                    : '__'
-                                                }
-                                            </td>
-                                            <td>
-                                                {isLeaveType('SL') 
-                                                    ? (getLeaveCreditData('SL')?.balance || '__')
-                                                    : '__'
-                                                }
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                
-                              
-                                <div className="signature-section">
-                                    <div className="approver-signature-line">
-                                        {(() => {
-                                            const hrApprover = getApproverByRole('hr');
-                                            console.log('HR Approver in template:', hrApprover);
-                                            return hrApprover?.name || 'HRMO-Designate';
-                                        })()}
-                                    </div>
-                                    <div className="verification-text">Digitally Signed and Certified by</div>
-                                    <div className="signature-label">(HRMO-Designate)</div>
-                                </div>
-                            </td>
-                            
-                            <td style={{ width: '50%' }}>
-                                7.B RECOMMENDATION<br />
-                                <span className="checkbox checked">✓</span> For approval<br />
-                                <span className="checkbox"></span> For disapproval due to: _____________________________________<br />
-                                ___________________________________________________________<br /><br />
-                                <div className="signature-section">
-                                    <div className="approver-signature-line">
-                                        {getApproverByRole('dept_head')?.name || 'Department Head'}
-                                    </div>
-                                    <div className="verification-text">Digitally Signed and Approved by</div>
-                                    <div className="signature-label">(Department Head/Authorized Personnel)</div>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <br />
-
-                {/* Final Approval Section */}
-               {/* Final Approval Section */}
-<table className="final-approval-table">
-    <tbody>
-        <tr>
-            <td style={{ width: '50%' }}>
-                7.C APPROVED FOR: <br />
-                <strong>{leaveRequest?.days_with_pay || 0} days with pay</strong><br />
-                <strong>{leaveRequest?.days_without_pay || 0} days without pay</strong><br />
-                _____ others (specify)__________
-            </td>
-            <td style={{ width: '50%' }}>
-                7.D DISAPPROVED DUE TO:<br />
-                ______________________________________________________________<br />    
-                ______________________________________________________________
-            </td>
-        </tr>
-        <tr>
-            <td colSpan="2" style={{ textAlign: 'center', paddingTop: '20px' }}>
-                <div className="approver-signature">
-                    <div className="approver-signature-line">
-                        {getApproverByRole('admin')?.name || 'Municipal Vice Mayor'}
+                        {/* Government Info - Centered */}
+                        <div className="government-info">
+                            Republic of the Philippines<br />
+                            Local Government Unit of Opol<br />
+                            Zone 3, Poblacion Opol, Misamis Oriental<br />
+                        </div>
                     </div>
-                    <div className="approver-role">
-                        {getApproverByRole('admin')?.role === 'admin' ? 'Municipal Vice Mayor' : 'Administrator'}
-                    </div>
-                    <div className="verification-text">Digitally Signed and Approved by</div>
-                </div>
+                    
+                    <div className="form-title">APPLICATION FOR LEAVE</div>
 
-                <br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />
-            </td>
-        </tr>
-    </tbody>
-</table>
-            </div>
+                    {/* Basic Information Table - Populated data */}
+                    <table className="form-info-table">
+                        <tbody>
+                            <tr>
+                                <td className="left-section" style={{ minWidth: '500px' }}>
+                                    <strong style={{ marginRight: '220px' }}>1.Office/Department: {employee?.department?.name || 'N/A'}</strong>
+                                    <strong>2.Name: {employee?.full_name || 'N/A'}</strong>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td className="left-section">
+                                    <strong style={{ marginRight: '216px' }}>3.Date of filing: {formatDate(leaveRequest?.created_at)}</strong>
+                                    <strong style={{ marginRight: '140px' }}>4.Position: {employee?.position || 'N/A'}</strong>
+                                    <strong>5.Salary: ₱{employee?.salary ? Number(employee.salary).toLocaleString() : 'N/A'}</strong>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <br />
+
+                    {/* Leave Details Section */}
+                    <div className="section-title">6. DETAILS OF APPLICATION</div>
+
+                    <table className="form-table bordered">
+                        <tbody>
+                            <tr>
+                                <td style={{ width: '50%' }}>
+                                    6.A TYPE OF LEAVE TO BE AVAILED OF:<br /><br />
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('VL') ? 'checked' : ''}`}>
+                                            {isLeaveType('VL') ? '✓' : ''}
+                                        </span> Vacation Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('FL') ? 'checked' : ''}`}>
+                                            {isLeaveType('FL') ? '✓' : ''}
+                                        </span> Forced Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('SL') ? 'checked' : ''}`}>
+                                            {isLeaveType('SL') ? '✓' : ''}
+                                        </span> Sick Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('ML') ? 'checked' : ''}`}>
+                                            {isLeaveType('ML') ? '✓' : ''}
+                                        </span> Maternity Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('PL') ? 'checked' : ''}`}>
+                                            {isLeaveType('PL') ? '✓' : ''}
+                                        </span> Paternity Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('SPL') ? 'checked' : ''}`}>
+                                            {isLeaveType('SPL') ? '✓' : ''}
+                                        </span> Special Privilege Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('SOLOPL') ? 'checked' : ''}`}>
+                                            {isLeaveType('SOLOPL') ? '✓' : ''}
+                                        </span> Solo Parent Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('STL') ? 'checked' : ''}`}>
+                                            {isLeaveType('STL') ? '✓' : ''}
+                                        </span> Study Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('10DVL') ? 'checked' : ''}`}>
+                                            {isLeaveType('10DVL') ? '✓' : ''}
+                                        </span> 10-Day VAWC Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('RL') ? 'checked' : ''}`}>
+                                            {isLeaveType('RL') ? '✓' : ''}
+                                        </span> Rehabilitation Privilege
+                                    </div>
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('SLBW') ? 'checked' : ''}`}>
+                                            {isLeaveType('SLBW') ? '✓' : ''}
+                                        </span> Special Leave Benefits for Women
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className={`checkbox ${isLeaveType('AL') ? 'checked' : ''}`}>
+                                            {isLeaveType('AL') ? '✓' : ''}
+                                        </span> Adoption Leave
+                                    </div>
+                                    
+                                    <div className="leave-type-option">
+                                        <span className="checkbox"></span> Others: 
+                                    </div><br />
+                                    ________________________________________
+                                </td>
+                                
+                                <td style={{ width: '50%' }}>
+                                    6.B DETAILS OF LEAVE<br /><br />
+                                    
+                                    <div>
+                                        {/* Vacation Leave */}
+                                        <div>
+                                            In case of Vacation Leave:<br />
+                                            <span className={`checkbox ${leaveDetails.vacationLocation === 'within_philippines' ? 'checked' : ''}`}>
+                                                {leaveDetails.vacationLocation === 'within_philippines' ? '✓' : ''}
+                                            </span> Within the Philippines : _______________________________________<br />
+                                            <span className={`checkbox ${leaveDetails.vacationLocation === 'abroad' ? 'checked' : ''}`}>
+                                                {leaveDetails.vacationLocation === 'abroad' ? '✓' : ''}
+                                            </span> Abroad (Specify):_____________________________________________<br />
+                                            {leaveDetails.vacationLocation && (
+                                                <>
+                                                    <strong>Location: {leaveDetails.vacationLocation === 'within_philippines' ? 'Within Philippines' : 'Abroad'}</strong><br />
+                                                </>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Sick Leave */}
+                                        <div>
+                                            In case of Sick Leave:<br />
+                                            <span className={`checkbox ${leaveDetails.sick_type === 'in_hospital' ? 'checked' : ''}`}>
+                                                {leaveDetails.sick_type === 'in_hospital' ? '✓' : ''}
+                                            </span> In Hospital (Specify illness):_____________________________________<br />
+                                            <span className={`checkbox ${leaveDetails.sick_type === 'outpatient' ? 'checked' : ''}`}>
+                                                {leaveDetails.sick_type === 'outpatient' ? '✓' : ''}
+                                            </span> Out Patient (Specify illness):_____________________________________<br />
+                                            {leaveDetails.illness && ( <>
+                                                <strong>Illness/Reason: {leaveDetails.illness}</strong><br />
+                                                </>)}
+                                        </div>
+
+                                        {/* Special Leave Benefits for Women */}
+                                        <div>
+                                            In case of Special Leave Benefits for Women:<br />
+                                            Specify Illness: ___________________________________________________
+                                        </div>
+
+                                        {/* Study Leave */}
+                                        <div>
+                                            In case of Study Leave:<br />
+                                            <span className={`checkbox ${leaveDetails.studyPurpose === 'masters_completion' ? 'checked' : ''}`}>
+                                                {leaveDetails.studyPurpose === 'masters_completion' ? '✓' : ''}
+                                            </span> Completion of Master's<br />    
+                                            <span className={`checkbox ${leaveDetails.studyPurpose === 'board_exam' ? 'checked' : ''}`}>
+                                                {leaveDetails.studyPurpose === 'board_exam' ? '✓' : ''}
+                                            </span> BAR/Board Exam Review<br />
+                                            <span className={`checkbox ${leaveDetails.studyPurpose === 'continuing_education' ? 'checked' : ''}`}>
+                                                {leaveDetails.studyPurpose === 'continuing_education' ? '✓' : ''}
+                                            </span> Continuing Education<br />
+                                            {leaveDetails.studyPurpose && ( <>
+                                                <strong>Purpose: {leaveDetails.studyPurpose === 'masters_completion' ? 'Completion of Master\'s' :
+                                                         leaveDetails.studyPurpose === 'board_exam' ? 'BAR/Board Exam Review' :
+                                                         leaveDetails.studyPurpose === 'continuing_education' ? 'Continuing Education' : 'Other'}</strong><br />
+                                                </>)}
+                                        </div>
+
+                                        Other Purpose:_____________________________________<br />
+                                        <span className="checkbox"></span> Monetization of Leave Credits<br />
+                                        <span className="checkbox"></span> Terminal Leave<br />
+                                        
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <tr>
+                            <td>
+        6.C NUMBER OF WORKING DAYS APPLIED FOR<br />
+        <strong>{getTotalDaysApplied()} days</strong><br />
+        <br />
+        <strong>Selected Dates:</strong><br />
+        <div style={{ fontSize: '11px', lineHeight: '1.2' }}>
+            {formattedDates && formattedDates.length > 0 ? (
+                (() => {
+                    // Extract unique months
+                    const months = [...new Set(formattedDates.map(date => {
+                        const dateObj = new Date(date);
+                        return dateObj.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                    }))];
+                    
+                    return (
+                        <div>
+                            <strong>
+                                {months.length === 1 
+                                    ? months[0]  // Single month: "Aug 2026"
+                                    : `${months[0]} - ${months[months.length - 1]}` // Multiple months: "Aug 2026 - Dec 2026"
+                                }
+                            </strong>
+                            <div style={{ color: '#666', marginTop: '2px' }}>
+                                {formattedDates.length} days across {months.length} month{months.length !== 1 ? 's' : ''}
+                            </div>
+                        </div>
+                    );
+                })()
+            ) : (
+                <div>No dates selected</div>
+            )}
+        </div>
+    </td>
+       </tr>
+                        </tbody>
+                    </table>
+
+                    <br />
+
+                    {/* Action Details Section */}
+                    <div className="section-title" style={{ textAlign: 'center' }}>
+                        7. DETAILS OF ACTION ON APPLICATION
+                    </div>
+
+                    <table className="form-table bordered">
+                        <tbody>
+                            <tr>
+                                <td style={{ width: '50%' }}>
+                                    7.A CERTIFICATION OF LEAVE CREDITS<br />
+                                    <div style={{ textAlign: 'center' }}>
+                                        As of {getHRApprovalDate()} <br />
+                                    </div>
+                                    
+                                    <table className="leave-credits-table">
+                                        <thead>
+                                            <tr>
+                                                <th></th>
+                                                <th>Vacation Leave</th>
+                                                <th>Sick Leave</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>Total Earned</td>
+                                                <td>
+                                                    {isLeaveType('VL') 
+                                                        ? (getLeaveCreditData('VL')?.total_earned || '__')
+                                                        : '__'
+                                                    }
+                                                </td>
+                                                <td>
+                                                    {isLeaveType('SL') 
+                                                        ? (getLeaveCreditData('SL')?.total_earned || '__')
+                                                        : '__'
+                                                    }
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>Less this application</td>
+                                                <td>
+                                                    {isLeaveType('VL') 
+                                                        ? (getLeaveCreditData('VL')?.less_application || '0')
+                                                        : '0'
+                                                    }
+                                                </td>
+                                                <td>
+                                                    {isLeaveType('SL') 
+                                                        ? (getLeaveCreditData('SL')?.less_application || '0')
+                                                        : '0'
+                                                    }
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>Balance</td>
+                                                <td>
+                                                    {isLeaveType('VL') 
+                                                        ? (getLeaveCreditData('VL')?.balance || '__')
+                                                        : '__'
+                                                    }
+                                                </td>
+                                                <td>
+                                                    {isLeaveType('SL') 
+                                                        ? (getLeaveCreditData('SL')?.balance || '__')
+                                                        : '__'
+                                                    }
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    
+                                
+                                    <div className="signature-section">
+                                        <div className="approver-signature-line">
+                                            {(() => {
+                                                const hrApprover = getApproverByRole('hr');
+                                                console.log('HR Approver in template:', hrApprover);
+                                                return hrApprover?.name || 'HRMO-Designate';
+                                            })()}
+                                        </div>
+                                        <div className="verification-text">Reviewed and Certified by</div>
+                                        <div className="signature-label">(HRMO-Designate)</div>
+                                    </div>
+                                </td>
+                                
+                                <td style={{ width: '50%' }}>
+                                    7.B RECOMMENDATION<br />
+                                    <span className="checkbox checked">✓</span> For approval<br />
+                                    <span className="checkbox"></span> For disapproval due to: _____________________________________<br />
+                                    ___________________________________________________________<br /><br />
+                                    <div className="signature-section">
+                                        <div className="approver-signature-line">
+                                            {getApproverByRole('dept_head')?.name || 'Department Head'}
+                                        </div>
+                                        <div className="verification-text"> Approval Duly Recorded and Authorized in the System by</div>
+                                        <div className="signature-label">(Department Head/Authorized Personnel)</div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <br />
+
+                    {/* Final Approval Section */}
+                    <table className="final-approval-table">
+                        <tbody>
+                            <tr>
+                                <td style={{ width: '50%' }}>
+                                    7.C APPROVED FOR: <br />
+                                    <strong>{leaveRequest?.days_with_pay || 0} days with pay</strong><br />
+                                    <strong>{leaveRequest?.days_without_pay || 0} days without pay</strong><br />
+                                    _____ others (specify)__________
+                                </td>
+                                <td style={{ width: '50%' }}>
+                                    7.D DISAPPROVED DUE TO:<br />
+                                    ______________________________________________________________<br />    
+                                    ______________________________________________________________
+                                </td>
+                            </tr>
+                            <tr>
+                            <td colSpan="2" style={{ textAlign: 'center', paddingTop: '20px' }}>
+    <div className="approver-signature">
+        <div className="approver-signature-line">
+            {getApproverByRole('admin')?.name || 'Municipal Vice Mayor'}
+        </div>
+        <div className="approver-role">
+            {getDisplayPosition(getApproverByRole('admin'), 'admin')}
+        </div>
+        <div className="verification-text">Approval Duly Recorded and Authorized in the System by</div>
+    </div>
+    <br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />
+</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Print Styles */}
             <style jsx>{`
                 .leave-form-container {
                     font-family: Arial, sans-serif;
-                    font-size: 12px; /* Slightly reduced from 13px */
+                    font-size: 12px;
                     background: white;
                     width: 100%;
                 }
             
-                /* Ensure the form content fits well in the modal */
                 @media screen {
                     .leave-form-page {
                         border: none;
@@ -662,49 +738,47 @@ const getLeaveCreditData = (leaveType) => {
                 }
             
                 .leave-form-page {
-                    
-    width: 1000px; /* Made wider */
-    min-height: 1200px; /* Made taller */
+                    width: 1000px;
+                    min-height: 1200px;
                     margin: auto;
                     background: white;
-                    padding: 20px 25px; /* Reduced top/bottom padding, kept side padding */
+                    padding: 20px 25px;
                     box-shadow: 0 0 5px rgba(0,0,0,0.3);
                     border: 1px solid #000;
                     position: relative;
-                    left: -20px; /* Shift entire form to the left */
-                    top: -15px; /* Shift entire form upward */
+                    left: -20px;
+                    top: -15px;
                 }
             
                 .form-header {
                     text-align: center;
-                    margin-bottom: 5px; /* Reduced margin */
+                    margin-bottom: 5px;
                 }
             
                 .government-info {
-                    font-size: 12px; /* Slightly reduced */
-                    line-height: 1.2; /* Tighter line spacing */
+                    font-size: 12px;
+                    line-height: 1.2;
                 }
             
                 .form-title {
                     text-align: center;
                     font-weight: bold;
-                    font-size: 16px; /* Slightly reduced from 18px */
-                    margin-top: 8px; /* Reduced margin */
-                    margin-bottom: 10px; /* Reduced margin */
+                    font-size: 16px;
+                    margin-top: 8px;
+                    margin-bottom: 10px;
                 }
             
-                /* Form Info Table - Populated data */
                 .form-info-table {
                     width: 100%;
                     border-collapse: collapse;
-                    margin-bottom: 10px; /* Reduced margin */
+                    margin-bottom: 10px;
                 }
             
                 .form-info-table td {
-                    padding: 6px; /* Slightly reduced padding */
+                    padding: 6px;
                     border: 1px solid #000;
                     vertical-align: top;
-                    font-size: 12px; /* Slightly reduced */
+                    font-size: 12px;
                 }
             
                 .form-info-table .left-section {
@@ -714,10 +788,10 @@ const getLeaveCreditData = (leaveType) => {
                 .section-title {
                     font-weight: bold;
                     background: #eee;
-                    padding: 4px 6px; /* Reduced padding */
+                    padding: 4px 6px;
                     border: 1px solid #000;
-                    margin-bottom: 6px; /* Reduced margin */
-                    font-size: 13px; /* Slightly reduced */
+                    margin-bottom: 6px;
+                    font-size: 13px;
                 }
             
                 .form-table {
@@ -726,9 +800,9 @@ const getLeaveCreditData = (leaveType) => {
                 }
             
                 .form-table td, .form-table th {
-                    padding: 4px; /* Reduced padding */
+                    padding: 4px;
                     vertical-align: top;
-                    font-size: 12px; /* Slightly reduced */
+                    font-size: 12px;
                 }
             
                 .bordered td, .bordered th {
@@ -736,20 +810,20 @@ const getLeaveCreditData = (leaveType) => {
                 }
             
                 .leave-type-option {
-                    margin-bottom: 2px; /* Reduced spacing */
-                    font-size: 12px; /* Slightly reduced */
-                    line-height: 1.2; /* Tighter line spacing */
+                    margin-bottom: 2px;
+                    font-size: 12px;
+                    line-height: 1.2;
                 }
             
                 .checkbox {
                     display: inline-block;
-                    width: 14px; /* Slightly reduced */
-                    height: 14px; /* Slightly reduced */
+                    width: 14px;
+                    height: 14px;
                     border: 1px solid #000;
-                    margin-right: 4px; /* Reduced spacing */
+                    margin-right: 4px;
                     text-align: center;
-                    line-height: 14px; /* Adjusted line height */
-                    font-size: 11px; /* Slightly reduced */
+                    line-height: 14px;
+                    font-size: 11px;
                 }
             
                 .checkbox.checked {
@@ -762,95 +836,91 @@ const getLeaveCreditData = (leaveType) => {
                     border: 1px solid #000;
                     text-align: center;
                     border-collapse: collapse;
-                    font-size: 12px; /* Slightly reduced */
+                    font-size: 12px;
                 }
             
                 .leave-credits-table th,
                 .leave-credits-table td {
                     border: 1px solid #000;
-                    padding: 4px; /* Reduced padding */
+                    padding: 4px;
                 }
             
                 .signature-section {
                     text-align: center;
-                    margin-top: 15px; /* Reduced spacing */
+                    margin-top: 15px;
                 }
             
                 .system-signature {
                     font-weight: bold;
                     color: #666;
                     font-style: italic;
-                    font-size: 11px; /* Slightly reduced */
+                    font-size: 11px;
                 }
             
                 .approver-signature-line {
-                    width: 250px; /* Slightly narrower */
+                    width: 250px;
                     margin: 0 auto;
                     border-bottom: 1px solid #000;
-                    height: 30px; /* Reduced height */
-                    line-height: 30px; /* Adjusted line height */
+                    height: 30px;
+                    line-height: 30px;
                     font-weight: bold;
-                    font-size: 13px; /* Slightly reduced */
+                    font-size: 13px;
                 }
             
                 .verification-text {
-                    margin-top: 5px; /* Reduced spacing */
+                    margin-top: 5px;
                     font-weight: bold;
                     color: #666;
                     font-style: italic;
-                    font-size: 11px; /* Slightly reduced */
+                    font-size: 11px;
                 }
             
                 .approver-role {
-                    margin-top: 5px; /* Reduced spacing */
+                    margin-top: 5px;
                     font-weight: bold;
-                    font-size: 11px; /* Slightly reduced */
+                    font-size: 11px;
                 }
             
                 .signature-label {
-                    margin-top: 5px; /* Reduced spacing */
-                    font-size: 11px; /* Slightly reduced */
+                    margin-top: 5px;
+                    font-size: 11px;
                     color: #666;
                 }
             
                .final-approval-table {
-    width: 100%;
-    border: 1px solid #000;
-    border-collapse: collapse;
-}
+                    width: 100%;
+                    border: 1px solid #000;
+                    border-collapse: collapse;
+                }
 
-.final-approval-table tr:first-child td {
-    border-bottom: 1px solid #000;
-    /* Remove all side borders */
-    border-left: none !important;
-    border-right: none !important;
-}
+                .final-approval-table tr:first-child td {
+                    border-bottom: 1px solid #000;
+                    border-left: none !important;
+                    border-right: none !important;
+                }
 
-.final-approval-table td {
-    padding: 6px;
-    /* Remove all borders by default */
-    border: none;
-    font-size: 12px;
-}
+                .final-approval-table td {
+                    padding: 6px;
+                    border: none;
+                    font-size: 12px;
+                }
 
-/* Remove the border between 7C and 7D specifically */
-.final-approval-table tr:first-child td:first-child {
-    border-right: none !important;
-}
+                .final-approval-table tr:first-child td:first-child {
+                    border-right: none !important;
+                }
 
-.final-approval-table tr:first-child td:last-child {
-    border-left: none !important;
-}
+                .final-approval-table tr:first-child td:last-child {
+                    border-left: none !important;
+                }
 
-.approver-signature {
-    text-align: center;
-}
-                /* Reduce spacing between sections */
+                .approver-signature {
+                    text-align: center;
+                }
+
                 br {
-                    margin-bottom: 5px !important; /* Reduced spacing between sections */
+                    margin-bottom: 5px !important;
                 }
             
-                /* Print-specific styles */
                 @media print {
                     body * {
                         visibility: hidden;
@@ -865,9 +935,9 @@ const getLeaveCreditData = (leaveType) => {
                     
                     .leave-form-container {
                         position: absolute;
-                        left: -5mm; /* Shift left for print */
-                        top: -5mm; /* Shift up for print */
-                        width: 103%; /* Slightly wider to compensate for shift */
+                        left: -5mm;
+                        top: -5mm;
+                        width: 103%;
                         padding: 0;
                         margin: 0;
                         background: white;
@@ -879,22 +949,21 @@ const getLeaveCreditData = (leaveType) => {
                     
                     .leave-form-page {
                         width: 100% !important;
-                        min-height: 95vh !important; /* Reduced height for print */
+                        min-height: 95vh !important;
                         height: auto !important;
                         overflow: visible !important;
                         box-shadow: none !important;
                         border: none !important;
-                        font-size: 12pt !important; /* Slightly reduced font for print */
+                        font-size: 12pt !important;
                         position: relative !important;
                         transform: none !important;
                         transform-origin: top left !important;
                         left: 0 !important;
                         top: 0 !important;
-                        padding: 10mm 12mm !important; /* Reduced padding for print */
+                        padding: 10mm 12mm !important;
                         margin: 0 auto !important;
                     }
                     
-                    /* Ensure all content uses adjusted sizes */
                     .form-info-table,
                     .form-table,
                     .leave-credits-table,
@@ -958,7 +1027,7 @@ const getLeaveCreditData = (leaveType) => {
                     }
             
                     @page {
-                        margin: 5mm; /* Reduced margins to use more paper space */
+                        margin: 5mm;
                         size: letter;
                     }
                     
@@ -969,38 +1038,31 @@ const getLeaveCreditData = (leaveType) => {
                     }
 
                     .leave-form-container * {
-    box-sizing: border-box;
-}
+                        box-sizing: border-box;
+                    }
 
-.leave-form-page {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-}
+                    .leave-form-page {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                    }
 
-/* Ensure all text is crisp */
-.form-header,
-.form-title,
-.form-info-table,
-.form-table,
-.leave-credits-table,
-.final-approval-table {
-    -webkit-font-smoothing: antialiased !important;
-    -moz-osx-font-smoothing: grayscale !important;
-}
+                    .form-header,
+                    .form-title,
+                    .form-info-table,
+                    .form-table,
+                    .leave-credits-table,
+                    .final-approval-table {
+                        -webkit-font-smoothing: antialiased !important;
+                        -moz-osx-font-smoothing: grayscale !important;
+                    }
 
-/* Improve text rendering */
-.leave-form-page * {
-    text-rendering: optimizeLegibility !important;
-}
+                    .leave-form-page * {
+                        text-rendering: optimizeLegibility !important;
+                    }
                 }
             `}</style>
-
-
-
         </div>
-
-        
     );
 }
 

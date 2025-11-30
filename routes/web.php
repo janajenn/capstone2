@@ -152,7 +152,8 @@ Route::post('/admin/credit-conversions/{id}/reject', [AdminController::class, 'r
 // Add these routes to your web.php file
 Route::get('/hr/employees/{employee}/edit', [\App\Http\Controllers\HR\HRController::class, 'editEmployee'])->name('hr.employees.edit');
 Route::put('/hr/employees/{employee}', [\App\Http\Controllers\HR\HRController::class, 'updateEmployee'])->name('hr.employees.update');
-
+// Employee Modal Route
+Route::get('/hr/employees/{employee}/leave-histories', [HRController::class, 'getEmployeeLeaveHistories'])->name('hr.employees.leave-histories');
     // leave credits side
      Route::get('/hr/leave-credits', [HRController::class, 'leaveCredits'])->name('hr.leave-credits');
      // Add this route to your HR routes section
@@ -160,8 +161,11 @@ Route::get('/hr/leave-credits/{employee}', [HRController::class, 'showLeaveCredi
 
      Route::put('/leave-credits/{employee}', [HRController::class, 'update'])->name('hr.leave-credits.update');
 
-
-     Route::post('/hr/leave-credits/add-monthly', [HRController::class, 'addMonthlyCredits'])->name('hr.leave-credits.monthly-add');
+    // Add these to your HR routes
+Route::get('/hr/leave-donations', [HRController::class, 'leaveDonations'])->name('hr.leave-donations');
+Route::get('/hr/leave-donations/pending', [HRController::class, 'pendingLeaveDonations'])->name('hr.leave-donations.pending');
+Route::post('/hr/leave-donations/{id}/approve', [HRController::class, 'approveLeaveDonation'])->name('hr.leave-donations.approve');
+Route::post('/hr/leave-donations/{id}/reject', [HRController::class, 'rejectLeaveDonation'])->name('hr.leave-donations.reject');
 
 
      //leave types side
@@ -458,6 +462,7 @@ Route::get('/employee/notifications/{id}/click', [\App\Http\Controllers\Employee
         Route::get('/employee/check-donation-eligibility', [EmployeeController::class, 'checkDonationEligibility']);
     Route::get('/employee/eligible-recipients', [EmployeeController::class, 'getEligibleRecipients']);
     Route::post('/employee/donate-maternity-leave', [EmployeeController::class, 'donateMaternityLeave']);
+    Route::get('/employee/search-recipients', [EmployeeController::class, 'searchRecipients'])->name('employee.search-recipients');
     // routes/web.php - in the employee routes group
 
 Route::post('/employee/leave-reschedule', [EmployeeController::class, 'submitRescheduleRequest'])->name('employee.leave-reschedule.submit');

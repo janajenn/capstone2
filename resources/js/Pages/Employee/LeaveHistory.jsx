@@ -402,8 +402,8 @@ export default function LeaveHistory() {
                                         tableData.map((leave) => {
                                             const startDate = new Date(leave.date_from);
                                             const endDate = new Date(leave.date_to);
-                                            const duration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-
+                                            // FIXED: Use total_days from backend which now uses selected_dates count
+const duration = leave.total_days || Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
                                             return (
                                                 <motion.tr
                                                     key={leave.id}
@@ -657,32 +657,40 @@ export default function LeaveHistory() {
                 </div>
             </div>
 
-             {/* View Details Modal */}
-             {isViewModalOpen && selectedLeave && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 w-full max-w-2xl"
-                    >
-                        <div className="p-6">
-                            <div className="flex justify-between items-center pb-4 border-b border-gray-200/50">
-                                <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
-                                    Leave Request Details
-                                </h3>
-                                <button
-                                    onClick={handleCloseModals}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-                                >
-                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
+{/* View Details Modal - Landscape Style */}
+{isViewModalOpen && selectedLeave && (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 w-full max-w-6xl max-h-[85vh] overflow-hidden"
+        >
+            <div className="flex flex-col h-full">
+                {/* Header */}
+                <div className="flex-shrink-0 p-6 border-b border-gray-200/50">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
+                            Leave Request Details
+                        </h3>
+                        <button
+                            onClick={handleCloseModals}
+                            className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                        >
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
 
-                            <div className="mt-6 space-y-6">
-                                {/* Leave Basic Information */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Content - Landscape Layout */}
+                <div className="flex-1 overflow-hidden">
+                    <div className="grid grid-cols-2 h-full">
+                        {/* Left Column - Basic Information */}
+                        <div className="border-r border-gray-200/50 overflow-y-auto p-6">
+                            <div className="space-y-6">
+                                {/* Leave Type & Status */}
+                                <div className="grid grid-cols-2 gap-4">
                                     <div className="bg-gradient-to-r from-emerald-50 to-green-50/30 p-4 rounded-xl border border-emerald-100">
                                         <label className="block text-sm font-semibold text-emerald-800 mb-2">Leave Type</label>
                                         <div className="flex items-center space-x-3">
@@ -708,25 +716,86 @@ export default function LeaveHistory() {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Date From</label>
-                                        <p className="text-lg font-medium text-gray-900">{new Date(selectedLeave.date_from).toLocaleDateString()}</p>
-                                    </div>
-                                    <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Date To</label>
-                                        <p className="text-lg font-medium text-gray-900">{new Date(selectedLeave.date_to).toLocaleDateString()}</p>
+{/* Selected Dates - Only show the actual selected dates in boxes */}
+<div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
+    <label className="block text-sm font-semibold text-gray-700 mb-3">
+        Selected Dates ({selectedLeave.total_days} day{selectedLeave.total_days !== 1 ? 's' : ''})
+    </label>
+    
+    {selectedLeave.selected_dates && selectedLeave.selected_dates.length > 0 ? (
+        <div className="space-y-3">
+            {/* Show ONLY the selected dates in boxes */}
+            <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                {selectedLeave.selected_dates.map((date, index) => (
+                    <div 
+                        key={index}
+                        className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-3 text-center"
+                    >
+                        <div className="text-sm text-blue-600 font-semibold">
+                            {new Date(date).toLocaleDateString('en-US', { 
+                                weekday: 'short'
+                            })}
+                        </div>
+                        <div className="text-xs text-blue-800 mt-1">
+                            {new Date(date).toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            
+            {/* Only show total count */}
+            <div className="text-center text-xs text-gray-600 pt-2 border-t border-gray-200">
+                {selectedLeave.selected_dates.length} date{selectedLeave.selected_dates.length !== 1 ? 's' : ''} selected
+            </div>
+        </div>
+    ) : (
+        /* When no selected dates exist, show a simple message */
+        <div className="text-center text-gray-500 py-4">
+            <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-sm">Date range: {new Date(selectedLeave.date_from).toLocaleDateString()} - {new Date(selectedLeave.date_to).toLocaleDateString()}</p>
+        </div>
+    )}
+</div>
+
+                                {/* Duration */}
+                                <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Duration</label>
+                                    <div className="grid grid-cols-3 gap-4 text-center">
+                                        <div>
+                                            <div className="font-semibold text-blue-800 text-sm mb-1">Total Days</div>
+                                            <div className="text-2xl font-bold text-blue-600">{selectedLeave.total_days}</div>
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-green-800 text-sm mb-1">With Pay</div>
+                                            <div className="text-2xl font-bold text-green-600">{selectedLeave.days_with_pay}</div>
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-orange-800 text-sm mb-1">Without Pay</div>
+                                            <div className="text-2xl font-bold text-orange-600">{selectedLeave.days_without_pay}</div>
+                                        </div>
                                     </div>
                                 </div>
 
+                                {/* Reason */}
                                 <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Reason</label>
                                     <p className="text-gray-900">{selectedLeave.reason}</p>
                                 </div>
+                            </div>
+                        </div>
 
-                                {/* Leave Balance Information - Show for approved leaves */}
+                        {/* Right Column - Balance Information & Details */}
+                        <div className="overflow-y-auto p-6">
+                            <div className="space-y-6">
+                                {/* Leave Balance Information */}
                                 {selectedLeave.status === 'approved' && (
-                                    <div className="border-t border-gray-200/50 pt-6">
+                                    <div>
                                         <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent mb-4">
                                             Leave Balance Information
                                         </h4>
@@ -735,319 +804,480 @@ export default function LeaveHistory() {
                                             // For SL and VL - Show Leave Credits
                                             <div className="bg-gradient-to-r from-blue-50 to-blue-100/30 p-6 rounded-xl border border-blue-200">
                                                 <h5 className="font-bold text-blue-900 mb-4 text-lg">Leave Credits ({selectedLeave.leave_type?.name})</h5>
-                                                <div className="grid grid-cols-3 gap-6 text-center">
-                                                    <div className="bg-white/80 p-4 rounded-xl border border-blue-200">
-                                                        <div className="font-semibold text-blue-800 text-sm mb-2">Before</div>
-                                                        <div className="text-2xl font-bold text-blue-600">{selectedLeave.balance_before}</div>
-                                                        <div className="text-xs text-blue-600 mt-1">days</div>
+                                                <div className="grid grid-cols-3 gap-4 text-center">
+                                                    <div className="bg-white/80 p-3 rounded-xl border border-blue-200">
+                                                        <div className="font-semibold text-blue-800 text-xs mb-1">Before</div>
+                                                        <div className="text-xl font-bold text-blue-600">{selectedLeave.balance_before}</div>
                                                     </div>
-                                                    <div className="bg-white/80 p-4 rounded-xl border border-red-200">
-                                                        <div className="font-semibold text-red-800 text-sm mb-2">Deducted</div>
-                                                        <div className="text-2xl font-bold text-red-600">-{selectedLeave.days_with_pay}</div>
-                                                        <div className="text-xs text-red-600 mt-1">days</div>
+                                                    <div className="bg-white/80 p-3 rounded-xl border border-red-200">
+                                                        <div className="font-semibold text-red-800 text-xs mb-1">Deducted</div>
+                                                        <div className="text-xl font-bold text-red-600">-{selectedLeave.days_with_pay}</div>
                                                     </div>
-                                                    <div className="bg-white/80 p-4 rounded-xl border border-green-200">
-                                                        <div className="font-semibold text-green-800 text-sm mb-2">After</div>
-                                                        <div className="text-2xl font-bold text-green-600">{selectedLeave.balance_after}</div>
-                                                        <div className="text-xs text-green-600 mt-1">days</div>
+                                                    <div className="bg-white/80 p-3 rounded-xl border border-green-200">
+                                                        <div className="font-semibold text-green-800 text-xs mb-1">After</div>
+                                                        <div className="text-xl font-bold text-green-600">{selectedLeave.balance_after}</div>
                                                     </div>
-                                                </div>
-                                                <div className="mt-4 text-sm text-blue-700 text-center">
-                                                    * {selectedLeave.leave_type?.code} credits accumulate 1.25 days monthly
                                                 </div>
                                             </div>
                                         ) : (
                                             // For other leave types - Show Leave Balance
                                             <div className="bg-gradient-to-r from-green-50 to-green-100/30 p-6 rounded-xl border border-green-200">
                                                 <h5 className="font-bold text-green-900 mb-4 text-lg">Leave Balance ({selectedLeave.leave_type?.name})</h5>
-                                                <div className="grid grid-cols-3 gap-6 text-center">
-                                                    <div className="bg-white/80 p-4 rounded-xl border border-green-200">
-                                                        <div className="font-semibold text-green-800 text-sm mb-2">Before</div>
-                                                        <div className="text-2xl font-bold text-green-600">{selectedLeave.balance_before}</div>
-                                                        <div className="text-xs text-green-600 mt-1">days</div>
+                                                <div className="grid grid-cols-3 gap-4 text-center">
+                                                    <div className="bg-white/80 p-3 rounded-xl border border-green-200">
+                                                        <div className="font-semibold text-green-800 text-xs mb-1">Before</div>
+                                                        <div className="text-xl font-bold text-green-600">{selectedLeave.balance_before}</div>
                                                     </div>
-                                                    <div className="bg-white/80 p-4 rounded-xl border border-red-200">
-                                                        <div className="font-semibold text-red-800 text-sm mb-2">Used</div>
-                                                        <div className="text-2xl font-bold text-red-600">-{selectedLeave.days_with_pay}</div>
-                                                        <div className="text-xs text-red-600 mt-1">days</div>
+                                                    <div className="bg-white/80 p-3 rounded-xl border border-red-200">
+                                                        <div className="font-semibold text-red-800 text-xs mb-1">Used</div>
+                                                        <div className="text-xl font-bold text-red-600">-{selectedLeave.days_with_pay}</div>
                                                     </div>
-                                                    <div className="bg-white/80 p-4 rounded-xl border border-blue-200">
-                                                        <div className="font-semibold text-blue-800 text-sm mb-2">After</div>
-                                                        <div className="text-2xl font-bold text-blue-600">{selectedLeave.balance_after}</div>
-                                                        <div className="text-xs text-blue-600 mt-1">days</div>
+                                                    <div className="bg-white/80 p-3 rounded-xl border border-blue-200">
+                                                        <div className="font-semibold text-blue-800 text-xs mb-1">After</div>
+                                                        <div className="text-xl font-bold text-blue-600">{selectedLeave.balance_after}</div>
                                                     </div>
-                                                </div>
-                                                <div className="mt-4 text-sm text-green-700 text-center">
-                                                    * Fixed allocation leave type
                                                 </div>
                                             </div>
                                         )}
-
-                                        {/* Days Breakdown */}
-                                        <div className="mt-6 grid grid-cols-2 gap-6">
-                                            <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                                <label className="font-semibold text-gray-700 text-sm">Days with Pay</label>
-                                                <p className="text-xl font-bold text-gray-900 mt-1">{selectedLeave.days_with_pay} days</p>
-                                            </div>
-                                            <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                                <label className="font-semibold text-gray-700 text-sm">Days without Pay</label>
-                                                <p className="text-xl font-bold text-gray-900 mt-1">{selectedLeave.days_without_pay} days</p>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-4 bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                            <label className="font-semibold text-gray-700 text-sm">Total Duration</label>
-                                            <p className="text-xl font-bold text-gray-900 mt-1">{selectedLeave.total_days} days</p>
-                                        </div>
                                     </div>
                                 )}
 
                                 {/* Additional Details */}
                                 {selectedLeave.details && selectedLeave.details.length > 0 && (
-                                    <div className="border-t border-gray-200/50 pt-6">
+                                    <div>
                                         <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent mb-4">
                                             Additional Information
                                         </h4>
-                                        <div className="space-y-3">
+                                        <div className="space-y-2">
                                             {selectedLeave.details.map((detail, index) => (
                                                 <div key={index} className="flex justify-between items-center bg-white/50 p-3 rounded-xl border border-gray-200/50">
-                                                    <span className="font-semibold text-gray-700 capitalize">
+                                                    <span className="font-semibold text-gray-700 capitalize text-sm">
                                                         {detail.field_name.replace(/_/g, ' ')}:
                                                     </span>
-                                                    <span className="text-gray-900 font-medium">{detail.field_value}</span>
+                                                    <span className="text-gray-900 font-medium text-sm">{detail.field_value}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Approvals */}
+                                {selectedLeave.approvals && selectedLeave.approvals.length > 0 && (
+                                    <div>
+                                        <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent mb-4">
+                                            Approval History
+                                        </h4>
+                                        <div className="space-y-2">
+                                            {selectedLeave.approvals.map((approval, index) => (
+                                                <div key={index} className="flex justify-between items-center bg-white/50 p-3 rounded-xl border border-gray-200/50">
+                                                    <div>
+                                                        <span className="font-semibold text-gray-700 capitalize text-sm">
+                                                            {approval.role.replace(/_/g, ' ')}:
+                                                        </span>
+                                                        <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                                            approval.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                                                        }`}>
+                                                            {approval.status}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-gray-500 text-xs">
+                                                        {approval.approved_at ? new Date(approval.approved_at).toLocaleDateString() : 'Pending'}
+                                                    </span>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                             </div>
-
-                            <div className="mt-8 flex justify-end">
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={handleCloseModals}
-                                    className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-base font-semibold rounded-xl shadow-lg hover:from-emerald-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200"
-                                >
-                                    Close
-                                </motion.button>
-                            </div>
                         </div>
-                    </motion.div>
+                    </div>
                 </div>
-            )}
+
+                {/* Footer */}
+                <div className="flex-shrink-0 p-6 border-t border-gray-200/50">
+                    <div className="flex justify-end">
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleCloseModals}
+                            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-base font-semibold rounded-xl shadow-lg hover:from-emerald-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200"
+                        >
+                            Close
+                        </motion.button>
+                    </div>
+                </div>
+            </div>
+        </motion.div>
+    </div>
+)}
 
 
-            {/* Apply Reschedule Modal */}
-            {isRescheduleModalOpen && selectedLeave && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 w-full max-w-4xl"
+            {/* Apply Reschedule Modal - Landscape Style */}
+{/* Apply Reschedule Modal - Landscape Style */}
+{isRescheduleModalOpen && selectedLeave && (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 w-full max-w-7xl h-[90vh] flex flex-col" // Changed to fixed height and flex-col
+        >
+            {/* Header - Fixed */}
+            <div className="flex-shrink-0 p-6 border-b border-gray-200/50">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
+                        Apply Reschedule
+                    </h3>
+                    <button
+                        onClick={handleCloseModals}
+                        className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
                     >
-                        <div className="p-6">
-                            <div className="flex justify-between items-center pb-4 border-b border-gray-200/50">
-                                <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
-                                    Apply Reschedule
-                                </h3>
-                                <button
-                                    onClick={handleCloseModals}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-                                >
-                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
+                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
 
-                            <div className="mt-6 space-y-6">
-                                {/* Original Leave Information */}
-                                <div className="bg-gradient-to-r from-blue-50 to-blue-100/30 p-4 rounded-xl border border-blue-200">
-                                    <h4 className="text-lg font-semibold text-blue-900 mb-3">Original Leave Request</h4>
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div>
-                                            <span className="font-medium text-blue-800">Leave Type:</span>
-                                            <span className="ml-2 text-blue-900">{selectedLeave.leave_type?.name}</span>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-blue-800">Original Dates:</span>
-                                            <span className="ml-2 text-blue-900">
-                                                {new Date(selectedLeave.date_from).toLocaleDateString()} - {new Date(selectedLeave.date_to).toLocaleDateString()}
-                                            </span>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-blue-800">Duration:</span>
-                                            <span className="ml-2 text-blue-900">{selectedLeave.total_days} days</span>
-                                        </div>
-                                        <div>
-                                            <span className="font-medium text-blue-800">Reason:</span>
-                                            <span className="ml-2 text-blue-900">{selectedLeave.reason}</span>
-                                        </div>
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-hidden">
+                <div className="grid grid-cols-3 h-full">
+                    {/* Left Column - Original Leave Info */}
+                    <div className="border-r border-gray-200/50 overflow-y-auto p-6">
+                        <div className="space-y-6">
+                            <div className="bg-gradient-to-r from-blue-50 to-blue-100/30 p-4 rounded-xl border border-blue-200">
+                                <h4 className="text-lg font-semibold text-blue-900 mb-3">Original Leave Request</h4>
+                                <div className="space-y-3 text-sm">
+                                    <div>
+                                        <span className="font-medium text-blue-800">Leave Type:</span>
+                                        <span className="ml-2 text-blue-900">{selectedLeave.leave_type?.name}</span>
                                     </div>
-                                    <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                        <p className="text-sm text-yellow-800 font-medium">
-                                            📝 <strong>Note:</strong> You must select exactly <strong>{selectedLeave.total_days} date(s)</strong> to match the original leave duration.
-                                        </p>
+                                    <div>
+                                        <span className="font-medium text-blue-800">Original Dates:</span>
+                                        <span className="ml-2 text-blue-900">
+                                            {new Date(selectedLeave.date_from).toLocaleDateString()} - {new Date(selectedLeave.date_to).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium text-blue-800">Duration:</span>
+                                        <span className="ml-2 text-blue-900">{selectedLeave.total_days} days</span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium text-blue-800">Reason:</span>
+                                        <span className="ml-2 text-blue-900">{selectedLeave.reason}</span>
                                     </div>
                                 </div>
-
-                                {/* New Proposed Dates Section */}
-                                <div className="space-y-4">
-                                    <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
-                                        New Proposed Dates
-                                    </h4>
-                                    
-                                    {/* Selected Dates Preview */}
-                                    {selectedDates.length > 0 && (
-                                        <div className="bg-gradient-to-r from-green-50 to-green-100/30 p-4 rounded-xl border border-green-200">
-                                            <div className="flex justify-between items-center mb-3">
-                                                <h5 className="font-semibold text-green-900">
-                                                    Selected Dates ({selectedDates.length}/{selectedLeave.total_days} days)
-                                                </h5>
-                                                <button
-                                                    onClick={clearAllDates}
-                                                    className="text-xs text-red-600 hover:text-red-800 font-medium"
-                                                >
-                                                    Clear All
-                                                </button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {selectedDates.map((date) => (
-                                                    <span
-                                                        key={date}
-                                                        className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-white border border-green-300 text-green-800"
-                                                    >
-                                                        {new Date(date).toLocaleDateString()}
-                                                        <button
-                                                            onClick={() => handleRemoveDate(date)}
-                                                            className="ml-2 text-red-500 hover:text-red-700"
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                            {selectedDates.length === selectedLeave.total_days && (
-                                                <div className="mt-3 p-2 bg-green-100 border border-green-300 rounded-lg">
-                                                    <p className="text-sm text-green-800 text-center">
-                                                        ✅ Perfect! You've selected the required {selectedLeave.total_days} date(s).
-                                                    </p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-
-                                    {/* Date Picker */}
-                                    <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                        <h5 className="font-semibold text-gray-700 mb-4">
-                                            Select New Dates ({selectedDates.length}/{selectedLeave.total_days} selected)
-                                        </h5>
-                                        
-                                        <div className="max-h-96 overflow-y-auto">
-                                            {Object.entries(groupedDates).map(([monthYear, dates]) => (
-                                                <div key={monthYear} className="mb-6">
-                                                    <h6 className="font-semibold text-gray-900 mb-3 text-lg">{monthYear}</h6>
-                                                    <div className="grid grid-cols-7 gap-2">
-                                                        {/* Day headers */}
-                                                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(day => (
-                                                            <div key={day} className="text-center text-xs font-semibold text-gray-500 py-2">
-                                                                {day}
-                                                            </div>
-                                                        ))}
-                                                        {/* Empty cells for weekend columns */}
-                                                        <div className="text-center text-xs font-semibold text-gray-300 py-2">Sat</div>
-                                                        <div className="text-center text-xs font-semibold text-gray-300 py-2">Sun</div>
-                                                        
-                                                        {/* Date cells */}
-                                                        {dates.map((date) => {
-                                                            const dateString = date.toISOString().split('T')[0];
-                                                            const isSelected = selectedDates.includes(dateString);
-                                                            const isToday = date.toDateString() === new Date().toDateString();
-                                                            const isDisabled = selectedDates.length >= selectedLeave.total_days && !isSelected;
-                                                            
-                                                            return (
-                                                                <button
-                                                                    key={dateString}
-                                                                    onClick={() => handleDateSelect(date)}
-                                                                    disabled={isDisabled}
-                                                                    className={`p-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                                                        isSelected
-                                                                            ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg transform scale-105'
-                                                                            : isToday
-                                                                            ? 'bg-blue-100 text-blue-800 border-2 border-blue-300'
-                                                                            : isDisabled
-                                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                                    }`}
-                                                                    title={isDisabled ? `Maximum ${selectedLeave.total_days} date(s) allowed` : ''}
-                                                                >
-                                                                    {date.getDate()}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        
-                                        <div className="mt-4 text-xs text-gray-500">
-                                            <p>💡 <strong>Note:</strong> Weekends are automatically excluded. You must select exactly {selectedLeave.total_days} date(s).</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Reschedule Reason */}
-                                <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-                                    <label htmlFor="rescheduleReason" className="block text-sm font-semibold text-gray-700 mb-2">
-                                        Reason for Reschedule *
-                                    </label>
-                                    <textarea
-                                        id="rescheduleReason"
-                                        value={data.reason}
-                                        onChange={(e) => setData('reason', e.target.value)}
-                                        placeholder="Please explain why you need to reschedule this leave..."
-                                        rows="4"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
-                                        required
-                                    />
-                                    {errors.reason && (
-                                        <p className="text-red-600 text-sm mt-1">{errors.reason}</p>
-                                    )}
-                                    <p className="text-xs text-gray-500 mt-2">
-                                        Please provide a clear reason for rescheduling your approved leave.
+                                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                    <p className="text-sm text-yellow-800 font-medium">
+                                        📝 <strong>Note:</strong> Select exactly <strong>{selectedLeave.total_days} date(s)</strong>
                                     </p>
                                 </div>
                             </div>
 
-                            <div className="mt-8 flex justify-end space-x-3">
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={handleCloseModals}
-                                    disabled={processing}
-                                    className="px-6 py-3 bg-gray-600 text-white text-base font-semibold rounded-xl shadow-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-200"
-                                >
-                                    Cancel
-                                </motion.button>
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    onClick={handleSubmitReschedule}
-                                    disabled={selectedDates.length !== selectedLeave.total_days || !data.reason.trim() || processing}
-                                    className={`px-6 py-3 text-base font-semibold rounded-xl shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
-                                        selectedDates.length !== selectedLeave.total_days || !data.reason.trim() || processing
-                                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                                            : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 focus:ring-blue-500'
-                                    }`}
-                                >
-                                    {processing ? 'Submitting...' : 'Submit Reschedule Request'}
-                                </motion.button>
+                            {/* Selected Dates Preview */}
+                            <div className="bg-gradient-to-r from-green-50 to-green-100/30 p-4 rounded-xl border border-green-200">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h5 className="font-semibold text-green-900 text-sm">
+                                        Selected Dates ({selectedDates.length}/{selectedLeave.total_days})
+                                    </h5>
+                                    <button
+                                        onClick={clearAllDates}
+                                        className="text-xs text-red-600 hover:text-red-800 font-medium"
+                                    >
+                                        Clear All
+                                    </button>
+                                </div>
+                                <div className="space-y-2 max-h-32 overflow-y-auto"> {/* Added max height and scroll */}
+                                    {selectedDates.length > 0 ? (
+                                        selectedDates.map((date) => (
+                                            <div key={date} className="flex justify-between items-center bg-white border border-green-300 rounded-lg p-2">
+                                                <span className="text-sm text-green-800">
+                                                    {new Date(date).toLocaleDateString()}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleRemoveDate(date)}
+                                                    className="text-red-500 hover:text-red-700 text-sm"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <p className="text-sm text-gray-500 text-center py-2">No dates selected yet</p>
+                                    )}
+                                </div>
+                                {selectedDates.length === selectedLeave.total_days && (
+                                    <div className="mt-3 p-2 bg-green-100 border border-green-300 rounded-lg">
+                                        <p className="text-sm text-green-800 text-center">
+                                            ✅ Perfect! Selected {selectedLeave.total_days} date(s).
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Reschedule Reason */}
+                            <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
+                                <label htmlFor="rescheduleReason" className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Reason for Reschedule *
+                                </label>
+                                <textarea
+                                    id="rescheduleReason"
+                                    value={data.reason}
+                                    onChange={(e) => setData('reason', e.target.value)}
+                                    placeholder="Please explain why you need to reschedule this leave..."
+                                    rows="3"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 text-sm"
+                                    required
+                                />
+                                {errors.reason && (
+                                    <p className="text-red-600 text-sm mt-1">{errors.reason}</p>
+                                )}
                             </div>
                         </div>
-                    </motion.div>
+                    </div>
+
+                    {/* Middle & Right Columns - Calendar */}
+                    <div className="col-span-2 border-r border-gray-200/50 overflow-y-auto p-6">
+                        <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent mb-4">
+                            Select New Dates
+                        </h4>
+                        
+                        <div className="grid grid-cols-2 gap-6">
+                            {Object.entries(groupedDates).map(([monthYear, dates]) => (
+                                <div key={monthYear} className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
+                                    <h6 className="font-semibold text-gray-900 mb-3 text-sm">{monthYear}</h6>
+                                    <div className="grid grid-cols-7 gap-1">
+                                        {/* Day headers */}
+                                        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(day => (
+                                            <div key={day} className="text-center text-xs font-semibold text-gray-500 py-1">
+                                                {day}
+                                            </div>
+                                        ))}
+                                        
+                                        {/* Date cells */}
+                                        {dates.map((date) => {
+                                            const dateString = date.toISOString().split('T')[0];
+                                            const isSelected = selectedDates.includes(dateString);
+                                            const isToday = date.toDateString() === new Date().toDateString();
+                                            const isDisabled = selectedDates.length >= selectedLeave.total_days && !isSelected;
+                                            
+                                            return (
+                                                <button
+                                                    key={dateString}
+                                                    onClick={() => handleDateSelect(date)}
+                                                    disabled={isDisabled}
+                                                    className={`p-2 rounded text-xs font-medium transition-all duration-200 ${
+                                                        isSelected
+                                                            ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg transform scale-105'
+                                                            : isToday
+                                                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                                            : isDisabled
+                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                    }`}
+                                                >
+                                                    {date.getDate()}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
-            )}
+            </div>
+
+            {/* Footer - Fixed */}
+            <div className="flex-shrink-0 p-6 border-t border-gray-200/50 bg-white/80 backdrop-blur-sm">
+                <div className="flex justify-end space-x-3">
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleCloseModals}
+                        disabled={processing}
+                        className="px-6 py-3 bg-gray-600 text-white text-base font-semibold rounded-xl shadow-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-200"
+                    >
+                        Cancel
+                    </motion.button>
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleSubmitReschedule}
+                        disabled={selectedDates.length !== selectedLeave.total_days || !data.reason.trim() || processing}
+                        className={`px-6 py-3 text-base font-semibold rounded-xl shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
+                            selectedDates.length !== selectedLeave.total_days || !data.reason.trim() || processing
+                                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 focus:ring-blue-500'
+                        }`}
+                    >
+                        {processing ? 'Submitting...' : 'Submit Reschedule Request'}
+                    </motion.button>
+                </div>
+            </div>
+        </motion.div>
+    </div>
+)}
+
+           {/* Reschedule History Modal - Landscape Style */}
+{isRescheduleHistoryModalOpen && selectedLeave && (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/20 w-full max-w-7xl max-h-[80vh] overflow-hidden"
+        >
+            <div className="flex flex-col h-full">
+                {/* Header */}
+                <div className="flex-shrink-0 p-6 border-b border-gray-200/50">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent">
+                            Reschedule History
+                        </h3>
+                        <button
+                            onClick={handleCloseModals}
+                            className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                        >
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content - Landscape Layout */}
+                <div className="flex-1 overflow-hidden">
+                    <div className="grid grid-cols-3 h-full">
+                        {/* Left Column - Original Leave Info */}
+                        <div className="border-r border-gray-200/50 overflow-y-auto p-6">
+                            <div className="bg-gradient-to-r from-blue-50 to-blue-100/30 p-4 rounded-xl border border-blue-200">
+                                <h4 className="text-lg font-semibold text-blue-900 mb-3">Original Leave Request</h4>
+                                <div className="space-y-3 text-sm">
+                                    <div>
+                                        <span className="font-medium text-blue-800">Leave Type:</span>
+                                        <span className="ml-2 text-blue-900">{selectedLeave.leave_type?.name}</span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium text-blue-800">Current Dates:</span>
+                                        <span className="ml-2 text-blue-900">
+                                            {new Date(selectedLeave.date_from).toLocaleDateString()} - {new Date(selectedLeave.date_to).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium text-blue-800">Duration:</span>
+                                        <span className="ml-2 text-blue-900">{selectedLeave.total_days} days</span>
+                                    </div>
+                                    <div>
+                                        <span className="font-medium text-blue-800">Status:</span>
+                                        <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(selectedLeave.status)}`}>
+                                            {getStatusText(selectedLeave.status)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Middle & Right Columns - Reschedule History */}
+                        <div className="col-span-2 overflow-y-auto p-6">
+                            <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent mb-4">
+                                Reschedule Requests ({selectedLeave.all_reschedule_requests?.length || 0})
+                            </h4>
+
+                            {!selectedLeave.all_reschedule_requests || selectedLeave.all_reschedule_requests.length === 0 ? (
+                                <div className="text-center py-8 bg-gray-50 rounded-xl">
+                                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+                                    <p className="text-gray-600">No reschedule history found.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4 max-h-[50vh] overflow-y-auto">
+                                    {selectedLeave.all_reschedule_requests.map((reschedule, index) => (
+                                        <div key={reschedule.id} className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div>
+                                                    <h5 className="font-semibold text-gray-900">
+                                                        Request #{index + 1}
+                                                    </h5>
+                                                    <p className="text-sm text-gray-600">
+                                                        Submitted: {new Date(reschedule.submitted_at).toLocaleDateString()}
+                                                    </p>
+                                                </div>
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getRescheduleStatusColor(reschedule.status)}`}>
+                                                    {getRescheduleStatusText(reschedule.status)}
+                                                </span>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                {/* Proposed Dates */}
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                        Proposed Dates
+                                                    </label>
+                                                    <div className="space-y-1">
+                                                        {Array.isArray(reschedule.proposed_dates) && reschedule.proposed_dates.map((date, dateIndex) => (
+                                                            <div
+                                                                key={dateIndex}
+                                                                className="text-sm bg-blue-50 text-blue-800 p-2 rounded border border-blue-200"
+                                                            >
+                                                                {new Date(date).toLocaleDateString()}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Reason & Remarks */}
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                                        Reason
+                                                    </label>
+                                                    <p className="text-sm text-gray-900 bg-gray-50 p-2 rounded mb-3">{reschedule.reason}</p>
+                                                    
+                                                    {reschedule.hr_remarks && (
+                                                        <div className="mb-2">
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                HR Remarks
+                                                            </label>
+                                                            <p className="text-xs text-gray-900 bg-green-50 p-2 rounded">{reschedule.hr_remarks}</p>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {reschedule.dept_head_remarks && (
+                                                        <div>
+                                                            <label className="block text-xs font-semibold text-gray-600 mb-1">
+                                                                Dept Head Remarks
+                                                            </label>
+                                                            <p className="text-xs text-gray-900 bg-orange-50 p-2 rounded">{reschedule.dept_head_remarks}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex-shrink-0 p-6 border-t border-gray-200/50">
+                    <div className="flex justify-end">
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handleCloseModals}
+                            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 text-white text-base font-semibold rounded-xl shadow-lg hover:from-emerald-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200"
+                        >
+                            Close
+                        </motion.button>
+                    </div>
+                </div>
+            </div>
+        </motion.div>
+    </div>
+)}
         </EmployeeLayout>
     );
 }

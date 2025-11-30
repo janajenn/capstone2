@@ -19,7 +19,8 @@ import {
     ArrowPathIcon,
     ClipboardDocumentListIcon,
     Cog6ToothIcon,
-    ChartBarIcon
+    ChartBarIcon,
+    HeartIcon // Added for Leave Donations
 } from '@heroicons/react/24/outline';
 
 export default function HRLayout({ children }) {
@@ -71,7 +72,8 @@ export default function HRLayout({ children }) {
         { href: '/hr/leave-requests', label: 'Leave Requests', icon: ExclamationTriangleIcon },
         { href: '/hr/credit-conversions', label: 'Credit Monetization', icon: CurrencyDollarIcon },
         { href: '/hr/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
-        // { href: '/hr/leave-recordings', label: 'Leave Recordings', icon: ClipboardDocumentListIcon },
+        { href: '/hr/leave-recordings', label: 'Leave Recordings', icon: ClipboardDocumentListIcon },
+        { href: '/hr/leave-donations', label: 'Leave Donations', icon: HeartIcon }, // Added Leave Donations
         { href: '/hr/attendance/logs', label: 'Attendance Logs', icon: ChartBarIcon },
     ];
 
@@ -268,10 +270,9 @@ export default function HRLayout({ children }) {
                         </div>
                         <div className="flex items-center space-x-3">
                             <HRNotificationDropdown />
-{/*                             
+                            
                             {/* User Info and Logout in Header */}
                             <div className="flex items-center space-x-3">
-                                
                                 
                                 {/* Logout Button in Header */}
                                 <button
@@ -335,7 +336,8 @@ function getHRPageTitle(url) {
         '/hr/leave-requests': 'Leave Requests',
         '/hr/credit-conversions': 'Credit Conversions',
         '/hr/leave-calendar': 'Leave Calendar',
-        // '/hr/leave-recordings': 'Leave Recordings',
+        '/hr/leave-recordings': 'Leave Recordings',
+        '/hr/leave-donations': 'Leave Donations', // Added Leave Donations
         '/hr/attendance/logs': 'Attendance Analytics',
         '/employee/dashboard': 'My Dashboard',
         '/employee/my-leave-requests': 'My Leave Requests',
@@ -368,10 +370,11 @@ function getHRPageSubtitle(url, userName) {
         return 'Process leave credit monetization and conversions';
     } else if (url.startsWith('/hr/leave-calendar')) {
         return 'Visualize and manage organizational leave schedule';
-    }
-  
-    
-    else if (url.startsWith('/hr/attendance/logs')) {
+    } else if (url.startsWith('/hr/leave-recordings')) {
+        return 'Track and manage employee leave usage and patterns';
+    } else if (url.startsWith('/hr/leave-donations')) {
+        return 'Manage and approve maternity leave donation requests'; // Added Leave Donations
+    } else if (url.startsWith('/hr/attendance/logs')) {
         return 'Analyze attendance patterns and workforce metrics';
     }
     return `Welcome, ${userName}. Streamlined employee self-service portal.`;

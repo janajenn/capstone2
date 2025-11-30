@@ -1,7 +1,8 @@
 import EmployeeLayout from '@/Layouts/EmployeeLayout';
 import { usePage, router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Swal from 'sweetalert2';
+import { debounce } from 'lodash';
 
 export default function LeaveBalances() {
     const { props } = usePage();
@@ -17,14 +18,86 @@ export default function LeaveBalances() {
     const [showDonationModal, setShowDonationModal] = useState(false);
     const [selectedRecipient, setSelectedRecipient] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
+    
+    // HR Approval Modal States
+    const [showHrApprovalModal, setShowHrApprovalModal] = useState(false);
+    const [pendingDonations, setPendingDonations] = useState([]);
+
+    // Initialize search results with eligible recipients
+    useEffect(() => {
+        setSearchResults(eligibleRecipients);
+    }, [eligibleRecipients]);
+
+    // Debounced search function
+    const debouncedSearch = useMemo(
+        () =>
+            debounce(async (searchValue) => {
+                if (!searchValue.trim()) {
+                    setSearchResults(eligibleRecipients);
+                    setIsSearching(false);
+                    return;
+                }
+
+                setIsSearching(true);
+                try {
+                    const response = await fetch(`/employee/search-recipients?search=${encodeURIComponent(searchValue)}`);
+                    const data = await response.json();
+                    setSearchResults(data);
+                } catch (error) {
+                    console.error('Search failed:', error);
+                    setSearchResults(eligibleRecipients);
+                } finally {
+                    setIsSearching(false);
+                }
+            }, 300),
+        [eligibleRecipients]
+    );
+
+    // Handle search input change
+    const handleSearchChange = (e) => {
+        const value = e.target.value;
+        setSearchTerm(value);
+        debouncedSearch(value);
+    };
+
+    // Clear search when modal closes
+    useEffect(() => {
+        if (!showDonationModal) {
+            setSearchTerm('');
+            setSearchResults(eligibleRecipients);
+        }
+    }, [showDonationModal, eligibleRecipients]);
 
     const openDonationModal = () => {
         setShowDonationModal(true);
+        setSearchResults(eligibleRecipients);
     };
 
     const closeDonationModal = () => {
         setShowDonationModal(false);
         setSelectedRecipient('');
+        setSearchTerm('');
+    };
+
+    // Add this useEffect to check for pending donations on component mount
+    useEffect(() => {
+        checkPendingDonations();
+    }, []);
+
+    const checkPendingDonations = async () => {
+        try {
+            const response = await fetch('/hr/leave-donations/pending');
+            const data = await response.json();
+            if (data.pending_count > 0) {
+                setPendingDonations(data.donations || []);
+                setShowHrApprovalModal(true);
+            }
+        } catch (error) {
+            console.error('Error checking pending donations:', error);
+        }
     };
 
     const showErrorAlert = (message) => {
@@ -60,7 +133,7 @@ export default function LeaveBalances() {
             days: 7
         }, {
             onSuccess: () => {
-                showSuccessAlert('Donation completed successfully!');
+                showSuccessAlert('Donation request submitted successfully! Waiting for HR approval.');
                 closeDonationModal();
             },
             onError: (errors) => {
@@ -282,7 +355,7 @@ export default function LeaveBalances() {
                     {/* Donation Modal */}
                     {showDonationModal && (
                         <div className="fixed inset-0 bg-gray-600/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-                            <div className="relative bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl w-full max-w-md border border-white/20">
+                            <div className="relative bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl w-full max-w-2xl border border-white/20">
                                 <div className="p-8">
                                     <div className="flex items-center justify-center w-16 h-16 mx-auto bg-gradient-to-br from-emerald-500 to-green-600 rounded-2xl shadow-lg">
                                         <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -298,26 +371,99 @@ export default function LeaveBalances() {
                                         <p className="text-sm text-amber-800 text-center font-medium">
                                             You are donating 7 days of your maternity leave to your selected partner.
                                         </p>
+                                        <p className="text-sm text-amber-700 text-center mt-2">
+                                            This request will require HR approval before processing.
+                                        </p>
                                     </div>
 
                                     <div className="mt-6">
                                         <label className="block text-sm font-semibold text-gray-700 mb-3">
-                                            Select Recipient *
+                                            Search and Select Male Recipient *
                                         </label>
-                                        <select
-                                            value={selectedRecipient}
-                                            onChange={(e) => setSelectedRecipient(e.target.value)}
-                                            className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-300 bg-white/50 backdrop-blur-sm"
-                                        >
-                                            <option value="">Choose a recipient...</option>
-                                            {eligibleRecipients.map((recipient) => (
-                                                <option key={recipient.employee_id} value={recipient.employee_id}>
-                                                    {recipient.name} - {recipient.position} ({recipient.department})
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {eligibleRecipients.length === 0 && (
-                                            <p className="text-sm text-gray-500 mt-2">No eligible recipients found</p>
+                                        
+                                        {/* Search Input */}
+                                        <div className="relative mb-4">
+                                            <input
+                                                type="text"
+                                                value={searchTerm}
+                                                onChange={handleSearchChange}
+                                                placeholder="Type to search for male employees by name, position, or department..."
+                                                className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 pl-10 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                                            />
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                </svg>
+                                            </div>
+                                            {isSearching && (
+                                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                                                    <svg className="animate-spin h-5 w-5 text-emerald-500" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                    </svg>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Results Dropdown */}
+                                        <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-2xl bg-white/80 backdrop-blur-sm">
+                                            {searchResults.length > 0 ? (
+                                                searchResults.map((recipient) => (
+                                                    <div
+                                                        key={recipient.employee_id}
+                                                        onClick={() => setSelectedRecipient(recipient.employee_id)}
+                                                        className={`p-4 border-b border-gray-100 last:border-b-0 cursor-pointer transition-all duration-200 ${
+                                                            selectedRecipient === recipient.employee_id
+                                                                ? 'bg-emerald-50 border-emerald-200'
+                                                                : 'hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <div className="font-semibold text-gray-900">
+                                                                    {recipient.name}
+                                                                </div>
+                                                                <div className="text-sm text-gray-600 mt-1">
+                                                                    {recipient.position}
+                                                                </div>
+                                                                <div className="text-sm text-gray-500">
+                                                                    {recipient.department}
+                                                                </div>
+                                                            </div>
+                                                            {selectedRecipient === recipient.employee_id && (
+                                                                <div className="flex-shrink-0">
+                                                                    <svg className="h-5 w-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
+                                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                                    </svg>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="p-4 text-center text-gray-500">
+                                                    No male employees found matching your search.
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Selected Recipient Display */}
+                                        {selectedRecipient && (
+                                            <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-sm font-medium text-emerald-800">
+                                                            Selected: {searchResults.find(r => r.employee_id === selectedRecipient)?.name}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setSelectedRecipient('')}
+                                                        className="text-sm text-emerald-600 hover:text-emerald-800"
+                                                    >
+                                                        Change
+                                                    </button>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
 
@@ -343,8 +489,85 @@ export default function LeaveBalances() {
                                                     Processing...
                                                 </>
                                             ) : (
-                                                'Confirm Donation'
+                                                'Submit for HR Approval'
                                             )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* HR Approval Required Modal */}
+                    {showHrApprovalModal && (
+                        <div className="fixed inset-0 bg-gray-600/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+                            <div className="relative bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl w-full max-w-2xl border border-white/20">
+                                <div className="p-8">
+                                    <div className="flex items-center justify-center w-16 h-16 mx-auto bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl shadow-lg mb-4">
+                                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                        </svg>
+                                    </div>
+                                    
+                                    <h3 className="text-2xl font-bold text-gray-900 text-center mb-4">
+                                        HR Approval Required
+                                    </h3>
+                                    
+                                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 mb-6">
+                                        <p className="text-amber-800 text-center font-medium mb-4">
+                                            You have {pendingDonations.length} pending maternity leave donation request(s) that require HR approval.
+                                        </p>
+                                        <p className="text-amber-700 text-sm text-center">
+                                            Please review and process these requests in the HR Leave Donations section.
+                                        </p>
+                                    </div>
+
+                                    {pendingDonations.length > 0 && (
+                                        <div className="max-h-60 overflow-y-auto mb-6">
+                                            <h4 className="text-lg font-semibold text-gray-900 mb-3">Pending Requests:</h4>
+                                            <div className="space-y-3">
+                                                {pendingDonations.map((donation) => (
+                                                    <div key={donation.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <p className="font-medium text-gray-900">
+                                                                    {donation.donor?.firstname} {donation.donor?.lastname}
+                                                                </p>
+                                                                <p className="text-sm text-gray-600">
+                                                                    Donating {donation.days_donated} days to {donation.recipient?.firstname} {donation.recipient?.lastname}
+                                                                </p>
+                                                                <p className="text-xs text-gray-500">
+                                                                    Requested: {new Date(donation.created_at).toLocaleDateString()}
+                                                                </p>
+                                                            </div>
+                                                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                                Pending
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-end space-x-4">
+                                        <button
+                                            onClick={() => setShowHrApprovalModal(false)}
+                                            className="px-6 py-3 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105"
+                                        >
+                                            Close
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowHrApprovalModal(false);
+                                                router.visit('/hr/leave-donations');
+                                            }}
+                                            className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-2xl hover:shadow-lg transition-all duration-300 hover:scale-105 flex items-center"
+                                        >
+                                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                            </svg>
+                                            Go to Donations Page
                                         </button>
                                     </div>
                                 </div>
@@ -368,7 +591,7 @@ export default function LeaveBalances() {
                                     <ul className="list-disc list-inside space-y-3">
                                         <li><strong>Sick Leave (SL) & Vacation Leave (VL):</strong> Accumulate 1.25 days each month and can be converted to cash</li>
                                         <li><strong>Fixed Leave Allocations:</strong> Renew annually with fixed number of days</li>
-                                        <li><strong>Maternity Leave Donation:</strong> Female employees can donate 7 days of maternity leave to male partners</li>
+                                        <li><strong>Maternity Leave Donation:</strong> Female employees can donate 7 days of maternity leave to male partners (requires HR approval)</li>
                                         <li><strong>Donated Days:</strong> Donated paternity leave days are added to your balance and shown separately</li>
                                         <li>Balances are updated in real-time after leave approvals</li>
                                         <li>For questions about your leave balances, contact HR</li>

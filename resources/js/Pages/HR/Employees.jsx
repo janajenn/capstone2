@@ -4,6 +4,8 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { debounce } from 'lodash';
 import PDFPreviewModal from '@/Components/PDFPreviewModal'; // Adjust path as needed
 import { generateEmployeePDF } from '@/Utils/pdfGenerator'; // Adjust path as needed
+import EmployeeModal from '@/Components/EmployeeModal';
+
 
 // Avatar component for male/female
 const EmployeeAvatar = ({ gender, className = "w-8 h-8" }) => {
@@ -16,7 +18,7 @@ const EmployeeAvatar = ({ gender, className = "w-8 h-8" }) => {
             </div>
         );
     }
-    
+
     // Default to male avatar
     return (
         <div className={`${className} bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center text-white font-bold text-sm`}>
@@ -109,6 +111,8 @@ export default function Employees({ employees, departments, filters }) {
     const [passwordConfirm, setPasswordConfirm] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const searchInputRef = useRef(null);
+    const [selectedEmployee, setSelectedEmployee] = useState(null);
+    const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
 
     const { data, setData, post, reset, errors, processing } = useForm({
         firstname: '',
@@ -132,8 +136,8 @@ export default function Employees({ employees, departments, filters }) {
     });
 
     // Get the selected department's head information
-    const selectedDepartmentHead = data.department_id 
-        ? departments.find(dept => dept.id == data.department_id)?.head 
+    const selectedDepartmentHead = data.department_id
+        ? departments.find(dept => dept.id == data.department_id)?.head
         : null;
 
     // Check if department head role should be disabled
@@ -147,6 +151,12 @@ export default function Employees({ employees, departments, filters }) {
             const nameB = `${b.firstname} ${b.lastname}`.toLowerCase();
             return nameA.localeCompare(nameB);
         }) : []
+    };
+
+    // Add this function to handle avatar clicks
+    const handleAvatarClick = (employee) => {
+        setSelectedEmployee(employee);
+        setIsEmployeeModalOpen(true);
     };
 
     // Auto-capitalize name fields
@@ -167,15 +177,15 @@ export default function Employees({ employees, departments, filters }) {
     const debouncedSearch = useCallback(
         debounce((term, department) => {
             const params = {};
-            
+
             if (term && term.trim() !== '') {
                 params.search = term;
             }
-            
+
             if (department && department !== '') {
                 params.department = department;
             }
-    
+
             router.get(route('hr.employees'), params, {
                 preserveState: true,
                 replace: true,
@@ -185,8 +195,8 @@ export default function Employees({ employees, departments, filters }) {
         []
     );
 
-     // PDF Preview Handler
-     const handlePDFPreview = () => {
+    // PDF Preview Handler
+    const handlePDFPreview = () => {
         if (!employees.data || employees.data.length === 0) {
             return;
         }
@@ -198,24 +208,24 @@ export default function Employees({ employees, departments, filters }) {
         generateEmployeePDF(employees, departments, selectedDepartment, searchTerm);
         setIsPDFPreviewOpen(false);
     };
-    
+
     const handleSearchChange = (term) => {
         setSearchTerm(term);
         debouncedSearch(term, selectedDepartment);
     };
-    
+
     const handleFilterChange = (departmentId) => {
         setSelectedDepartment(departmentId);
         const params = {};
-        
+
         if (searchTerm && searchTerm.trim() !== '') {
             params.search = searchTerm;
         }
-        
+
         if (departmentId && departmentId !== '') {
             params.department = departmentId;
         }
-    
+
         router.get(route('hr.employees'), params, {
             preserveState: true,
             replace: true,
@@ -248,7 +258,7 @@ export default function Employees({ employees, departments, filters }) {
 
     const submit = (e) => {
         e.preventDefault();
-        
+
         if (!validatePassword()) {
             return;
         }
@@ -294,13 +304,12 @@ export default function Employees({ employees, departments, filters }) {
                             key={index}
                             onClick={() => link.url && handlePageChange(link.url.split('page=')[1])}
                             disabled={!link.url}
-                            className={`px-3 py-1 rounded-md text-sm font-medium ${
-                                link.active
+                            className={`px-3 py-1 rounded-md text-sm font-medium ${link.active
                                     ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white'
                                     : link.url
-                                    ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-                            }`}
+                                        ? 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                                        : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                                }`}
                             dangerouslySetInnerHTML={{ __html: link.label }}
                         />
                     ))}
@@ -312,8 +321,8 @@ export default function Employees({ employees, departments, filters }) {
     return (
         <HRLayout>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                             {/* Header Section */}
-                             <div className="mb-8">
+                {/* Header Section */}
+                <div className="mb-8">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                         <div className="relative">
                             <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 to-indigo-900 bg-clip-text text-transparent mb-2">
@@ -334,7 +343,7 @@ export default function Employees({ employees, departments, filters }) {
                                 </svg>
                                 Download Employee List
                             </button>
-                            
+
                             {/* Add Employee Button */}
                             <button
                                 onClick={() => setIsModalOpen(true)}
@@ -439,15 +448,15 @@ export default function Employees({ employees, departments, filters }) {
                 {isLoading && <LoadingSpinner />}
 
                 {/* PDF Preview Modal */}
-<PDFPreviewModal
-    isOpen={isPDFPreviewOpen}
-    onClose={() => setIsPDFPreviewOpen(false)}
-    onConfirm={handlePDFDownload}
-    employees={employees}
-    departments={departments}
-    selectedDepartment={selectedDepartment}
-    searchTerm={searchTerm}
-/>
+                <PDFPreviewModal
+                    isOpen={isPDFPreviewOpen}
+                    onClose={() => setIsPDFPreviewOpen(false)}
+                    onConfirm={handlePDFDownload}
+                    employees={employees}
+                    departments={departments}
+                    selectedDepartment={selectedDepartment}
+                    searchTerm={searchTerm}
+                />
 
                 {/* Modal */}
                 {isModalOpen && (
@@ -557,10 +566,18 @@ export default function Employees({ employees, departments, filters }) {
                                                         className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
                                                     >
                                                         <option value="">Select Status</option>
-                                                        <option value="single">Single</option>
-                                                        <option value="married">Married</option>
-                                                        <option value="divorced">Divorced</option>
-                                                        <option value="widowed">Widowed</option>
+
+                                                        <option value="single_non_solo_parent">Single (Non-Solo Parent)</option>
+                                                        <option value="single_solo_parent">Single (Solo Parent)</option>
+
+                                                        <option value="married_non_solo_parent">Married (Non-Solo Parent)</option>
+                                                        <option value="married_solo_parent">Married (Solo Parent)</option>
+
+                                                        <option value="divorced_non_solo_parent">Divorced (Non-Solo Parent)</option>
+                                                        <option value="divorced_solo_parent">Divorced (Solo Parent)</option>
+
+                                                        <option value="widowed_non_solo_parent">Widowed (Non-Solo Parent)</option>
+                                                        <option value="widowed_solo_parent">Widowed (Solo Parent)</option>
                                                     </select>
                                                     {errors.civil_status && <div className="text-red-500 text-xs mt-1">{errors.civil_status}</div>}
                                                 </div>
@@ -600,7 +617,7 @@ export default function Employees({ employees, departments, filters }) {
                                                         ))}
                                                     </select>
                                                     {errors.department_id && <div className="text-red-500 text-xs mt-1">{errors.department_id}</div>}
-                                                    
+
                                                     {/* Department Head Information */}
                                                     {data.department_id && (
                                                         <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -611,7 +628,7 @@ export default function Employees({ employees, departments, filters }) {
                                                                     </p>
                                                                     {selectedDepartmentHead ? (
                                                                         <p className="text-sm text-gray-600">
-                                                                            {selectedDepartmentHead.firstname} {selectedDepartmentHead.lastname} 
+                                                                            {selectedDepartmentHead.firstname} {selectedDepartmentHead.lastname}
                                                                             - {selectedDepartmentHead.position}
                                                                         </p>
                                                                     ) : (
@@ -764,16 +781,15 @@ export default function Employees({ employees, departments, filters }) {
                                                     <select
                                                         value={data.role}
                                                         onChange={e => setData('role', e.target.value)}
-                                                        className={`w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition ${
-                                                            isDeptHeadDisabled && data.role === 'dept_head' ? 'bg-amber-50 border-amber-200' : ''
-                                                        }`}
+                                                        className={`w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition ${isDeptHeadDisabled && data.role === 'dept_head' ? 'bg-amber-50 border-amber-200' : ''
+                                                            }`}
                                                         required
                                                     >
                                                         <option value="">Select Role</option>
                                                         <option value="employee">Employee</option>
                                                         <option value="hr">HR</option>
-                                                        <option 
-                                                            value="dept_head" 
+                                                        <option
+                                                            value="dept_head"
                                                             disabled={isDeptHeadDisabled}
                                                             className={isDeptHeadDisabled ? 'text-gray-400 bg-gray-100' : ''}
                                                         >
@@ -783,7 +799,7 @@ export default function Employees({ employees, departments, filters }) {
                                                         <option value="admin">Admin</option>
                                                     </select>
                                                     {errors.role && <div className="text-red-500 text-xs mt-1">{errors.role}</div>}
-                                                    
+
                                                     {/* Role Selection Warning */}
                                                     {isDeptHeadDisabled && data.role === 'dept_head' && (
                                                         <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -796,7 +812,7 @@ export default function Employees({ employees, departments, filters }) {
                                                                         Department Head Role Unavailable
                                                                     </p>
                                                                     <p className="text-sm text-amber-700 mt-1">
-                                                                        This department already has a department head: <strong>{selectedDepartmentHead.firstname} {selectedDepartmentHead.lastname}</strong>. 
+                                                                        This department already has a department head: <strong>{selectedDepartmentHead.firstname} {selectedDepartmentHead.lastname}</strong>.
                                                                         Only one department head can be assigned per department.
                                                                     </p>
                                                                 </div>
@@ -804,7 +820,7 @@ export default function Employees({ employees, departments, filters }) {
                                                         </div>
                                                     )}
 
-            
+
                                                 </div>
                                             </div>
                                         </div>
@@ -833,6 +849,16 @@ export default function Employees({ employees, departments, filters }) {
                     </div>
                 )}
 
+                {/* Add this right before the Employees Table */}
+                <div className="mb-4 flex items-center justify-between">
+                    <div className="flex items-center space-x-2 text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
+                        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>💡 <strong>Tip:</strong> Click on employee avatars to quickly view their details and leave history</span>
+                    </div>
+                </div>
+
                 {/* Employees Table */}
                 <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-3xl shadow-xl overflow-hidden">
                     <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
@@ -859,13 +885,18 @@ export default function Employees({ employees, departments, filters }) {
                                     <tr key={emp.employee_id} className="border-t hover:bg-gray-50/50 transition-colors">
                                         <td className="p-4">
                                             <div className="flex items-center space-x-3">
-                                                <EmployeeAvatar gender={emp.gender} />
-                                                <div>
-                                                    <div className="font-medium text-gray-900">
-                                                        {emp.firstname} {emp.lastname}
+                                                <button
+                                                    onClick={() => handleAvatarClick(emp)}
+                                                    className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+                                                >
+                                                    <EmployeeAvatar gender={emp.gender} />
+                                                    <div>
+                                                        <div className="font-medium text-gray-900">
+                                                            {emp.firstname} {emp.lastname}
+                                                        </div>
+                                                        <div className="text-sm text-gray-500">{emp.email}</div>
                                                     </div>
-                                                    <div className="text-sm text-gray-500">{emp.email}</div>
-                                                </div>
+                                                </button>
                                             </div>
                                         </td>
                                         <td className="p-4 text-gray-700">{emp.position}</td>
@@ -875,14 +906,12 @@ export default function Employees({ employees, departments, filters }) {
                                             </span>
                                         </td>
                                         <td className="p-4">
-                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                                                emp.status === 'active' 
-                                                    ? 'bg-green-100 text-green-800' 
+                                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${emp.status === 'active'
+                                                    ? 'bg-green-100 text-green-800'
                                                     : 'bg-red-100 text-red-800'
-                                            }`}>
-                                                <span className={`w-2 h-2 rounded-full mr-2 ${
-                                                    emp.status === 'active' ? 'bg-green-500' : 'bg-red-500'
-                                                }`}></span>
+                                                }`}>
+                                                <span className={`w-2 h-2 rounded-full mr-2 ${emp.status === 'active' ? 'bg-green-500' : 'bg-red-500'
+                                                    }`}></span>
                                                 {emp.status}
                                             </span>
                                         </td>
@@ -921,12 +950,20 @@ export default function Employees({ employees, departments, filters }) {
                         </table>
                     </div>
 
-           
-                    
+
+
                     {/* Pagination */}
                     {renderPagination()}
                 </div>
             </div>
+            <EmployeeModal
+                employee={selectedEmployee}
+                isOpen={isEmployeeModalOpen}
+                onClose={() => {
+                    setIsEmployeeModalOpen(false);
+                    setSelectedEmployee(null);
+                }}
+            />
         </HRLayout>
     );
 }

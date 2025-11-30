@@ -325,10 +325,8 @@ const DateInput = ({ label, value, onChange, minDate, disabledDates = [], error,
   );
 };
 
-
 // Leave Type Card Component
-// Leave Type Card Component
-const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBalances, isDisabled }) => {
+const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBalances }) => {
   const getLeaveBalance = (type) => {
     const code = type.code.toUpperCase();
 
@@ -345,21 +343,15 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
   const balance = getLeaveBalance(leaveType);
   const isLowBalance = balance <= (leaveType.default_days || 5) * 0.2; // 20% threshold
 
-
-
   return (
     <button
       type="button"
-      onClick={!isDisabled ? onClick : undefined}
-      disabled={isDisabled}
+      onClick={onClick}
       className={`
         w-full p-6 text-left transition-all duration-200 ease-in-out
-        rounded-xl border-2
-        ${isDisabled
-          ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-60'
-          : 'bg-white border-gray-200 shadow-sm hover:shadow-md hover:border-gray-300 hover:scale-[1.01] cursor-pointer'
-        }
-        ${isSelected && !isDisabled
+        rounded-xl border-2 bg-white border-gray-200 shadow-sm 
+        hover:shadow-md hover:border-gray-300 hover:scale-[1.01] cursor-pointer
+        ${isSelected
           ? 'border-blue-500 shadow-lg shadow-blue-100 transform scale-[1.02]'
           : ''
         }
@@ -373,20 +365,17 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
           </span>
           <h3 className="text-lg font-semibold text-gray-900">{leaveType.name}</h3>
         </div>
-        {isSelected && !isDisabled && (
+        {isSelected && (
           <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-        )}
-        {isDisabled && (
-          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
         )}
       </div>
 
       {/* Balance Information */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-gray-600">Available Balance</span>
-        <span className={`text-lg font-bold ${isDisabled ? 'text-gray-500' :
-            isLowBalance ? 'text-amber-600' : 'text-green-600'
-          }`}>
+        <span className={`text-lg font-bold ${
+          isLowBalance ? 'text-amber-600' : 'text-green-600'
+        }`}>
           {balance} days
         </span>
       </div>
@@ -394,9 +383,9 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
       {/* Progress Bar */}
       <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
         <div
-          className={`h-2 rounded-full transition-all duration-300 ${isDisabled ? 'bg-gray-400' :
-              isLowBalance ? 'bg-amber-500' : 'bg-green-500'
-            }`}
+          className={`h-2 rounded-full transition-all duration-300 ${
+            isLowBalance ? 'bg-amber-500' : 'bg-green-500'
+          }`}
           style={{
             width: `${Math.min((balance / (leaveType.default_days || 15)) * 100, 100)}%`
           }}
@@ -414,14 +403,6 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
               Document Required
             </span>
           )}
-          {!!isDisabled && (
-            <span className="flex items-center text-amber-600 font-medium">
-              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              Not Available
-            </span>
-          )}
         </div>
         {!!(!leaveType.earnable && leaveType.default_days) && (
           <span>Fixed: {leaveType.default_days} days</span>
@@ -437,15 +418,74 @@ export default function RequestLeave({ prefill }) {
 
   const [selectedTypeId, setSelectedTypeId] = useState(null);
   const [showBalanceWarning, setShowBalanceWarning] = useState(false);
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false); // NEW: Modal state
-  const [isSubmitting, setIsSubmitting] = useState(false); // NEW: Submission state
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Get employee gender from auth or props
+  // Get employee gender and civil status from auth or props
   const employeeGender = auth?.user?.employee?.gender || props.employeeGender;
+  const employeeCivilStatus = auth?.user?.employee?.civil_status || props.employeeCivilStatus;
+
+  // Function to filter leave types based on gender and civil status
+  const filterLeaveTypes = (types) => {
+    if (!types || !employeeGender) return types;
+
+    return types.filter(leaveType => {
+      const leaveTypeCode = leaveType.code.toUpperCase();
+      const gender = employeeGender.toLowerCase();
+
+      // Gender-based restrictions
+      if (gender === 'female') {
+        // Female employees should not see paternity leave
+        if (leaveTypeCode === 'PL' || leaveType.name.toLowerCase().includes('paternity')) {
+          return false;
+        }
+      }
+
+      if (gender === 'male') {
+        // Male employees should not see maternity leave, Special Leave Benefits for Women, or VAWC leave
+        if (
+          leaveTypeCode === 'ML' || 
+          leaveType.name.toLowerCase().includes('maternity') ||
+          leaveTypeCode === 'SLBW' ||
+          leaveTypeCode === '10DV' ||
+          leaveType.name.toLowerCase().includes('vawc') ||
+          leaveType.name.toLowerCase().includes('women')
+        ) {
+          return false;
+        }
+      }
+
+      // Civil status-based restrictions for solo parent leave
+      if (
+        leaveTypeCode === 'SOLOPL' || 
+        leaveTypeCode === 'SPL' || 
+        leaveType.name.toLowerCase().includes('solo parent')
+      ) {
+        const soloParentStatuses = [
+          'single_solo_parent',
+          'married_solo_parent', 
+          'divorced_solo_parent',
+          'widowed_solo_parent  '
+        ];
+        
+        // Only show solo parent leave to employees with solo parent civil status
+        if (!soloParentStatuses.includes(employeeCivilStatus)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  };
+
+  const filteredLeaveTypes = useMemo(() => 
+    filterLeaveTypes(leaveTypes),
+    [leaveTypes, employeeGender, employeeCivilStatus]
+  );
 
   const sortedLeaveTypes = useMemo(() =>
-    sortLeaveTypesByPriority(leaveTypes),
-    [leaveTypes]
+    sortLeaveTypesByPriority(filteredLeaveTypes),
+    [filteredLeaveTypes]
   );
 
   // Get URL parameters for pre-filling
@@ -468,7 +508,7 @@ export default function RequestLeave({ prefill }) {
               lt.name.toLowerCase().includes('sick')
           );
 
-          if (sickLeaveType && !isLeaveTypeDisabled(sickLeaveType)) {
+          if (sickLeaveType) {
               setSelectedTypeId(sickLeaveType.id);
               setData('leave_type_id', sickLeaveType.id);
           }
@@ -491,16 +531,6 @@ export default function RequestLeave({ prefill }) {
       }
   }, [prefillForAbsence, prefillDate, leaveTypes]);
 
-
-  // In your RequestLeave component, add this debug section temporarily:
-  console.log('Holidays from backend:', props.holidays);
-  console.log('Holidays data type:', typeof props.holidays);
-
-  // const selectedType = useMemo(() => leaveTypes?.find((lt) => lt.id === selectedTypeId) || null, [leaveTypes, selectedTypeId]);
-  // const specificFields = useMemo(() => typeSpecificFields(selectedType?.code), [selectedType]);
-
-  // const formSectionRef = useRef(null);
-
   useEffect(() => {
     if (selectedTypeId && formSectionRef.current) {
       // Small timeout to ensure the form has rendered
@@ -513,27 +543,6 @@ export default function RequestLeave({ prefill }) {
     }
   }, [selectedTypeId]);
 
-
-  
-    // useEffect(() => {
-    //     if (prefill) {
-    //         if (prefill.leave_type_id) {
-    //             const leaveType = leaveTypes?.find(lt => lt.id.toString() === prefill.leave_type_id.toString());
-    //             if (leaveType && !isLeaveTypeDisabled(leaveType)) {
-    //                 setSelectedTypeId(leaveType.id);
-    //                 setData('leave_type_id', leaveType.id);
-    //             }
-    //         }
-
-    //         if (prefill.date) {
-    //             setData('date_from', prefill.date);
-    //             setData('number_of_days', prefill.number_of_days || 1);
-    //             setData('selectedDates', [prefill.date]);
-    //             setData('date_to', prefill.date);
-    //         }
-    //     }
-    // }, [prefill, leaveTypes]);
-
   const { data, setData, post, processing, reset } = useForm({
     leave_type_id: '',
     date_from: '',
@@ -545,25 +554,23 @@ export default function RequestLeave({ prefill }) {
     number_of_days: '',
   });
 
-  // Calculate working days
   // Calculate working days based on selected dates
-  // Replace your current workingDays calculation with this:
-const workingDays = useMemo(() => {
-  // If using specific dates
-  if (data.selectedDates && data.selectedDates.length > 0) {
-    return data.selectedDates.filter(date => {
-      const day = new Date(date).getDay();
-      return day !== 0 && day !== 6;
-    }).length;
-  }
-  
-  // If using number of days method
-  if (data.number_of_days && data.date_from && data.date_to) {
-    return calculateWorkingDays(data.date_from, data.date_to);
-  }
-  
-  return 0;
-}, [data.selectedDates, data.number_of_days, data.date_from, data.date_to]);
+  const workingDays = useMemo(() => {
+    // If using specific dates
+    if (data.selectedDates && data.selectedDates.length > 0) {
+      return data.selectedDates.filter(date => {
+        const day = new Date(date).getDay();
+        return day !== 0 && day !== 6;
+      }).length;
+    }
+    
+    // If using number of days method
+    if (data.number_of_days && data.date_from && data.date_to) {
+      return calculateWorkingDays(data.date_from, data.date_to);
+    }
+    
+    return 0;
+  }, [data.selectedDates, data.number_of_days, data.date_from, data.date_to]);
 
   // Check if document is required for sick leave
   const isDocumentRequired = useMemo(() => {
@@ -630,7 +637,6 @@ const workingDays = useMemo(() => {
     }
   }, [balanceInfo, data.date_from, data.date_to]);
 
-  // In your RequestLeave component, update the form submission:
   const submit = (e) => {
     e.preventDefault();
 
@@ -678,7 +684,7 @@ const workingDays = useMemo(() => {
       reason: data.reason,
       details: JSON.stringify(details),
       working_days: workingDays.toString(),
-      number_of_days: data.number_of_days, // Include number of days in submission
+      number_of_days: data.number_of_days,
       attachment: data.attachment,
     };
 
@@ -713,38 +719,11 @@ const workingDays = useMemo(() => {
     return dates;
   };
 
-  // Function to check if leave type should be disabled based on gender
-  const isLeaveTypeDisabled = (leaveType) => {
-    if (!employeeGender) return false;
-
-    const leaveTypeCode = leaveType.code.toUpperCase();
-    const gender = employeeGender.toLowerCase();
-
-    // Disable for male employees
-    if (gender === 'male') {
-      return leaveTypeCode === 'SLBW' || // Special Leave Benefits for Women
-        leaveTypeCode === 'ML';    // Maternity Leave
-    }
-
-    // Disable for female employees
-    if (gender === 'female') {
-      return leaveTypeCode === 'PL';     // Paternity Leave
-    }
-
-    return false;
-  };
-
   const handleSelectType = (lt) => {
-    // Check if this leave type is disabled
-    if (isLeaveTypeDisabled(lt)) {
-      return; // Don't select disabled types
-    }
-
     setSelectedTypeId(lt.id);
     setData('leave_type_id', lt.id);
     setShowBalanceWarning(false); // Reset warning when changing leave type
   };
-
 
   // Calculate end date based on start date and number of days
   const calculateEndDate = (startDate, numberOfDays, returnFormatted = false) => {
@@ -829,7 +808,7 @@ const workingDays = useMemo(() => {
     setShowConfirmationModal(true);
   };
 
-  // NEW: Function to handle actual submission
+  // Function to handle actual submission
   const handleConfirmSubmit = () => {
     setIsSubmitting(true);
 
@@ -881,14 +860,11 @@ const workingDays = useMemo(() => {
     });
   };
 
-  // NEW: Function to cancel submission
+  // Function to cancel submission
   const handleCancelSubmit = () => {
     setShowConfirmationModal(false);
   };
 
-
-
-  
   return (
     <EmployeeLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -939,17 +915,28 @@ const workingDays = useMemo(() => {
             {employeeGender && (
               <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
                 <p className="text-sm text-indigo-800">
-                  <strong className="font-semibold">Note:</strong> Some leave types are restricted based on your gender ({employeeGender}).
-                  Restricted types are shown but cannot be selected.
+                  <strong className="font-semibold">Note:</strong> Leave types are filtered based on your gender ({employeeGender}) 
+                  {employeeCivilStatus && ` and civil status (${employeeCivilStatus.replace('_', ' ')})`}. 
+                  Leave types that you are not eligible for are completely hidden from view.
                 </p>
               </div>
             )}
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {sortedLeaveTypes?.map((lt) => {
-              const isDisabled = isLeaveTypeDisabled(lt);
-              return (
+          {sortedLeaveTypes.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
+              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="mt-4 text-lg font-medium text-gray-900">No Available Leave Types</h3>
+              <p className="mt-2 text-gray-500">
+                There are no leave types available for your current profile. 
+                Please contact HR if you believe this is an error.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {sortedLeaveTypes?.map((lt) => (
                 <LeaveTypeCard
                   key={lt.id}
                   leaveType={lt}
@@ -957,11 +944,10 @@ const workingDays = useMemo(() => {
                   onClick={() => handleSelectType(lt)}
                   leaveCredits={leaveCredits}
                   leaveBalances={leaveBalances}
-                  isDisabled={isDisabled}
                 />
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </section>
   
         {/* Dynamic Form */}

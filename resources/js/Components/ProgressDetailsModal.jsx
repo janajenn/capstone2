@@ -55,7 +55,7 @@ const ProgressDetailsModal = ({
                                             <span className="text-gray-500">Leave Type:</span>
                                             <p className="font-medium">{leaveRequest.leave_type?.name}</p>
                                         </div>
-                                        <div>
+                                        {/* <div>
                                             <span className="text-gray-500">Date Range:</span>
                                             <p className="font-medium">
                                                 {new Date(leaveRequest.date_from).toLocaleDateString()} - {new Date(leaveRequest.date_to).toLocaleDateString()}
@@ -64,7 +64,7 @@ const ProgressDetailsModal = ({
                                         <div>
                                             <span className="text-gray-500">Duration:</span>
                                             <p className="font-medium">{leaveRequest.total_days} days</p>
-                                        </div>
+                                        </div> */}
                                         <div>
                                             <span className="text-gray-500">Status:</span>
                                             <p className={`font-medium ${

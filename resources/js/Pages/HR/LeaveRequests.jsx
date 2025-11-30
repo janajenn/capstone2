@@ -3,6 +3,8 @@ import { useForm, usePage, router, Link } from '@inertiajs/react';
 import { useState, useMemo,useEffect} from 'react';
 import Swal from 'sweetalert2';
 import LeaveForm from '@/Components/LeaveForm';
+import EmployeeModal from '@/Components/EmployeeModal';
+
 
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -166,6 +168,10 @@ export default function LeaveRequests() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [selectedRequestForForm, setSelectedRequestForForm] = useState(null);
 
+  // Add these states for employee modal
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+
   const { data, setData, post, processing } = useForm({
     status: filters?.status || 'all',
     date_from: filters?.date_from || '',
@@ -247,6 +253,7 @@ const filteredRequests = useMemo(() => {
   { id: 'fully_approved', name: 'Fully Approved', count: tabCounts.fully_approved },
   { id: 'rescheduled', name: 'Rescheduled', count: tabCounts.rescheduled },
 ];
+
 
 
 
@@ -419,6 +426,11 @@ const debugRescheduleData = () => {
     }
   };
 
+  const handleAvatarClick = (employee) => {
+    setSelectedEmployee(employee);
+    setIsEmployeeModalOpen(true);
+  };
+
   const handleBulkAction = (action) => {
     if (selectedRequests.length === 0) return;
 
@@ -471,77 +483,92 @@ const debugRescheduleData = () => {
   };
 
   // Prepare data for LeaveForm component
-  const prepareFormData = (request) => {
-    if (!request) return null;
+const prepareFormData = (request) => {
+  if (!request) return null;
 
-    // Transform leave request data to match LeaveForm component expectations
-    const leaveRequestData = {
-      id: request.id,
-      leave_type: request.leave_type?.code || request.leave_type?.name,
-      start_date: request.date_from,
-      end_date: request.date_to,
-      created_at: request.created_at,
-      status: getApprovalStatus(request),
-      reason: request.reason || '',
-      remarks: request.details?.[0]?.details || '',
-      details: request.details || [],
-      days_with_pay: request.days_with_pay || 0,
-      days_without_pay: request.days_without_pay || 0
-    };
+  // Transform leave request data to match LeaveForm component expectations
+  const leaveRequestData = {
+    id: request.id,
+    leave_type: request.leave_type?.code || request.leave_type?.name,
+    start_date: request.date_from,
+    end_date: request.date_to,
+    created_at: request.created_at,
+    status: getApprovalStatus(request),
+    reason: request.reason || '',
+    remarks: request.details?.[0]?.details || '',
+    details: request.details || [],
+    days_with_pay: request.days_with_pay || 0,
+    days_without_pay: request.days_without_pay || 0,
+    selected_dates: request.selected_dates || [] // ADD THIS LINE
+  };
 
-    // Get leave credit logs for the specific leave type
-    const getLeaveCreditData = (leaveType) => {
-      if (!request.employee?.leave_credit_logs) return null;
-      
-      // Find the most recent log for this leave type
-      const relevantLogs = request.employee.leave_credit_logs.filter(log => 
-        log.type === leaveType
-      );
-      
-      if (relevantLogs.length === 0) return null;
-      
-      // Get the most recent log
-      const latestLog = relevantLogs[0];
-      
-      return {
-        total_earned: latestLog.balance_before,
-        less_application: latestLog.points_deducted,
-        balance: latestLog.balance_after
-      };
-    };
-
-    // Transform employee data
-    const employeeData = {
-      full_name: `${request.employee?.firstname || ''} ${request.employee?.lastname || ''}`.trim(),
-      position: request.employee?.position || 'N/A',
-      salary: request.employee?.monthly_salary || 0,
-      department: {
-        name: request.employee?.department?.name || 'N/A'
-      },
-      leave_credits: {
-        vacation_leave: 0,
-        sick_leave: 0
-      },
-      leave_credit_logs: request.employee?.leave_credit_logs || []
-    };
-
-    // Transform approvers data
-    const approversData = request.approvals?.map(approval => {
-      return {
-        name: approval.approver?.name || 'System User',
-        role: approval.role === 'hr' ? 'HRMO-Designate' : 
-              approval.role === 'dept_head' ? 'Department Head' : 
-              approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver',
-        approved_at: approval.approved_at
-      };
-    }) || [];
-
+  // Get leave credit logs for the specific leave type
+  const getLeaveCreditData = (leaveType) => {
+    if (!request.employee?.leave_credit_logs) return null;
+    
+    // Find the most recent log for this leave type
+    const relevantLogs = request.employee.leave_credit_logs.filter(log => 
+      log.type === leaveType
+    );
+    
+    if (relevantLogs.length === 0) return null;
+    
+    // Get the most recent log
+    const latestLog = relevantLogs[0];
+    
     return {
-      leaveRequest: leaveRequestData,
-      employee: employeeData,
-      approvers: approversData
+      total_earned: latestLog.balance_before,
+      less_application: latestLog.points_deducted,
+      balance: latestLog.balance_after
     };
   };
+
+  // Transform employee data
+  const employeeData = {
+    full_name: `${request.employee?.firstname || ''} ${request.employee?.lastname || ''}`.trim(),
+    position: request.employee?.position || 'N/A',
+    salary: request.employee?.monthly_salary || 0,
+    department: {
+      name: request.employee?.department?.name || 'N/A'
+    },
+    leave_credits: {
+      vacation_leave: 0,
+      sick_leave: 0
+    },
+    leave_credit_logs: request.employee?.leave_credit_logs || []
+  };
+
+  // Helper function to get default position based on role
+  const getDefaultPosition = (role) => {
+    const defaultPositions = {
+      'hr': 'HRMO-Designate',
+      'dept_head': 'Department Head',
+      'admin': 'Municipal Vice Mayor'
+    };
+    return defaultPositions[role] || 'Approver';
+  };
+
+  // Transform approvers data WITH POSITION
+  const approversData = request.approvals?.map(approval => {
+    // Get the approver's actual position if available, otherwise use default
+    const approverPosition = approval.approver?.employee?.position || getDefaultPosition(approval.role);
+    
+    return {
+      name: approval.approver?.name || 'System User',
+      role: approval.role === 'hr' ? 'HRMO-Designate' : 
+            approval.role === 'dept_head' ? 'Department Head' : 
+            approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver',
+      position: approverPosition, // ADD POSITION HERE
+      approved_at: approval.approved_at
+    };
+  }) || [];
+
+  return {
+    leaveRequest: leaveRequestData,
+    employee: employeeData,
+    approvers: approversData
+  };
+};
 
   // Check if a request can be approved (only pending requests)
   const canApprove = (request) => {
@@ -632,6 +659,24 @@ useEffect(() => {
     data_length: leaveRequests.data?.length
   });
 }, [leaveRequests]);
+
+
+useEffect(() => {
+  if (leaveRequests.data && leaveRequests.data.length > 0) {
+    console.log('🔍 DEBUG: First request approvals data:', leaveRequests.data[0].approvals);
+    
+    if (leaveRequests.data[0].approvals) {
+      leaveRequests.data[0].approvals.forEach((approval, index) => {
+        console.log(`Approver ${index + 1}:`, {
+          role: approval.role,
+          approver_name: approval.approver?.name,
+          approver_position: approval.approver?.employee?.position,
+          has_employee_data: !!approval.approver?.employee
+        });
+      });
+    }
+  }
+}, [leaveRequests.data]);
 
 
   // Handle pagination for each tab
@@ -928,6 +973,17 @@ useEffect(() => {
           </div>
         </div>
 
+                  {/* Add this right before the Employees Table */}
+<div className="mb-4 flex items-center justify-between">
+    <div className="flex items-center space-x-2 text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
+        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>💡 <strong>Tip:</strong> Click on employee avatars to quickly view their details and leave history</span>
+    </div>
+</div>
+
+
         {/* Tabs and Table Section */}
         <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-3xl shadow-xl overflow-hidden">
           {/* Tabs */}
@@ -961,6 +1017,8 @@ useEffect(() => {
               ))}
             </nav>
           </div>
+
+          
 
           {/* Leave Requests Table */}
           <div className="overflow-x-auto">
@@ -1009,36 +1067,57 @@ useEffect(() => {
       return (
         <tr key={request.id} className="border-t hover:bg-gray-50/50 transition-colors">
           <td className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="flex-shrink-0 h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center">
-                <span className="text-white font-medium">
-                  {request.employee?.firstname?.charAt(0)}{request.employee?.lastname?.charAt(0)}
-                </span>
-              </div>
-              <div>
-                <div className="font-medium text-gray-900">
-                  {request.employee?.firstname} {request.employee?.lastname}
-                  {isDeptHead && (
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                      Dept Head
-                    </span>
-                  )}
-                  {request.employee?.user?.role === 'admin' && (
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                      Admin
-                    </span>
-                  )}
-                </div>
-                <div className="text-sm text-gray-500">
-                  {request.employee?.department?.name}
-                </div>
-                <div className="text-xs text-blue-600">
-                  {request.employee?.user?.role === 'admin' ? 'HR → Admin' : 
-                   isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
-                </div>
-              </div>
-            </div>
-          </td>
+  <div className="flex items-center space-x-3">
+    <button 
+      onClick={() => handleAvatarClick(request.employee)}
+      className="flex items-center space-x-3 hover:opacity-80 transition-all duration-300 group relative"
+      title="Click to view employee details and leave history"
+    >
+      <div className="flex-shrink-0 relative">
+        <div className="h-10 w-10 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+          <span className="text-white font-medium">
+            {request.employee?.firstname?.charAt(0)}{request.employee?.lastname?.charAt(0)}
+          </span>
+        </div>
+        {/* Hover indicator */}
+        <div className="absolute -inset-1 rounded-2xl border-2 border-blue-300 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-gray-900 group-hover:text-blue-600 transition-colors flex items-center space-x-2">
+          <span>{request.employee?.firstname} {request.employee?.lastname}</span>
+          <svg className="w-3 h-3 text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </div>
+        <div className="text-sm text-gray-500">
+          {request.employee?.department?.name}
+        </div>
+        <div className="flex items-center space-x-2 mt-1">
+          {isDeptHead && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+              Dept Head
+            </span>
+          )}
+          {request.employee?.user?.role === 'admin' && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+              Admin
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-blue-600 mt-1">
+          {request.employee?.user?.role === 'admin' ? 'HR → Admin' : 
+           isDeptHead ? 'HR → Admin' : 'HR → Dept Head → Admin'}
+        </div>
+      </div>
+      
+      {/* Hover Tooltip */}
+      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap pointer-events-none">
+        View employee details
+        <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 w-2 h-2 bg-gray-900 rotate-45"></div>
+      </div>
+    </button>
+  </div>
+</td>
           <td className="p-4">
             <div className="text-sm text-gray-900">{request.leave_type?.name}</div>
             <div className="text-sm text-gray-500">{request.leave_type?.code}</div>
@@ -1180,6 +1259,7 @@ useEffect(() => {
                 </button>
               </div>
             </div>
+
             
             {/* Form Content */}
             <div className="p-6">
@@ -1190,6 +1270,16 @@ useEffect(() => {
           </div>
         )}
       </div>
+
+      
+      <EmployeeModal 
+  employee={selectedEmployee}
+  isOpen={isEmployeeModalOpen}
+  onClose={() => {
+    setIsEmployeeModalOpen(false);
+    setSelectedEmployee(null);
+  }}
+/>
     </HRLayout>
   );
 }

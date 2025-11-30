@@ -371,14 +371,14 @@ public function getUpdatedRequests(Request $request)
                       $userQuery->whereNotIn('role', ['admin', 'dept_head']);
                   });
         })
-        // ✅ CRITICAL FIX: Only show requests that have HR approval
+        //  Only show requests that have HR approval
         ->whereHas('approvals', function($query) {
             $query->where('role', 'hr')
                   ->where('status', 'approved');
         })
         ->orderBy('created_at', 'desc');
     
-        // FIXED: Better status filtering logic
+        
         if ($request->has('status') && $request->status !== 'all') {
             switch ($request->status) {
                 case 'pending':
@@ -639,36 +639,64 @@ public function getUpdatedRequests(Request $request)
      * Show leave request details
      */
     public function showLeaveRequest($id)
-    {
-        $leaveRequest = LeaveRequest::with([
-                'leaveType',
-                'employee.department',
-                'details',
-                'approvals.approver'
-            ])
-            ->findOrFail($id);
+{
+    $leaveRequest = LeaveRequest::with([
+            'leaveType',
+            'employee.department',
+            'details',
+            'approvals.approver'
+        ])
+        ->findOrFail($id);
 
-        // Calculate working days (excluding weekends)
-        $startDate = new \DateTime($leaveRequest->date_from);
-        $endDate = new \DateTime($leaveRequest->date_to);
-        $workingDays = 0;
+    // FIXED: Use selected_dates for accurate duration calculation
+    $selectedDates = [];
+    $selectedDatesCount = 0;
+    
+    if (!empty($leaveRequest->selected_dates)) {
+        if (is_array($leaveRequest->selected_dates)) {
+            $selectedDates = $leaveRequest->selected_dates;
+        } elseif (is_string($leaveRequest->selected_dates)) {
+            $decoded = json_decode($leaveRequest->selected_dates, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $selectedDates = $decoded;
+            }
+        }
+        $selectedDatesCount = count($selectedDates);
+    }
 
-        for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
-            $dayOfWeek = $date->format('N');
-            if ($dayOfWeek < 6) { // Monday to Friday
+    // Calculate working days based on selected dates (excluding weekends)
+    $workingDays = 0;
+    if ($selectedDatesCount > 0) {
+        foreach ($selectedDates as $date) {
+            $dateObj = new \DateTime($date);
+            $dayOfWeek = $dateObj->format('N'); // 1-7 (Monday-Sunday)
+            if ($dayOfWeek < 6) { // 1-5 are weekdays
                 $workingDays++;
             }
         }
-
-        // Get leave balance information if available
-        $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
-
-        return Inertia::render('DeptHead/ShowLeaveRequest', [
-            'leaveRequest' => $leaveRequest,
-            'workingDays' => $workingDays,
-            'leaveCredit' => $leaveCredit,
-        ]);
+    } else {
+        // Fallback: calculate from date range for old records
+        $startDate = new \DateTime($leaveRequest->date_from);
+        $endDate = new \DateTime($leaveRequest->date_to);
+        for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
+            $dayOfWeek = $date->format('N');
+            if ($dayOfWeek < 6) {
+                $workingDays++;
+            }
+        }
     }
+
+    // Get leave balance information if available
+    $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
+
+    return Inertia::render('DeptHead/ShowLeaveRequest', [
+        'leaveRequest' => $leaveRequest,
+        'selectedDates' => $selectedDates, // Pass selected dates to frontend
+        'selectedDatesCount' => $selectedDatesCount,
+        'workingDays' => $workingDays,
+        'leaveCredit' => $leaveCredit,
+    ]);
+}
 
     // LEAVE RECALL REQUESTS MANAGEMENT
     

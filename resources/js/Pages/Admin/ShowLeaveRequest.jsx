@@ -24,26 +24,9 @@ const formatDate = (dateString) => {
   });
 };
 
-const calculateWorkingDays = (startDate, endDate) => {
-  if (!startDate || !endDate) return 0;
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  let count = 0;
-
-  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-    const day = date.getDay();
-    if (day !== 0 && day !== 6) {
-      count++;
-    }
-  }
-
-  return count;
-};
-
 export default function ShowLeaveRequest() {
   const { props } = usePage();
-  const { leaveRequest, workingDays, leaveCredit, flash } = props;
+  const { leaveRequest, selectedDates, selectedDatesCount, workingDays, leaveCredit, flash } = props;
 
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [showApproveForm, setShowApproveForm] = useState(false);
@@ -96,13 +79,6 @@ export default function ShowLeaveRequest() {
     }
   };
 
-  const calculateTotalDays = () => {
-    const start = new Date(leaveRequest.date_from);
-    const end = new Date(leaveRequest.date_to);
-    const diffTime = Math.abs(end - start);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  };
-
   return (
     <AdminLayout>
       <div className="mb-6">
@@ -148,9 +124,59 @@ export default function ShowLeaveRequest() {
 
               <div className="bg-green-50 p-4 rounded-lg border border-green-100">
                 <h3 className="text-sm font-semibold text-green-800 mb-2">Duration</h3>
-                <p className="text-lg font-bold text-green-900">{calculateTotalDays()} day(s)</p>
+                <p className="text-lg font-bold text-green-900">{leaveRequest.total_days} day(s)</p>
                 <p className="text-sm text-green-600">{workingDays} working days</p>
               </div>
+            </div>
+
+            {/* Selected Dates Section - UPDATED */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Selected Dates</h3>
+              
+              {selectedDatesCount > 0 ? (
+                <div className="space-y-4">
+                  {/* Show selected dates in boxes */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto">
+                    {selectedDates.map((date, index) => (
+                      <div 
+                        key={index}
+                        className="bg-gradient-to-r from-green-50 to-green-100 border border-green-200 rounded-lg p-3 text-center"
+                      >
+                        <div className="text-sm text-green-600 font-semibold">
+                          {new Date(date).toLocaleDateString('en-US', { 
+                            weekday: 'short'
+                          })}
+                        </div>
+                        <div className="text-xs text-green-800 mt-1">
+                          {new Date(date).toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric' 
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Summary */}
+                  <div className="flex justify-between items-center text-sm text-gray-600 pt-3 border-t border-gray-200">
+                    <span>Total: {selectedDatesCount} selected date{selectedDatesCount !== 1 ? 's' : ''}</span>
+                    <span>Range: {formatDate(leaveRequest.date_from)} - {formatDate(leaveRequest.date_to)}</span>
+                  </div>
+                </div>
+              ) : (
+                /* Fallback for old records without selected dates */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                    <h3 className="text-sm font-semibold text-green-700 mb-2">Start Date</h3>
+                    <p className="text-lg font-medium text-green-900">{formatDate(leaveRequest.date_from)}</p>
+                  </div>
+
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                    <h3 className="text-sm font-semibold text-green-700 mb-2">End Date</h3>
+                    <p className="text-lg font-medium text-green-900">{formatDate(leaveRequest.date_to)}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
@@ -193,18 +219,6 @@ export default function ShowLeaveRequest() {
                   </p>
                 </div>
               )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                <h3 className="text-sm font-semibold text-green-700 mb-2">Start Date</h3>
-                <p className="text-lg font-medium text-green-900">{formatDate(leaveRequest.date_from)}</p>
-              </div>
-
-              <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                <h3 className="text-sm font-semibold text-green-700 mb-2">End Date</h3>
-                <p className="text-lg font-medium text-green-900">{formatDate(leaveRequest.date_to)}</p>
-              </div>
             </div>
 
             <div className="bg-green-50 p-4 rounded-lg border border-green-100">

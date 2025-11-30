@@ -27,7 +27,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\Holiday;
 use App\Models\LeaveRescheduleRequest;
-
+use App\Services\LeaveDonationService; // Add this import
+use App\Models\LeaveDonation; // Add this import
 
 class HRController extends Controller
 {
@@ -36,13 +37,20 @@ class HRController extends Controller
 
     protected $creditConversionService;
     protected $notificationService;
+    protected $leaveDonationService; // Add this property
     
 
     // ADD THIS CONSTRUCTOR
-    public function __construct(CreditConversionService $creditConversionService, NotificationService $notificationService)
+    // UPDATE THE CONSTRUCTOR
+    public function __construct(
+        CreditConversionService $creditConversionService, 
+        NotificationService $notificationService,
+        LeaveDonationService $leaveDonationService // Add this parameter
+    )
     {
         $this->creditConversionService = $creditConversionService;
         $this->notificationService = $notificationService;
+        $this->leaveDonationService = $leaveDonationService; // Add this assignment
     }
 
     //EMPLOYEE MANAGEMENT
@@ -92,111 +100,111 @@ public function employees(Request $request)
     ]);
 }
 
-    public function storeEmployee(Request $request)
-    {
-        $validated = $request->validate([
-            'firstname' => 'required|string|max:255',
-            'middlename' => 'nullable|string|max:255',
-            'lastname' => 'required|string|max:255',
-            'gender' => 'required|in:male,female',
-            'date_of_birth' => 'required|date',
-            'position' => 'required|string|max:255',
-            'department_id' => 'required|exists:departments,id',
-            'status' => 'required|in:active,inactive',
-            'contact_number' => 'required|string|max:20',
-            'address' => 'required|string|max:255',
-            'civil_status' => 'required|in:single,married,widowed,divorced',
-            'biometric_id' => 'nullable|integer|unique:employees,biometric_id',
-            'monthly_salary' => 'required|numeric|min:0',
-            'daily_rate' => 'required|numeric|min:0',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6',
-            'role' => 'required|in:employee,hr,admin,dept_head',
-            'is_primary' => 'nullable|boolean',
+public function storeEmployee(Request $request)
+{
+    $validated = $request->validate([
+        'firstname' => 'required|string|max:255',
+        'middlename' => 'nullable|string|max:255',
+        'lastname' => 'required|string|max:255',
+        'gender' => 'required|in:male,female',
+        'date_of_birth' => 'required|date',
+        'position' => 'required|string|max:255',
+        'department_id' => 'required|exists:departments,id',
+        'status' => 'required|in:active,inactive',
+        'contact_number' => 'required|string|max:20',
+        'address' => 'required|string|max:255',
+        'civil_status' => 'required|in:single_solo_parent,single_non_solo_parent,married_solo_parent,married_non_solo_parent,divorced_solo_parent,divorced_non_solo_parent,widowed_solo_parent,widowed_non_solo_parent',
+        'biometric_id' => 'nullable|integer|unique:employees,biometric_id',
+        'monthly_salary' => 'required|numeric|min:0',
+        'daily_rate' => 'required|numeric|min:0',
+        'email' => 'required|email|unique:users,email',
+        'password' => 'required|string|min:6',
+        'role' => 'required|in:employee,hr,admin,dept_head',
+        'is_primary' => 'nullable|boolean',
+    ]);
+
+    try {
+        \DB::beginTransaction();
+        
+        // 1. Create the employee
+        $employee = Employee::create([
+            'firstname' => $validated['firstname'],
+            'middlename' => $validated['middlename'],
+            'lastname' => $validated['lastname'],
+            'gender' => $validated['gender'],
+            'date_of_birth' => $validated['date_of_birth'],
+            'position' => $validated['position'],
+            'department_id' => $validated['department_id'],
+            'status' => $validated['status'],
+            'contact_number' => $validated['contact_number'],
+            'address' => $validated['address'],
+            'civil_status' => $validated['civil_status'],
+            'biometric_id' => $validated['biometric_id'] ?? null,
+            'monthly_salary' => $validated['monthly_salary'],
+            'daily_rate' => $validated['daily_rate'],
         ]);
-    
-        try {
-            \DB::beginTransaction();
-            
-            // 1. Create the employee
-            $employee = Employee::create([
-                'firstname' => $validated['firstname'],
-                'middlename' => $validated['middlename'],
-                'lastname' => $validated['lastname'],
-                'gender' => $validated['gender'],
-                'date_of_birth' => $validated['date_of_birth'],
-                'position' => $validated['position'],
-                'department_id' => $validated['department_id'],
-                'status' => $validated['status'],
-                'contact_number' => $validated['contact_number'],
-                'address' => $validated['address'],
-                'civil_status' => $validated['civil_status'],
-                'biometric_id' => $validated['biometric_id'] ?? null,
-                'monthly_salary' => $validated['monthly_salary'],
-                'daily_rate' => $validated['daily_rate'],
-            ]);
-    
-            // 2. Determine if this user should be primary admin
-            $isPrimary = false;
-            if ($validated['role'] === 'admin' && isset($validated['is_primary']) && $validated['is_primary']) {
-                $isPrimary = true;
-            }
-    
-            // 3. Create the user and link to employee
-            $user = User::create([
-                'name' => $validated['firstname'] . ' ' . $validated['lastname'],
-                'email' => $validated['email'],
-                'password' => bcrypt($validated['password']),
-                'role' => $validated['role'],
-                'employee_id' => $employee->employee_id,
-                'is_primary' => $isPrimary,
-            ]);
-    
-            // 4. Create default leave credit record for SL/VL (earnable leaves)
-            LeaveCredit::create([
-                'employee_id' => $employee->employee_id,
-                'sl_balance' => 0,
-                'vl_balance' => 0,
-                'last_updated' => now(),
-                'remarks' => 'Initial balance for new employee',
-            ]);
-    
-            // 5. Create leave balance records for non-earnable leave types with fixed allocations
-            $this->createFixedLeaveBalances($employee->employee_id);
-    
-            // 6. Attempt to send welcome email (but don't fail if it doesn't work)
-            $emailSent = false;
-            try {
-                Mail::to($validated['email'])->send(
-                    new EmployeeWelcomeMail($employee, $validated['email'], $validated['password'])
-                );
-                $emailSent = true;
-                \Log::info('Welcome email sent successfully to: ' . $validated['email']);
-            } catch (\Exception $emailException) {
-                // Just log the error but continue with success response
-                \Log::warning('Welcome email failed for ' . $validated['email'] . ': ' . $emailException->getMessage());
-                $emailSent = false;
-            }
-    
-            \DB::commit();
-            
-            // Return appropriate message based on email status
-            if ($emailSent) {
-                return redirect()->back()->with('success', 'Employee created successfully! Welcome email sent.');
-            } else {
-                return redirect()->back()->with('success', 'Employee created successfully! Please provide login credentials to the employee in person.');
-            }
-            
-        } catch (\Exception $e) {
-            \DB::rollback();
-            \Log::error('Error creating employee: ' . $e->getMessage(), [
-                'data' => $validated,
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return redirect()->back()->withErrors(['error' => 'Failed to create employee: ' . $e->getMessage()]);
+
+        // 2. Determine if this user should be primary admin
+        $isPrimary = false;
+        if ($validated['role'] === 'admin' && isset($validated['is_primary']) && $validated['is_primary']) {
+            $isPrimary = true;
         }
+
+        // 3. Create the user and link to employee
+        $user = User::create([
+            'name' => $validated['firstname'] . ' ' . $validated['lastname'],
+            'email' => $validated['email'],
+            'password' => bcrypt($validated['password']),
+            'role' => $validated['role'],
+            'employee_id' => $employee->employee_id,
+            'is_primary' => $isPrimary,
+        ]);
+
+        // 4. Create default leave credit record for SL/VL (earnable leaves)
+        LeaveCredit::create([
+            'employee_id' => $employee->employee_id,
+            'sl_balance' => 0,
+            'vl_balance' => 0,
+            'last_updated' => now(),
+            'remarks' => 'Initial balance for new employee',
+        ]);
+
+        // 5. Create leave balance records for non-earnable leave types with restrictions
+        $this->createFixedLeaveBalances($employee->employee_id);
+
+        // 6. Attempt to send welcome email (but don't fail if it doesn't work)
+        $emailSent = false;
+        try {
+            Mail::to($validated['email'])->send(
+                new EmployeeWelcomeMail($employee, $validated['email'], $validated['password'])
+            );
+            $emailSent = true;
+            \Log::info('Welcome email sent successfully to: ' . $validated['email']);
+        } catch (\Exception $emailException) {
+            // Just log the error but continue with success response
+            \Log::warning('Welcome email failed for ' . $validated['email'] . ': ' . $emailException->getMessage());
+            $emailSent = false;
+        }
+
+        \DB::commit();
+        
+        // Return appropriate message based on email status
+        if ($emailSent) {
+            return redirect()->back()->with('success', 'Employee created successfully! Welcome email sent.');
+        } else {
+            return redirect()->back()->with('success', 'Employee created successfully! Please provide login credentials to the employee in person.');
+        }
+        
+    } catch (\Exception $e) {
+        \DB::rollback();
+        \Log::error('Error creating employee: ' . $e->getMessage(), [
+            'data' => $validated,
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return redirect()->back()->withErrors(['error' => 'Failed to create employee: ' . $e->getMessage()]);
     }
+}
     
     /**
      * Create fixed allocation leave balances for non-earnable leave types
@@ -204,13 +212,26 @@ public function employees(Request $request)
     /**
  * Create fixed allocation leave balances for non-earnable leave types
  */
+/**
+ * Create fixed allocation leave balances for non-earnable leave types
+ * with gender and civil status restrictions
+ */
 private function createFixedLeaveBalances($employeeId)
 {
     $currentYear = now()->year;
     
     \Log::info("Starting createFixedLeaveBalances for employee {$employeeId}");
     
-    // Get ALL non-earnable leave types (including those with 0 or null default_days)
+    // Get the employee with their details
+    $employee = Employee::find($employeeId);
+    if (!$employee) {
+        \Log::error("Employee {$employeeId} not found for leave balance creation");
+        return 0;
+    }
+    
+    \Log::info("Employee details - Gender: {$employee->gender}, Civil Status: {$employee->civil_status}");
+    
+    // Get ALL non-earnable leave types
     $nonEarnableLeaveTypes = \App\Models\LeaveType::where('earnable', false)->get();
     
     \Log::info("Found {$nonEarnableLeaveTypes->count()} non-earnable leave types");
@@ -218,10 +239,16 @@ private function createFixedLeaveBalances($employeeId)
     $createdCount = 0;
     
     foreach ($nonEarnableLeaveTypes as $leaveType) {
+        // Check if this leave type should be restricted based on gender or civil status
+        if ($this->shouldRestrictLeaveType($leaveType, $employee)) {
+            \Log::info("🚫 Restricted leave type {$leaveType->name} for employee {$employeeId} - Gender: {$employee->gender}, Civil Status: {$employee->civil_status}");
+            continue; // Skip creating balance for this leave type
+        }
+        
         // Use default_days if set, otherwise 0
         $defaultDays = $leaveType->default_days ?? 0;
         
-        \Log::info("Processing {$leaveType->name} with default_days: {$defaultDays}");
+        \Log::info("✅ Processing {$leaveType->name} with default_days: {$defaultDays}");
         
         // Check if balance already exists
         $existingBalance = \App\Models\LeaveBalance::where('employee_id', $employeeId)
@@ -259,6 +286,46 @@ private function createFixedLeaveBalances($employeeId)
     return $createdCount;
 }
 
+/**
+ * Check if a leave type should be restricted based on employee's gender or civil status
+ */
+private function shouldRestrictLeaveType($leaveType, $employee)
+{
+    $leaveTypeCode = strtoupper($leaveType->code);
+    
+    // Gender-based restrictions
+    if ($employee->gender === 'female') {
+        // Female employees should not get paternity leave
+        if (in_array($leaveTypeCode, ['PL', 'PATERNITY'])) {
+            return true;
+        }
+    }
+    
+    if ($employee->gender === 'male') {
+        // Male employees should not get maternity leave, Special Leave Benefits for Women, or VAWC leave
+        if (in_array($leaveTypeCode, ['ML', 'MATERNITY', 'SLBW', '10DV', 'VAWC'])) {
+            return true;
+        }
+    }
+    
+    // Civil status-based restrictions for solo parent leave
+    if (in_array($leaveTypeCode, ['SOLOPL', 'SPL', 'SOLO_PARENT'])) {
+        $soloParentStatuses = [
+            'single_solo_parent',
+            'married_solo_parent', 
+            'divorced_solo_parent',
+            'widowed_solo_parent'
+        ];
+        
+        // Only give solo parent leave to employees with solo parent civil status
+        if (!in_array($employee->civil_status, $soloParentStatuses)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
 public function editEmployee(Employee $employee)
 {
     // Laravel will automatically find the employee by employee_id
@@ -274,79 +341,88 @@ public function editEmployee(Employee $employee)
     /**
      * Update employee information
      */
-public function updateEmployee(Request $request, Employee $employee)
-{
-    // Validate the incoming data - all fields optional
-    $validated = $request->validate([
-        'firstname' => 'nullable|string|max:255',
-        'middlename' => 'nullable|string|max:255',
-        'lastname' => 'nullable|string|max:255',
-        'gender' => 'nullable|in:male,female',
-        'date_of_birth' => 'nullable|date',
-        'position' => 'nullable|string|max:255',
-        'department_id' => 'nullable|exists:departments,id',
-        'status' => 'nullable|in:active,inactive',
-        'contact_number' => 'nullable|string|max:20',
-        'address' => 'nullable|string|max:500',
-        'civil_status' => 'nullable|in:single,married,widowed,divorced',
-        'biometric_id' => [
-            'nullable',
-            'integer',
-            Rule::unique('employees')->ignore($employee->employee_id, 'employee_id')
-        ],
-        'monthly_salary' => 'nullable|numeric|min:0',
-        'daily_rate' => 'nullable|numeric|min:0',
-        'role' => 'required|in:employee,hr,admin,dept_head',
-        'is_primary' => 'nullable|boolean',
-    ]);
-
-
-    try {
-        \DB::beginTransaction();
-
-        // Update employee details
-        $employee->update($validated);
-
-        // If status was changed and employee has a user account
-        if ($request->has('status') && $employee->user) {
-            $newStatus = $request->status;
-            
-            if ($newStatus === 'inactive') {
-                // Log the status change
-                \Log::info("Employee {$employee->employee_id} status changed to inactive. User ID: {$employee->user->id}");
+    public function updateEmployee(Request $request, Employee $employee)
+    {
+        // Validate the incoming data - all fields optional
+        $validated = $request->validate([
+            'firstname' => 'nullable|string|max:255',
+            'middlename' => 'nullable|string|max:255',
+            'lastname' => 'nullable|string|max:255',
+            'gender' => 'nullable|in:male,female',
+            'date_of_birth' => 'nullable|date',
+            'position' => 'nullable|string|max:255',
+            'department_id' => 'nullable|exists:departments,id',
+            'status' => 'nullable|in:active,inactive',
+            'contact_number' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+            'civil_status' => 'nullable|in:single,married,widowed,divorced',
+            'biometric_id' => [
+                'nullable',
+                'integer',
+                Rule::unique('employees')->ignore($employee->employee_id, 'employee_id')
+            ],
+            'monthly_salary' => 'nullable|numeric|min:0',
+            'daily_rate' => 'nullable|numeric|min:0',
+            'email' => [
+                'required',
+                'email',
+                Rule::unique('users')->ignore($employee->user->id ?? null)
+            ],
+            'password' => 'nullable|string|min:6',
+            'role' => 'required|in:employee,hr,admin,dept_head',
+            'is_primary' => 'nullable|boolean',
+        ]);
+    
+        try {
+            \DB::beginTransaction();
+    
+            // Update employee details
+            $employee->update($validated);
+    
+            // Update user information if employee has a user account
+            if ($employee->user) {
+                $userData = [
+                    'name' => ($validated['firstname'] ?? $employee->firstname) . ' ' . ($validated['lastname'] ?? $employee->lastname),
+                    'email' => $validated['email'],
+                    'role' => $validated['role'],
+                    'is_primary' => ($validated['role'] === 'admin') ? ($validated['is_primary'] ?? false) : false,
+                ];
+    
+                // Update password if provided
+                if (!empty($validated['password'])) {
+                    $userData['password'] = bcrypt($validated['password']);
+                }
+    
+                $employee->user->update($userData);
+            } else {
+                // If no user exists, create one (optional - you might want to handle this differently)
+                \Log::warning("Employee {$employee->employee_id} has no user account during update");
+            }
+    
+            // If status was changed and employee has a user account
+            if ($request->has('status') && $employee->user) {
+                $newStatus = $request->status;
                 
-                // You could also broadcast an event here to force logout if needed
+                if ($newStatus === 'inactive') {
+                    // Log the status change
+                    \Log::info("Employee {$employee->employee_id} status changed to inactive. User ID: {$employee->user->id}");
+                    
+                    // You could also broadcast an event here to force logout if needed
+                }
             }
+    
+            \DB::commit();
+            
+            return redirect()->route('hr.employees.show', $employee->employee_id)
+                ->with('success', 'Employee information updated successfully!');
+    
+        } catch (\Exception $e) {
+            \DB::rollback();
+            \Log::error('Error updating employee: ' . $e->getMessage());
+            
+            return redirect()->back()->withErrors(['error' => 'Failed to update employee: ' . $e->getMessage()]);
         }
-
-        // Update user information if provided
-        if ($employee->user && isset($validated['role'])) {
-            $userData = [
-                'role' => $validated['role'],
-                'is_primary' => ($validated['role'] === 'admin') ? ($validated['is_primary'] ?? false) : false,
-            ];
-
-            // Update password if provided
-            if (!empty($validated['password'])) {
-                $userData['password'] = bcrypt($validated['password']);
-            }
-
-            $employee->user->update($userData);
-        }
-
-        \DB::commit();
-        
-        return redirect()->route('hr.employees.show', $employee->employee_id)
-            ->with('success', 'Employee information updated successfully!');
-
-    } catch (\Exception $e) {
-        \DB::rollback();
-        \Log::error('Error updating employee: ' . $e->getMessage());
-        
-        return redirect()->back()->withErrors(['error' => 'Failed to update employee: ' . $e->getMessage()]);
     }
-}
-
 
 //LEAVE CREDITS
 public function leaveCredits(Request $request)
@@ -458,43 +534,7 @@ public function update(Request $request, $employee_id)
 
 
 
-public function creditsLog(Request $request)
-{
-    $perPage = 15;
-    
-    $query = LeaveCreditLog::where('employee_id', auth()->user()->employee_id)
-        ->orderBy('date', 'desc')
-        ->orderBy('created_at', 'desc');
 
-    // Apply month filter
-    if ($request->has('month') && $request->month) {
-        $date = \Carbon\Carbon::parse($request->month);
-        $query->where('year', $date->year)
-              ->where('month', $date->month);
-    }
-
-    $creditsLog = $query->paginate($perPage)->withQueryString();
-
-    // Format dates for display
-    $formattedLogs = $creditsLog->getCollection()->map(function ($log) {
-        $log->formatted_date = \Carbon\Carbon::parse($log->date)->format('M d, Y');
-        return $log;
-    });
-
-    $creditsLog->setCollection($formattedLogs);
-
-    // Get current balances
-    $currentBalances = [
-        'sl' => LeaveCredit::where('employee_id', auth()->user()->employee_id)->value('sl_balance') ?? 0,
-        'vl' => LeaveCredit::where('employee_id', auth()->user()->employee_id)->value('vl_balance') ?? 0,
-    ];
-
-    return Inertia::render('Employee/CreditsLog', [
-        'creditsLog' => $creditsLog,
-        'currentBalances' => $currentBalances,
-        'filters' => $request->only(['month']),
-    ]);
-}
 
 
 
@@ -670,6 +710,7 @@ public function departments(Request $request)
         $perPage = 7;
         
         $departments = Department::with(['head', 'employees.user'])
+        ->orderBy('created_at', 'desc') // Add this line to sort by newest first
             ->paginate($perPage)
             ->withQueryString();
 
@@ -1286,21 +1327,21 @@ private function getAvailableYears()
 
 public function leaveRequests(Request $request)
 {
-    $perPage = 15; // This should be consistent across all tabs
+    $perPage = 15; 
     
     $query = LeaveRequest::with([
         'leaveType',
         'employee.department',
         'employee.user',
         'details',
-        'approvals.approver',
+        'approvals.approver.employee',
         'employee.leaveCreditLogs' => function($query) {
             $query->orderBy('created_at', 'desc');
         },
         'rescheduleRequests'
     ]);
 
-    // 🔥 CRITICAL: Apply filters BEFORE pagination
+    // Apply filters BEFORE pagination
     if ($request->filled('status') && $request->status !== 'all') {
         switch ($request->status) {
             case 'hr_pending':
@@ -1361,10 +1402,10 @@ public function leaveRequests(Request $request)
         $query->where('date_to', '<=', $request->date_to);
     }
 
-    // 🔥 CRITICAL: Order before pagination
+    // Order before pagination
     $query->orderBy('created_at', 'desc');
 
-    // 🔥 PAGINATE the filtered results
+    // PAGINATE the filtered results
     $leaveRequests = $query->paginate($perPage)->withQueryString();
 
     // Get tab counts (your existing code)
@@ -1404,7 +1445,6 @@ public function leaveRequests(Request $request)
 
 
 
-
 public function showLeaveRequest($id)
 {
     $leaveRequest = LeaveRequest::with([
@@ -1412,19 +1452,61 @@ public function showLeaveRequest($id)
             'employee.department',
             'employee.leaveCredits',
             'details',
-            'approvals.approver'
+            'approvals.approver.employee' // Add employee relationship to get position
         ])
         ->findOrFail($id);
 
-    // Calculate working days (excluding weekends)
-    $startDate = new \DateTime($leaveRequest->date_from);
-    $endDate = new \DateTime($leaveRequest->date_to);
-    $workingDays = 0;
+    // Get approvers with their positions
+    $approvers = $leaveRequest->approvals->map(function ($approval) {
+        return [
+            'name' => $approval->approver->name,
+            'role' => $approval->role,
+            'position' => $approval->approver->employee->position ?? $this->getDefaultPosition($approval->role),
+            'approved_at' => $approval->approved_at,
+        ];
+    });
 
-    for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
-        $dayOfWeek = $date->format('N');
-        if ($dayOfWeek < 6) { // Monday to Friday
-            $workingDays++;
+    // FIXED: Use selected_dates for accurate duration calculation
+    $selectedDates = [];
+    $selectedDatesCount = 0;
+    
+    if (!empty($leaveRequest->selected_dates)) {
+        if (is_array($leaveRequest->selected_dates)) {
+            $selectedDates = $leaveRequest->selected_dates;
+        } elseif (is_string($leaveRequest->selected_dates)) {
+            $decoded = json_decode($leaveRequest->selected_dates, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $selectedDates = $decoded;
+            }
+        }
+        $selectedDatesCount = count($selectedDates);
+    }
+
+    // Calculate working days based on selected dates (excluding weekends)
+    $workingDays = 0;
+    $formattedSelectedDates = [];
+    
+    if ($selectedDatesCount > 0) {
+        foreach ($selectedDates as $date) {
+            $dateObj = new \DateTime($date);
+            $dayOfWeek = $dateObj->format('N'); // 1-7 (Monday-Sunday)
+            if ($dayOfWeek < 6) { // 1-5 are weekdays
+                $workingDays++;
+            }
+            // Format each date for display
+            $formattedSelectedDates[] = $dateObj->format('M d, Y');
+        }
+    } else {
+        // Fallback: calculate from date range for old records
+        $startDate = new \DateTime($leaveRequest->date_from);
+        $endDate = new \DateTime($leaveRequest->date_to);
+        for ($date = clone $startDate; $date <= $endDate; $date->modify('+1 day')) {
+            $dayOfWeek = $date->format('N');
+            if ($dayOfWeek < 6) {
+                $workingDays++;
+            }
+            // For old records, generate the dates in the range
+            $formattedSelectedDates[] = $date->format('M d, Y');
         }
     }
 
@@ -1433,10 +1515,15 @@ public function showLeaveRequest($id)
 
     return Inertia::render('HR/ShowLeaveRequest', [
         'leaveRequest' => $leaveRequest,
+        'selectedDates' => $formattedSelectedDates, // Pass formatted dates to frontend
+        'selectedDatesCount' => $selectedDatesCount,
         'workingDays' => $workingDays,
         'leaveCredit' => $leaveCredit,
+        'approvers' => $approvers, // Make sure to pass approvers
     ]);
 }
+
+
 
 
 public function approveLeaveRequest(Request $request, $id)
@@ -3703,10 +3790,139 @@ private function updateRelatedApprovals($leaveRequest)
     }
 }
 
+// Add this method to your HRController
+public function getEmployeeLeaveHistories($employeeId)
+{
+    try {
+        $employee = Employee::with(['department', 'user'])->findOrFail($employeeId);
+        
+        $leaveHistories = LeaveRequest::with(['leaveType'])
+            ->where('employee_id', $employeeId)
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get()
+            ->map(function ($leave) {
+                return [
+                    'id' => $leave->id,
+                    'leave_type' => [
+                        'name' => $leave->leaveType->name ?? 'Unknown',
+                        'code' => $leave->leaveType->code ?? 'N/A',
+                    ],
+                    'date_from' => $leave->date_from,
+                    'date_to' => $leave->date_to,
+                    'reason' => $leave->reason,
+                    'status' => $leave->status,
+                    'total_days' => $leave->total_days,
+                    'created_at' => $leave->created_at,
+                    'selected_dates' => $leave->selected_dates,
+                ];
+            });
 
+        return response()->json([
+            'success' => true,
+            'employee' => [
+                'employee_id' => $employee->employee_id,
+                'firstname' => $employee->firstname,
+                'middlename' => $employee->middlename,
+                'lastname' => $employee->lastname,
+                'position' => $employee->position,
+                'department' => $employee->department,
+                'gender' => $employee->gender,
+                'date_of_birth' => $employee->date_of_birth,
+                'civil_status' => $employee->civil_status,
+                'contact_number' => $employee->contact_number,
+                'address' => $employee->address,
+                'monthly_salary' => $employee->monthly_salary,
+                'daily_rate' => $employee->daily_rate,
+                'status' => $employee->status,
+                'email' => $employee->user->email ?? 'N/A', // Get email from users table
+            ],
+            'leaveHistories' => $leaveHistories,
+        ]);
 
-
-
+    } catch (\Exception $e) {
+        \Log::error('Error fetching employee leave histories: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch employee data',
+            'leaveHistories' => []
+        ], 500);
+    }
 }
 
 
+
+// Add these methods to your HRController
+public function leaveDonations(Request $request)
+{
+    $perPage = 10;
+    
+    $donations = $this->leaveDonationService->getAllDonationRequests([
+        'status' => $request->status ?? 'all',
+        'search' => $request->search ?? ''
+    ]);
+
+    $stats = [
+        'pending' => LeaveDonation::where('status', 'pending_hr')->count(),
+        'approved' => LeaveDonation::where('status', 'completed')->count(),
+        'cancelled' => LeaveDonation::where('status', 'cancelled')->count(),
+        'total' => LeaveDonation::count()
+    ];
+
+    return Inertia::render('HR/LeaveDonations', [
+        'donations' => $donations,
+        'stats' => $stats,
+        'filters' => $request->only(['status', 'search']),
+    ]);
+}
+
+public function pendingLeaveDonations()
+{
+    $pendingDonations = $this->leaveDonationService->getPendingHrApprovals();
+    
+    return response()->json([
+        'pending_count' => $pendingDonations->count(),
+        'donations' => $pendingDonations
+    ]);
+}
+
+public function approveLeaveDonation(Request $request, $id)
+{
+    $request->validate([
+        'hr_remarks' => 'nullable|string|max:500'
+    ]);
+
+    try {
+        $result = $this->leaveDonationService->approveDonation(
+            $id,
+            $request->user()->id,
+            $request->hr_remarks
+        );
+
+        return redirect()->route('hr.leave-donations')->with('success', $result['message']);
+
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
+
+public function rejectLeaveDonation(Request $request, $id)
+{
+    $request->validate([
+        'hr_remarks' => 'required|string|max:500'
+    ]);
+
+    try {
+        $result = $this->leaveDonationService->rejectDonation(
+            $id,
+            $request->user()->id,
+            $request->hr_remarks
+        );
+
+        return redirect()->route('hr.leave-donations')->with('success', $result['message']);
+
+    } catch (\Exception $e) {
+        return back()->withErrors(['error' => $e->getMessage()]);
+    }
+}
+}
