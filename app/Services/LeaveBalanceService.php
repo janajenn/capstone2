@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\LeaveRequest;
 use App\Models\LeaveBalance;
+use App\Models\LeaveBalanceLog; // Add this
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\CarbonPeriod;
@@ -35,11 +36,8 @@ class LeaveBalanceService
                     return null;
                 }
 
-                // Calculate working days (excluding weekends)
-                $period = CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
-                $workingDays = collect($period)->filter(function ($date) {
-                    return !$date->isWeekend();
-                })->count();
+                // Calculate working days (excluding weekends) - Use selected_dates count instead
+                $workingDays = $this->calculateWorkingDaysFromSelectedDates($leaveRequest);
 
                 Log::info("📅 Working days to deduct: {$workingDays} for leave type: {$leaveTypeCode}");
 
@@ -73,27 +71,48 @@ class LeaveBalanceService
                     ];
                 }
 
-                // Ensure balance doesn't go negative (additional safety check)
-                $newBalance = max(0, $leaveBalance->balance - $workingDays);
+                // Store balance before deduction for logging
+                $balanceBefore = $leaveBalance->balance;
+                $totalUsedBefore = $leaveBalance->total_used;
 
-                // Update leave balance record according to your schema
-                $leaveBalance->total_used += $workingDays;
-                $leaveBalance->balance = $newBalance;
+                // Calculate new balance
+                $balanceAfter = $balanceBefore - $workingDays;
+                $totalUsedAfter = $totalUsedBefore + $workingDays;
+
+                // Update leave balance record
+                $leaveBalance->total_used = $totalUsedAfter;
+                $leaveBalance->balance = $balanceAfter;
                 $leaveBalance->updated_at = now();
                 $leaveBalance->save();
 
                 Log::info("✅ Deducted {$workingDays} days. New balance: {$leaveBalance->balance}, " .
                          "Total used: {$leaveBalance->total_used}");
 
-                // Log the balance deduction
-                $this->createBalanceLog($leaveRequest, $leaveTypeCode, $workingDays, $leaveBalance);
+                // Create balance log using new LeaveBalanceLog model
+                $this->createBalanceLogNew(
+                    $leaveRequest,
+                    $leaveTypeCode,
+                    $workingDays,
+                    $balanceBefore,
+                    $balanceAfter,
+                    $totalUsedBefore,
+                    $totalUsedAfter
+                );
+
+                // Update leave request with exact balance information for historical reference
+                $leaveRequest->update([
+                    'balance_before' => $balanceBefore,
+                    'balance_after' => $balanceAfter,
+                    'days_with_pay' => $workingDays, // Ensure days_with_pay matches actual deduction
+                    'days_without_pay' => 0, // For non-SL/VL, all days are with pay
+                ]);
 
                 Log::info('🎉 LEAVE BALANCE SERVICE COMPLETED SUCCESSFULLY');
                 return [
                     'success' => true,
                     'message' => "Successfully deducted {$workingDays} days from {$leaveRequest->leaveType->name} balance",
                     'days_deducted' => $workingDays,
-                    'new_balance' => $leaveBalance->balance
+                    'new_balance' => $balanceAfter
                 ];
             });
         } catch (\Exception $e) {
@@ -104,46 +123,80 @@ class LeaveBalanceService
     }
 
     /**
-     * Create a log entry for balance deduction
-     *
-     * @param LeaveRequest $leaveRequest
-     * @param string $leaveTypeCode
-     * @param int $daysDeducted
-     * @param LeaveBalance $leaveBalance
-     * @return void
+     * Calculate working days from selected_dates array
      */
-    private function createBalanceLog(LeaveRequest $leaveRequest, string $leaveTypeCode, int $daysDeducted, LeaveBalance $leaveBalance)
+    private function calculateWorkingDaysFromSelectedDates(LeaveRequest $leaveRequest): int
     {
-        Log::info('📝 Creating balance log entry...');
+        // Use selected_dates if available (more accurate)
+        if (!empty($leaveRequest->selected_dates)) {
+            $selectedDates = is_array($leaveRequest->selected_dates) 
+                ? $leaveRequest->selected_dates 
+                : json_decode($leaveRequest->selected_dates, true);
+            
+            if (is_array($selectedDates) && count($selectedDates) > 0) {
+                $workingDays = 0;
+                foreach ($selectedDates as $date) {
+                    $dateObj = new \DateTime($date);
+                    if ($dateObj->format('N') < 6) { // Monday-Friday (1-5)
+                        $workingDays++;
+                    }
+                }
+                Log::info("📊 Using selected_dates count: {$workingDays} working days from " . count($selectedDates) . " selected dates");
+                return $workingDays;
+            }
+        }
+
+        // Fallback to date range calculation
+        $period = CarbonPeriod::create($leaveRequest->date_from, $leaveRequest->date_to);
+        $workingDays = collect($period)->filter(function ($date) {
+            return !$date->isWeekend();
+        })->count();
+        
+        Log::info("📊 Fallback to date range calculation: {$workingDays} working days");
+        return $workingDays;
+    }
+
+    /**
+     * NEW: Create balance log using LeaveBalanceLog model
+     */
+    private function createBalanceLogNew(
+        LeaveRequest $leaveRequest,
+        string $leaveTypeCode,
+        int $daysDeducted,
+        int $balanceBefore,
+        int $balanceAfter,
+        int $totalUsedBefore,
+        int $totalUsedAfter
+    ): void {
+        Log::info('📝 Creating new balance log entry...');
 
         try {
-            // Log data based on your actual schema
-            $logData = [
+            // Create log using the new model
+            LeaveBalanceLog::create([
                 'employee_id' => $leaveRequest->employee_id,
-                'leave_request_id' => $leaveRequest->id,
                 'leave_type_id' => $leaveRequest->leave_type_id,
-                'leave_type_code' => $leaveTypeCode,
-                'days_deducted' => $daysDeducted,
-                'balance_before' => $leaveBalance->balance + $daysDeducted,
-                'balance_after' => $leaveBalance->balance,
-                'total_used_before' => $leaveBalance->total_used - $daysDeducted,
-                'total_used_after' => $leaveBalance->total_used,
-                'total_earned' => $leaveBalance->total_earned,
-                'year' => $leaveBalance->year,
-                'remarks' => "Auto deducted after Admin approval of leave request ID #{$leaveRequest->id}",
-                'timestamp' => now()
-            ];
+                'leave_request_id' => $leaveRequest->id,
+                'year' => now()->year,
+                'transaction_type' => 'deduction',
+                'amount' => -$daysDeducted, // Negative for deduction
+                'balance_before' => $balanceBefore,
+                'balance_after' => $balanceAfter,
+                'remarks' => "Leave request #{$leaveRequest->id} - {$leaveRequest->leaveType->name} - Approved by HR",
+                'reference_type' => 'leave_request',
+                'reference_id' => $leaveRequest->id,
+                'created_by' => auth()->id(), // HR user who approved
+            ]);
 
-            Log::info("✅ Balance log created: " . json_encode($logData));
+            Log::info("✅ New balance log created successfully for leave request #{$leaveRequest->id}");
             
         } catch (\Exception $e) {
-            Log::error('❌ Failed to create balance log: ' . $e->getMessage());
+            Log::error('❌ Failed to create new balance log: ' . $e->getMessage());
             // Don't throw exception here as the main transaction already succeeded
         }
     }
 
     /**
-     * Optional: Method to get current balance for a specific employee and leave type
+     * Get current balance for a specific employee and leave type
      */
     public function getCurrentBalance($employeeId, $leaveTypeId, $year = null)
     {

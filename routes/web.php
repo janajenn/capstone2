@@ -12,6 +12,8 @@ use App\Http\Controllers\DeptHead\DeptHeadController;
 use App\Http\Controllers\HR\AttendanceImportController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Employee\AttendanceCorrectionController;
+use App\Http\Controllers\WelcomeController;
+use App\Http\Controllers\ThemeController;
 
 
 
@@ -38,23 +40,31 @@ Route::get('/debug-routes-check', function() {
 
 
 
-Route::get('/', function () {
-    return Inertia::render('WelcomePage', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-});
+// Route::get('/', function () {
+//     return Inertia::render('WelcomePage', [
+//         'canLogin' => Route::has('login'),
+//         'canRegister' => Route::has('register'),
+//         'laravelVersion' => Application::VERSION,
+//         'phpVersion' => PHP_VERSION,
+//     ]);
+// });
+
+Route::get('/', [WelcomeController::class, 'index']);
 
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-Route::middleware('auth')->group(function () {
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+// Theme management routes (add this after the welcome route)
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::resource('themes', ThemeController::class)->except(['show']);
+    Route::post('/themes/{theme}/activate', [ThemeController::class, 'activate'])->name('themes.activate');
+    Route::post('/themes/{theme}/deactivate', [ThemeController::class, 'deactivate'])->name('themes.deactivate');
+});
+
+Route::middleware(['auth', 'verified', 'employee.status'])->group(function () {
+    // View-only Profile Route
+    Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'show'])->name('profile.show');
 });
 
 // Apply employee.status middleware to ALL auth routes
@@ -339,8 +349,6 @@ Route::get('/debug/leave-deduction/{id}', [HRController::class, 'debugLeaveDeduc
 
     Route::middleware(['role:dept_head'])->group(function () {
         Route::get('/dept-head/dashboard', [DeptHeadController::class, 'dashboard'])->name('dept_head.dashboard');
-        Route::post('/dept-head/leave-requests/{id}/approve', [DeptHeadController::class, 'approve'])->name('dept_head.approve');
-        Route::post('/dept-head/leave-requests/{id}/reject', [DeptHeadController::class, 'reject'])->name('dept_head.reject');
         Route::get('/dept-head/updated-requests', [DeptHeadController::class, 'getUpdatedRequests']) ;
         Route::get('/dept-head/employees', [DeptHeadController::class, 'employees'])->name('dept_head.employees');
         Route::delete('/dept-head/employees/{employee}/remove', [DeptHeadController::class, 'removeFromDepartment'])->name('dept_head.employees.remove');
@@ -375,6 +383,10 @@ Route::get('/dept-head/credit-conversions/{id}', [DeptHeadController::class, 'sh
 Route::post('/dept-head/credit-conversions/{id}/approve', [DeptHeadController::class, 'approveCreditConversion'])->name('dept_head.credit-conversions.approve');
 Route::post('/dept-head/credit-conversions/{id}/reject', [DeptHeadController::class, 'rejectCreditConversion'])->name('dept_head.credit-conversions.reject');
 Route::get('/dept-head/credit-conversions-stats', [DeptHeadController::class, 'getCreditConversionStats'])->name('dept_head.credit-conversions.stats');
+// Inside the dept_head middleware group
+Route::get('/employees/{employee}/leave-credits', 
+    [DeptHeadController::class, 'showEmployeeLeaveCredits']
+)->name('dept_head.employees.leave-credits');
 
 // Attendance Correction Routes for Department Head
 Route::get('/dept-head/attendance-corrections', [DeptHeadController::class, 'attendanceCorrections'])->name('dept_head.attendance-corrections');
@@ -505,6 +517,11 @@ Route::get('/employee/credits-log', [EmployeeController::class, 'creditsLog'])->
             ]);
         })->name('employee.debug-attendance');
     });
+    
 });
 
+
+
+
 require __DIR__.'/auth.php';    
+

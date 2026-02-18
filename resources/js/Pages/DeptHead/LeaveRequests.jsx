@@ -95,17 +95,13 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
         if (!rejectRemarks.trim()) {
             await Swal.fire({
                 title: 'Remarks Required',
-                text: 'Please provide rejection remarks.',
+                text: 'Please provide a reason for rejection.',
                 icon: 'warning',
                 confirmButtonColor: '#f59e0b',
-                background: '#ffffff',
-                customClass: {
-                    popup: 'rounded-2xl shadow-2xl border border-gray-200'
-                }
             });
             return;
         }
-
+    
         const result = await Swal.fire({
             title: 'Reject Leave Request?',
             text: 'Are you sure you want to reject this leave request?',
@@ -114,43 +110,52 @@ export default function LeaveRequests({ leaveRequests, departmentName, filters, 
             confirmButtonText: 'Yes, Reject!',
             cancelButtonText: 'Cancel',
             confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#6b7280',
-            background: '#ffffff',
-            customClass: {
-                popup: 'rounded-2xl shadow-2xl border border-gray-200',
-                confirmButton: 'px-6 py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300',
-                cancelButton: 'px-6 py-2 rounded-xl font-medium hover:shadow-lg transition-all duration-300'
-            }
         });
-
+    
         if (result.isConfirmed) {
-            post(route('dept_head.leave-requests.reject', id), {
+            router.post(route('dept_head.leave-requests.reject', id), {
                 remarks: rejectRemarks,
-                onSuccess: () => {
+                onSuccess: (page) => {
                     setRejectingId(null);
                     setRejectRemarks('');
-                    Swal.fire({
-                        title: 'Rejected!',
-                        text: 'The leave request has been rejected successfully.',
-                        icon: 'success',
-                        confirmButtonColor: '#10b981',
-                        background: '#ffffff',
-                        customClass: {
-                            popup: 'rounded-2xl shadow-2xl border border-gray-200'
-                        }
-                    });
+                    // Check for error flash (if you ever manually return a redirect with error)
+                    if (page.props.flash?.error) {
+                        Swal.fire({
+                            title: 'Error!',
+                            text: page.props.flash.error,
+                            icon: 'error',
+                            confirmButtonColor: '#ef4444',
+                        });
+                    } else {
+                        Swal.fire({
+                            title: 'Rejected!',
+                            text: 'The leave request has been rejected successfully.',
+                            icon: 'success',
+                            confirmButtonColor: '#10b981',
+                        });
+                    }
+                    setRejectingId(null);
+                    setRejectRemarks('');
                 },
-                onError: () => {
+                onError: (errors) => {
+                    console.error('Rejection error:', errors);
+                    
+                    // Extract validation error for 'remarks' if present
+                    const remarksError = errors?.remarks?.[0];
+                    // Fallback to a generic message or the first error key
+                    const errorMessage = remarksError || 
+                                        errors?.error || 
+                                        Object.values(errors)[0]?.[0] || 
+                                        'There was a problem rejecting the request.';
+                    
                     Swal.fire({
                         title: 'Error!',
-                        text: 'There was a problem rejecting the request.',
+                        text: errorMessage,
                         icon: 'error',
                         confirmButtonColor: '#ef4444',
-                        background: '#ffffff',
-                        customClass: {
-                            popup: 'rounded-2xl shadow-2xl border border-gray-200'
-                        }
                     });
+                    setRejectingId(null);
+                    setRejectRemarks('');
                 }
             });
         }

@@ -29,6 +29,13 @@ use App\Models\Holiday;
 use App\Models\LeaveRescheduleRequest;
 use App\Services\LeaveDonationService; // Add this import
 use App\Models\LeaveDonation; // Add this import
+use App\Models\LeaveBalanceLog;
+use App\Models\LeaveBalance;
+use App\Services\LeaveRecordingService;
+use App\Models\EmployeeMonthlyRecording;
+
+
+
 
 class HRController extends Controller
 {
@@ -38,6 +45,7 @@ class HRController extends Controller
     protected $creditConversionService;
     protected $notificationService;
     protected $leaveDonationService; // Add this property
+    protected $leaveRecordingService;
     
 
     // ADD THIS CONSTRUCTOR
@@ -45,12 +53,14 @@ class HRController extends Controller
     public function __construct(
         CreditConversionService $creditConversionService, 
         NotificationService $notificationService,
-        LeaveDonationService $leaveDonationService // Add this parameter
+        LeaveDonationService $leaveDonationService, // Add this parameter
+        LeaveRecordingService $leaveRecordingService
     )
     {
         $this->creditConversionService = $creditConversionService;
         $this->notificationService = $notificationService;
         $this->leaveDonationService = $leaveDonationService; // Add this assignment
+        $this->leaveRecordingService = $leaveRecordingService;
     }
 
     //EMPLOYEE MANAGEMENT
@@ -355,7 +365,7 @@ public function editEmployee(Employee $employee)
             'status' => 'nullable|in:active,inactive',
             'contact_number' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',
-            'civil_status' => 'nullable|in:single,married,widowed,divorced',
+            'civil_status' => 'nullable|in:single_solo_parent,single_non_solo_parent,married_solo_parent,married_non_solo_parent,divorced_solo_parent,divorced_non_solo_parent,widowed_solo_parent,widowed_non_solo_parent',
             'biometric_id' => [
                 'nullable',
                 'integer',
@@ -522,7 +532,12 @@ public function update(Request $request, $employee_id)
                     ? 'Manual credit addition by HR - Vacation Leave increased from ' . $originalVl . ' to ' . $request->vl_balance
                     : 'Manual credit deduction by HR - Vacation Leave decreased from ' . $originalVl . ' to ' . $request->vl_balance,
             ]);
+
         }
+        DB::commit();
+
+        // 🔥 Regenerate monthly recordings for the current year
+        $this->leaveRecordingService->generateForEmployeeYear($employee_id, now()->year);
 
         return redirect()->back()->with('success', 'Leave credits updated successfully.');
 
@@ -1230,6 +1245,32 @@ public function dashboard(Request $request)
     });
 
 
+    // Monthly leave type statistics (for stacked bar chart)
+$monthlyLeaveTypeQuery = LeaveRequest::selectRaw(
+    'YEAR(created_at) as year, MONTH(created_at) as month, leave_type_id, COUNT(*) as count'
+)
+->whereYear('created_at', $year);
+
+if ($month) {
+$monthlyLeaveTypeQuery->whereMonth('created_at', $month);
+}
+
+$monthlyLeaveTypeStats = $monthlyLeaveTypeQuery
+->groupBy('year', 'month', 'leave_type_id')
+->orderBy('year')
+->orderBy('month')
+->get()
+->map(function ($item) {
+    // Retrieve leave type name (you could also join in the query)
+    $leaveType = LeaveType::find($item->leave_type_id);
+    return [
+        'month' => date('M Y', mktime(0, 0, 0, $item->month, 1, $item->year)),
+        'leave_type' => $leaveType ? $leaveType->name : 'Unknown',
+        'count' => $item->count,
+    ];
+});
+
+
     return Inertia::render('HR/Dashboard', [
         'pendingCount' => $pendingCount,
         'recentRequests' => $recentRequests,
@@ -1245,7 +1286,8 @@ public function dashboard(Request $request)
         'currentYear' => $year,
         'currentMonth' => $month,
         'filters' => $request->only(['year', 'month']),
-        'leaveReportsData' => $leaveReportsData // Make sure this is included
+        'leaveReportsData' => $leaveReportsData, // Make sure this is included
+        'monthlyLeaveTypeStats' => $monthlyLeaveTypeStats,
     ]);
 }
 
@@ -1550,10 +1592,14 @@ public function approveLeaveRequest(Request $request, $id)
             'approved_at' => now(),
         ]);
 
+        
+
         // Update status correctly based on employee type
         if ($isDeptHeadRequest || $isAdminRequest) {
+            // Dept Head or Admin applicant → go directly to Admin
             $leaveRequest->update(['status' => 'pending_admin']);
         } else {
+            // Regular employee/HR → go to Dept Head
             $leaveRequest->update(['status' => 'pending_dept_head']);
         }
 
@@ -1571,7 +1617,6 @@ public function approveLeaveRequest(Request $request, $id)
         return back()->withErrors(['error' => 'Failed to approve leave request: ' . $e->getMessage()]);
     }
 }
-
 
 private function handleHRNotificationsManually($leaveRequest, $remarks)
 {
@@ -2648,29 +2693,46 @@ public function leaveRecordings(Request $request)
 public function showEmployeeRecordings($employeeId, Request $request)
 {
     $year = $request->year ?? now()->year;
-    
-    $employee = Employee::with(['department'])->findOrFail($employeeId);
-    $recordings = $this->getEmployeeLeaveRecordings($employeeId, $year);
-    
-    // Add leave credit logs for the year
-    $leaveCreditLogs = \App\Models\LeaveCreditLog::where('employee_id', $employeeId)
+    $employee = Employee::with('department')->findOrFail($employeeId);
+
+    \Log::info("Fetching recordings for employee {$employeeId}, year {$year}");
+
+    $recordings = EmployeeMonthlyRecording::where('employee_id', $employeeId)
         ->where('year', $year)
-        ->get()
-        ->toArray();
+        ->orderBy('month')
+        ->get();
+
+    \Log::info("Found " . $recordings->count() . " recordings");
+
+    if ($recordings->isEmpty()) {
+        \Log::info("No recordings found, generating...");
+        $this->leaveRecordingService->generateForEmployeeYear($employeeId, $year);
+        $recordings = EmployeeMonthlyRecording::where('employee_id', $employeeId)
+            ->where('year', $year)
+            ->orderBy('month')
+            ->get();
+        \Log::info("After generation: " . $recordings->count() . " recordings");
+    }
+
+    // Add computed date_month
+    $recordings = $recordings->map(function ($rec) {
+        $rec->date_month = Carbon::create($rec->year, $rec->month, 1)->format('F Y');
+        return $rec;
+    });
+
 
     return Inertia::render('HR/EmployeeRecordings', [
         'employee' => [
             'employee_id' => $employee->employee_id,
-            'firstname' => $employee->firstname,
-            'lastname' => $employee->lastname,
-            'department' => $employee->department->name,
-            'position' => $employee->position,
-            'date_hired' => $employee->date_hired, // Make sure this is included
+            'firstname'   => $employee->firstname,
+            'lastname'    => $employee->lastname,
+            'department'  => $employee->department->name,
+            'position'    => $employee->position,
+            'date_hired'  => $employee->date_hired,
         ],
         'recordings' => $recordings,
-        'leaveCreditLogs' => $leaveCreditLogs,
-        'year' => $year,
-        'years' => $this->getAvailableYears(),
+        'year'       => $year,
+        'years'      => $this->getAvailableYears(),
     ]);
 }
 
@@ -2682,27 +2744,7 @@ public function showEmployeeRecordings($employeeId, Request $request)
 /**
  * Calculate the imported balance for a leave type
  */
-private function calculateImportedBalance($employeeId, $type, $importedAt)
-{
-    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
 
-    $currentBalance = ($type === 'VL') ? $leaveCredit->vl_balance : $leaveCredit->sl_balance;
-
-    $start = $importedAt->startOfMonth();
-
-    $end = Carbon::now()->startOfMonth();
-
-    $totalMonths = $start->diffInMonths($end) + 1;
-
-    $totalEarned = $totalMonths * 1.25;
-
-    $totalDed = LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', $type)
-        ->where('date', '>=', $start)
-        ->sum('points_deducted');
-
-    return $currentBalance - $totalEarned + $totalDed;
-}
 
 /**
  * Get monthly used leaves from logs
@@ -2714,283 +2756,28 @@ private function calculateImportedBalance($employeeId, $type, $importedAt)
  * 
  * Get monthly used leaves from logs (INCLUDING all deductions)
  */
-private function getMonthlyUsed($employeeId, $type, $year, $month)
-{
-    return LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', $type)
-        ->where('year', $year)
-        ->where('month', $month)
-        ->where('points_deducted', '>', 0) // Only positive deductions
-        ->sum('points_deducted');
-}
 
 /**
  * Get leave earned for the month
  */
-private function getLeaveEarned($employeeId, $type, $year, $month)
-{
-    // Calculate earned leave from leave_credit_logs
-    // Look for entries with "Daily earned leave credit" in remarks
-    $earnedLogs = LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', $type)
-        ->where('year', $year)
-        ->where('month', $month)
-        ->where('remarks', 'like', '%Daily earned leave credit%')
-        ->get();
-    
-    // Calculate total earned by summing the difference between balance_after and balance_before
-    $totalEarned = 0;
-    
-    foreach ($earnedLogs as $log) {
-        $earnedAmount = $log->balance_after - $log->balance_before;
-        $totalEarned += $earnedAmount;
-    }
-    
-    return $totalEarned;
-}
 
 
-private function getLeaveUsageFromLogs($employeeId, $type, $year, $month)
-{
-    // Get used leave from logs (positive points_deducted that are NOT earned credits)
-    $usedLogs = LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', $type)
-        ->where('year', $year)
-        ->where('month', $month)
-        ->where('points_deducted', '>', 0)
-        ->where('remarks', 'not like', '%Daily earned leave credit%')
-        ->get();
-    
-    return $usedLogs->sum('points_deducted');
-}
 
-private function getEmployeeLeaveRecordings($employeeId, $year)
-{
-    $recordings = [];
-    
-    $leaveCredit = LeaveCredit::where('employee_id', $employeeId)->first();
-    $currentDate = Carbon::now();
 
-    if (!$leaveCredit || !$leaveCredit->imported_at) {
-        $importedAt = Carbon::create($year, 1, 1);
-    } else {
-        $importedAt = Carbon::parse($leaveCredit->imported_at);
-    }
 
-    $importedYear = $importedAt->year;
-    $importedMonth = $importedAt->month;
-
-    $previous_vl = null;
-    $previous_sl = null;
-    
-    // Log start of calculation
-    \Log::info("=== START LEAVE RECORDING CALCULATION ===");
-    \Log::info("Employee ID: {$employeeId}, Year: {$year}");
-    \Log::info("Current VL Balance: " . ($leaveCredit->vl_balance ?? 0));
-    \Log::info("Current SL Balance: " . ($leaveCredit->sl_balance ?? 0));
-    \Log::info("Imported At: " . ($leaveCredit->imported_at ?? 'Not set'));
-    
-    for ($month = 1; $month <= 12; $month++) {
-        $monthStart = Carbon::create($year, $month, 1);
-        $monthEnd = $monthStart->copy()->endOfMonth();
-        
-        $isManual = $year < $importedYear || ($year === $importedYear && $month < $importedMonth);
-        $isFuture = $monthStart->gt($currentDate->endOfMonth());
-        
-        $remarks = $this->getRemarks($employeeId, $year, $month);
-        
-        $earned = null;
-        $vl_balance = null;
-        $sl_balance = null;
-        $vl_used = 0;
-        $sl_used = 0;
-        $lates = 0; // Initialize lates here
-        
-        if ($isManual) {
-            $remarks = 'Imported data';
-        } elseif ($isFuture) {
-            $remarks = 'Future month';
-            $earned = null;
-        } else {
-            $earned = $this->getLeaveEarned($employeeId, 'VL', $year, $month);
-            
-            if ($previous_vl === null) {
-                $previous_vl = $this->calculateImportedBalance($employeeId, 'VL', $importedAt);
-                $previous_sl = $this->calculateImportedBalance($employeeId, 'SL', $importedAt);
-            }
-            
-            // Get usage values
-            $vl_used = $this->getMonthlyUsed($employeeId, 'VL', $year, $month);
-            $sl_used = $this->getMonthlyUsed($employeeId, 'SL', $year, $month);
-            $lates = $this->getLateDeductions($employeeId, $year, $month);
-            $vl_used_regular = $this->getRegularMonthlyUsed($employeeId, 'VL', $year, $month);
-            
-            // Log detailed calculation for this month
-            \Log::info("--- Month {$month} ({$this->formatMonthYear($month, $year)}) ---");
-            \Log::info("Earned: " . ($earned ?? 'null'));
-            \Log::info("VL Used (all): {$vl_used}");
-            \Log::info("VL Used (regular): {$vl_used_regular}");
-            \Log::info("SL Used: {$sl_used}");
-            \Log::info("Lates: {$lates}");
-            \Log::info("Previous VL: {$previous_vl}");
-            \Log::info("Previous SL: {$previous_sl}");
-            
-            // Only calculate balances if earned is not null
-            if ($earned !== null) {
-                $vl_balance = round($previous_vl + $earned - $vl_used, 3);
-                $sl_balance = round($previous_sl + $earned - $sl_used, 3);
-                
-                \Log::info("New VL Balance: {$vl_balance}");
-                \Log::info("New SL Balance: {$sl_balance}");
-                
-                $previous_vl = $vl_balance;
-                $previous_sl = $sl_balance;
-            } else {
-                $vl_balance = $previous_vl;
-                $sl_balance = $previous_sl;
-                \Log::info("No credits added - keeping previous balances");
-            }
-        }
-        
-        // Get inclusive dates and log them
-        $inclusiveDates = $this->getInclusiveDates($employeeId, $year, $month);
-        $workingDaysFromLeaves = $this->calculateWorkingDaysFromInclusiveDates($inclusiveDates);
-        
-        \Log::info("Inclusive Dates Count: " . $inclusiveDates->count());
-        \Log::info("Working Days from Leaves: {$workingDaysFromLeaves}");
-        foreach ($inclusiveDates as $date) {
-            \Log::info("  - {$date['from']} to {$date['to']} ({$date['type']}) - Status: {$date['status']}");
-        }
-        
-        // Get credit logs for this month and log them
-        $creditLogs = LeaveCreditLog::where('employee_id', $employeeId)
-            ->where('year', $year)
-            ->where('month', $month)
-            ->get();
-            
-        \Log::info("Credit Logs Count: " . $creditLogs->count());
-        foreach ($creditLogs as $log) {
-            $isLate = stripos($log->remarks ?? '', 'late') !== false;
-            \Log::info("  - {$log->type}: {$log->points_deducted} points - '{$log->remarks}' - Late: " . ($isLate ? 'YES' : 'NO'));
-        }
-        
-        $recordings[] = [
-            'month' => $month,
-            'year' => $year,
-            'date_month' => $this->formatMonthYear($month, $year),
-            'inclusive_dates' => $inclusiveDates,
-            'total_lates' => round($lates, 3), // Now $lates is always defined
-            'vl_earned' => $earned,
-            'vl_used' => round($vl_used, 3),
-            'vl_balance' => $vl_balance,
-            'sl_earned' => $earned,
-            'sl_used' => round($sl_used, 3),
-            'sl_balance' => $sl_balance,
-            'remarks' => $remarks,
-            'total_vl_sl' => ($vl_balance !== null && $sl_balance !== null) ? round($vl_balance + $sl_balance, 3) : null,
-        ];
-    }
-    
-    \Log::info("=== END LEAVE RECORDING CALCULATION ===");
-    
-    return $recordings;
-}
 
 /**
  * Calculate working days from inclusive dates
  */
-private function calculateWorkingDaysFromInclusiveDates($inclusiveDates)
-{
-    $totalWorkingDays = 0;
-    
-    foreach ($inclusiveDates as $dateRange) {
-        try {
-            $start = new \DateTime($dateRange['from']);
-            $end = new \DateTime($dateRange['to']);
-            
-            for ($date = clone $start; $date <= $end; $date->modify('+1 day')) {
-                $dayOfWeek = $date->format('N');
-                if ($dayOfWeek < 6) { // Monday to Friday
-                    $totalWorkingDays++;
-                }
-            }
-        } catch (\Exception $e) {
-            \Log::warning("Error calculating working days for date range: {$dateRange['from']} to {$dateRange['to']}");
-        }
-    }
-    
-    return $totalWorkingDays;
-}
 
 /**
  * Get regular monthly used leaves (EXCLUDING late deductions)
  */
-private function getRegularMonthlyUsed($employeeId, $type, $year, $month)
-{
-    return LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', $type)
-        ->where('year', $year)
-        ->where('month', $month)
-        ->where('points_deducted', '>', 0)
-        ->where(function($query) {
-            $query->whereNull('remarks')
-                  ->orWhere('remarks', 'not like', '%Late%')
-                  ->orWhere('remarks', 'not like', '%late%')
-                  ->orWhere('remarks', 'not like', '%LATE%');
-        })
-        ->sum('points_deducted');
-}
-
-/**
- * Trigger debug logging for a specific employee and year
- */
-public function triggerDebugLog(Request $request)
-{
-    $employeeId = $request->input('employee_id', 26);
-    $year = $request->input('year', 2025);
-    
-    try {
-        \Log::info("=== MANUAL DEBUG TRIGGERED ===");
-        \Log::info("Parameters - Employee: {$employeeId}, Year: {$year}");
-        
-        // This will trigger all the logging in getEmployeeLeaveRecordings
-        $recordings = $this->getEmployeeLeaveRecordings($employeeId, $year);
-        
-        \Log::info("=== MANUAL DEBUG COMPLETED ===");
-        
-        return response()->json([
-            'message' => 'Debug logging completed for employee ' . $employeeId . ', year ' . $year,
-            'check_laravel_log' => true,
-            'log_file' => storage_path('logs/laravel.log')
-        ]);
-        
-    } catch (\Exception $e) {
-        \Log::error("Debug trigger failed: " . $e->getMessage());
-        return response()->json(['error' => $e->getMessage()], 500);
-    }
-}
 
 
 
-/**
- * Get late deductions from leave credit logs
- */
-private function getLateDeductions($employeeId, $year, $month)
-{
-    // Get late deductions (VL deductions with "late" in remarks)
-    $lateLogs = LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('type', 'VL')
-        ->where('year', $year)
-        ->where('month', $month)
-        ->where('points_deducted', '>', 0)
-        ->where(function($query) {
-            $query->where('remarks', 'like', '%late%')
-                  ->orWhere('remarks', 'like', '%Late%');
-        })
-        ->get();
-    
-    return $lateLogs->sum('points_deducted');
-}
+
+
 /**
  * Get inclusive dates from leave requests (SL and VL only)
  */
@@ -3003,72 +2790,18 @@ private function getLateDeductions($employeeId, $year, $month)
 /**
  * Get inclusive dates from leave requests (SL and VL only) - ONLY admin approved leaves
  */
-private function getInclusiveDates($employeeId, $year, $month)
-{
-    $startDate = "{$year}-{$month}-01";
-    $endDate = date('Y-m-t', strtotime($startDate));
-    
-    $leaveRequests = LeaveRequest::where('employee_id', $employeeId)
-        ->where('status', 'approved') // ONLY fully approved leaves
-        ->whereHas('approvals', function($query) {
-            $query->where('role', 'admin')->where('status', 'approved');
-        })
-        ->whereHas('leaveType', function($query) {
-            $query->whereIn('code', ['VL', 'SL']);
-        })
-        ->where(function ($query) use ($startDate, $endDate) {
-            $query->whereBetween('date_from', [$startDate, $endDate])
-                  ->orWhereBetween('date_to', [$startDate, $endDate])
-                  ->orWhere(function ($q) use ($startDate, $endDate) {
-                      $q->where('date_from', '<=', $startDate)
-                        ->where('date_to', '>=', $endDate);
-                  });
-        })
-        ->with(['leaveType', 'approvals'])
-        ->get();
-    
-    return $leaveRequests->map(function ($request) {
-        return [
-            'from' => $request->date_from,
-            'to' => $request->date_to,
-            'type' => $request->leaveType->name ?? 'Leave',
-            'code' => $request->leaveType->code ?? '',
-            'status' => $request->status,
-            'approvals' => $request->approvals->map(function($approval) {
-                return [
-                    'role' => $approval->role,
-                    'status' => $approval->status,
-                ];
-            })
-        ];
-    });
-}
+
 /**
  * Get total lates from attendance logs
  */
 /**
  * Get total late deductions from leave_credit_logs for VL type with "Late" remarks
  */
-private function getTotalLates($employeeId, $year, $month)
-{
-    return $this->getLateDeductions($employeeId, $year, $month);
-}
 
 /**
  * Get remarks for the month from the latest log entry
  */
-private function getRemarks($employeeId, $year, $month)
-{
-    // Get the latest log entry for any leave type in this month
-    $log = \App\Models\LeaveCreditLog::where('employee_id', $employeeId)
-        ->where('year', $year)
-        ->where('month', $month)
-        ->orderBy('date', 'desc')
-        ->orderBy('created_at', 'desc')
-        ->first();
-    
-    return $log->remarks ?? '';
-}
+
 
 /**
  * Update remarks for a specific recording
@@ -3076,40 +2809,28 @@ private function getRemarks($employeeId, $year, $month)
 public function updateRemarks(Request $request, $id)
 {
     $request->validate([
-        'remarks' => 'nullable|string|max:500',
-        'employee_id' => 'required|exists:employees,employee_id',
-        'year' => 'required|integer',
-        'month' => 'required|integer|between:1,12',
+        'remarks'      => 'nullable|string|max:500',
+        'employee_id'  => 'required|exists:employees,employee_id',
+        'year'         => 'required|integer',
+        'month'        => 'required|integer|between:1,12',
     ]);
 
-    try {
-        // Find or create leave credit log for the specified month
-        $log = \App\Models\LeaveCreditLog::where('employee_id', $request->employee_id)
-            ->where('year', $request->year)
-            ->where('month', $request->month)
-            ->first();
+    $recording = EmployeeMonthlyRecording::updateOrCreate(
+        [
+            'employee_id' => $request->employee_id,
+            'year'        => $request->year,
+            'month'       => $request->month,
+        ],
+        [
+            'remarks'        => $request->remarks,
+            'total_lates'    => 0,
+            'vl_used'        => 0,
+            'sl_used'        => 0,
+            'inclusive_dates'=> [],
+        ]
+    );
 
-        if ($log) {
-            $log->update(['remarks' => $request->remarks]);
-        } else {
-            // Create a new log entry if none exists
-            \App\Models\LeaveCreditLog::create([
-                'employee_id' => $request->employee_id,
-                'year' => $request->year,
-                'month' => $request->month,
-                'remarks' => $request->remarks,
-                'type' => 'REMARKS', // Special type for remarks-only entries
-                'points_deducted' => 0,
-                'balance_before' => 0,
-                'balance_after' => 0,
-                'date' => now(),
-            ]);
-        }
-
-        return response()->json(['success' => true, 'message' => 'Remarks updated successfully.']);
-    } catch (\Exception $e) {
-        return response()->json(['success' => false, 'message' => 'Failed to update remarks: ' . $e->getMessage()], 500);
-    }
+    return response()->json(['success' => true, 'message' => 'Remarks updated successfully.']);
 }
 
 /**
@@ -3120,10 +2841,7 @@ public function updateRemarks(Request $request, $id)
 /**
  * Format month and year for display
  */
-private function formatMonthYear($month, $year)
-{
-    return date('F Y', strtotime("{$year}-{$month}-01"));
-}
+
 
 
 /**
@@ -3852,40 +3570,209 @@ public function getEmployeeLeaveHistories($employeeId)
 
 
 
-// Add these methods to your HRController
 public function leaveDonations(Request $request)
 {
     $perPage = 10;
-    
-    $donations = $this->leaveDonationService->getAllDonationRequests([
-        'status' => $request->status ?? 'all',
-        'search' => $request->search ?? ''
+
+    // ------------------------------------------------------------
+    // 1. Base query with eager loading (donor, recipient, hrApprover)
+    // ------------------------------------------------------------
+    $query = LeaveDonation::with([
+        'donor' => function ($q) {
+            $q->with(['department', 'user'])
+              ->select('employee_id', 'firstname', 'lastname', 'position', 'department_id');
+        },
+        'recipient' => function ($q) {
+            $q->with(['department', 'user'])
+              ->select('employee_id', 'firstname', 'lastname', 'position', 'department_id');
+        },
+        'hrApprover' => function ($q) {
+            $q->select('id', 'name', 'email');
+        }
     ]);
 
+    // ------------------------------------------------------------
+    // 2. Status filter (skip if 'all')
+    // ------------------------------------------------------------
+    if ($request->filled('status') && $request->status !== 'all') {
+        $query->where('status', $request->status);
+    }
+
+    // ------------------------------------------------------------
+    // 3. Search filter (donor/recipient name or employee ID)
+    // ------------------------------------------------------------
+    if ($request->filled('search')) {
+        $search = $request->search;
+        $query->where(function ($q) use ($search) {
+            $q->whereHas('donor', function ($donorQuery) use ($search) {
+                $donorQuery->where('firstname', 'like', "%{$search}%")
+                           ->orWhere('lastname', 'like', "%{$search}%")
+                           ->orWhere('employee_id', 'like', "%{$search}%");
+            })->orWhereHas('recipient', function ($recipientQuery) use ($search) {
+                $recipientQuery->where('firstname', 'like', "%{$search}%")
+                               ->orWhere('lastname', 'like', "%{$search}%")
+                               ->orWhere('employee_id', 'like', "%{$search}%");
+            });
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 4. Order by most recent
+    // ------------------------------------------------------------
+    $query->orderBy('created_at', 'desc');
+
+    // ------------------------------------------------------------
+    // 5. Paginate and transform each donation
+    // ------------------------------------------------------------
+    $donations = $query->paginate($perPage)->through(function ($donation) {
+        // ----- Donor data -----
+        $donorData = $donation->donor ? [
+            'employee_id'    => $donation->donor->employee_id,
+            'firstname'      => $donation->donor->firstname,
+            'lastname'       => $donation->donor->lastname,
+            'position'       => $donation->donor->position,
+            'department'     => $donation->donor->department ? [
+                'id'   => $donation->donor->department->id,
+                'name' => $donation->donor->department->name,
+            ] : null,
+            'email'          => $donation->donor->user->email ?? null,
+            'contact_number' => $donation->donor->user->contact_number ?? null,
+        ] : null;
+
+        // ----- Recipient data -----
+        $recipientData = $donation->recipient ? [
+            'employee_id'    => $donation->recipient->employee_id,
+            'firstname'      => $donation->recipient->firstname,
+            'lastname'       => $donation->recipient->lastname,
+            'position'       => $donation->recipient->position,
+            'department'     => $donation->recipient->department ? [
+                'id'   => $donation->recipient->department->id,
+                'name' => $donation->recipient->department->name,
+            ] : null,
+            'email'          => $donation->recipient->user->email ?? null,
+            'contact_number' => $donation->recipient->user->contact_number ?? null,
+        ] : null;
+
+        // ----- Current balance for pending requests (live) -----
+        $donorCurrentBalance = null;
+        if ($donation->donor && $donation->status !== 'completed') {
+            $donorCurrentBalance = LeaveBalance::currentYear()
+                ->forEmployee($donation->donor->employee_id)
+                ->forLeaveType($this->getMaternityLeaveTypeId())
+                ->value('balance') ?? 0;
+        }
+
+        return [
+            'id'                     => $donation->id,
+            'donor'                  => $donorData,
+            'recipient'              => $recipientData,
+            'days_donated'           => $donation->days_donated,
+            // ✅ Snapshot values – permanently frozen at approval time
+            'donor_balance_before'   => $donation->donor_balance_before,
+            'donor_balance_after'    => $donation->donor_balance_after,
+            // ✅ Live balance (for pending requests only)
+            'donor_current_balance'  => $donorCurrentBalance,
+            'status'                => $donation->status,
+            'status_display'        => $this->getDonationStatusDisplay($donation->status),
+            'hr_remarks'           => $donation->hr_remarks,
+            'donor_remarks'        => $donation->remarks,
+            'recipient_remarks'    => $donation->recipient_remarks,
+            'created_at'           => $donation->created_at,
+            'approved_at'          => $donation->hr_approved_at,
+            'rejected_at'          => $donation->rejected_at,
+            'cancelled_at'         => $donation->cancelled_at,
+            'approved_by_hr'       => $donation->hrApprover ? [
+                'id'   => $donation->hrApprover->id,
+                'name' => $donation->hrApprover->name,
+            ] : null,
+        ];
+    });
+
+    // ------------------------------------------------------------
+    // 6. Stats for the dashboard cards
+    // ------------------------------------------------------------
     $stats = [
-        'pending' => LeaveDonation::where('status', 'pending_hr')->count(),
-        'approved' => LeaveDonation::where('status', 'completed')->count(),
+        'pending'   => LeaveDonation::where('status', 'pending_hr')->count(),
+        'approved'  => LeaveDonation::where('status', 'completed')->count(),
         'cancelled' => LeaveDonation::where('status', 'cancelled')->count(),
-        'total' => LeaveDonation::count()
+        'total'     => LeaveDonation::count(),
     ];
 
+    // ------------------------------------------------------------
+    // 7. Inertia render – pass data to React/Vue
+    // ------------------------------------------------------------
     return Inertia::render('HR/LeaveDonations', [
         'donations' => $donations,
-        'stats' => $stats,
-        'filters' => $request->only(['status', 'search']),
+        'stats'     => $stats,
+        'filters'   => $request->only(['status', 'search']),
     ]);
 }
 
-public function pendingLeaveDonations()
+// -----------------------------------------------------------------
+// Helper: Get the leave_type_id for "Maternity Leave"
+// -----------------------------------------------------------------
+private function getMaternityLeaveTypeId()
 {
-    $pendingDonations = $this->leaveDonationService->getPendingHrApprovals();
-    
-    return response()->json([
-        'pending_count' => $pendingDonations->count(),
-        'donations' => $pendingDonations
-    ]);
+    // Cache the ID to avoid repeated queries on the same request
+    static $maternityId = null;
+    if ($maternityId === null) {
+        $maternityId = LeaveType::where('name', 'Maternity Leave')->value('id');
+    }
+    return $maternityId;
 }
 
+/**
+ * Get donor balance before donation
+ */
+private function getDonorBalanceBeforeDonation($donation)
+{
+    if (!$donation->donor || !$donation->donor->employee_id) {
+        return 0;
+    }
+    
+    // Get the donor's leave credit record
+    $leaveCredit = LeaveCredit::where('employee_id', $donation->donor->employee_id)->first();
+    
+    if (!$leaveCredit) {
+        return 0;
+    }
+    
+    // Return VL balance for maternity leave donation
+    return $leaveCredit->vl_balance ?? 0;
+}
+
+/**
+ * Calculate donor balance after donation
+ */
+private function calculateDonorBalanceAfter($donation, $balanceBefore)
+{
+    if ($donation->status === 'completed') {
+        // For completed donations, calculate balance after
+        return max(0, $balanceBefore - $donation->days_donated);
+    }
+    
+    // For pending or rejected donations, return null
+    return null;
+}
+
+/**
+ * Get donation status display text
+ */
+private function getDonationStatusDisplay($status)
+{
+    $statuses = [
+        'pending_recipient' => 'Pending Recipient Acceptance',
+        'pending_hr' => 'Pending HR Approval',
+        'completed' => 'Approved & Completed',
+        'cancelled' => 'Rejected/Cancelled'
+    ];
+    
+    return $statuses[$status] ?? $status;
+}
+
+/**
+ * Approve leave donation request
+ */
 public function approveLeaveDonation(Request $request, $id)
 {
     $request->validate([
@@ -3893,19 +3780,85 @@ public function approveLeaveDonation(Request $request, $id)
     ]);
 
     try {
-        $result = $this->leaveDonationService->approveDonation(
-            $id,
-            $request->user()->id,
-            $request->hr_remarks
-        );
+        $donation = LeaveDonation::with(['donor', 'recipient'])->findOrFail($id);
 
-        return redirect()->route('hr.leave-donations')->with('success', $result['message']);
+        if (!$donation->donor || !$donation->recipient) {
+            throw new \Exception('Donor or recipient information not found');
+        }
+
+        // Get leave type IDs
+        $maternityId = $this->getMaternityLeaveTypeId();
+        $paternityId = $this->getPaternityLeaveTypeId();
+
+        \DB::transaction(function () use ($donation, $request, $maternityId, $paternityId) {
+            // 1️⃣ Donor: deduct from maternity balance
+            $donorBalance = LeaveBalance::currentYear()
+                ->forEmployee($donation->donor->employee_id)
+                ->forLeaveType($maternityId)
+                ->first();
+
+            if (!$donorBalance) {
+                throw new \Exception('Donor has no maternity leave balance record for the current year');
+            }
+
+            $balanceBefore = $donorBalance->balance;
+
+            if ($balanceBefore < $donation->days_donated) {
+                throw new \Exception('Donor does not have enough maternity leave balance');
+            }
+
+            // Deduct
+            $donorBalance->total_used += $donation->days_donated;
+            $donorBalance->balance   -= $donation->days_donated;
+            $donorBalance->save();
+
+            $balanceAfter = $balanceBefore - $donation->days_donated;
+
+            // 2️⃣ Recipient: add to paternity or maternity leave
+            $recipientLeaveTypeId = $donation->recipient->gender === 'male' ? $paternityId : $maternityId;
+
+            $recipientBalance = LeaveBalance::currentYear()
+                ->forEmployee($donation->recipient->employee_id)
+                ->forLeaveType($recipientLeaveTypeId)
+                ->first();
+
+            if (!$recipientBalance) {
+                // Create a new record if none exists
+                $recipientBalance = LeaveBalance::create([
+                    'employee_id'   => $donation->recipient->employee_id,
+                    'leave_type_id' => $recipientLeaveTypeId,
+                    'year'          => now()->year,
+                    'total_earned'  => $donation->days_donated,
+                    'total_used'    => 0,
+                    'balance'       => $donation->days_donated,
+                ]);
+            } else {
+                $recipientBalance->total_earned += $donation->days_donated;
+                $recipientBalance->balance      += $donation->days_donated;
+                $recipientBalance->save();
+            }
+
+            // 3️⃣ Update donation record with snapshot and status
+            $donation->update([
+                'status'               => 'completed',
+                'hr_approved_by'       => $request->user()->id,
+                'hr_approved_at'       => now(),
+                'hr_remarks'           => $request->hr_remarks,
+                'donor_balance_before' => $balanceBefore,
+                'donor_balance_after'  => $balanceAfter,
+            ]);
+        });
+
+        return redirect()->route('hr.leave-donations')->with('success', 'Donation approved successfully.');
 
     } catch (\Exception $e) {
-        return back()->withErrors(['error' => $e->getMessage()]);
+        \Log::error('Error approving leave donation: ' . $e->getMessage());
+        return back()->withErrors(['error' => 'Failed to approve donation: ' . $e->getMessage()]);
     }
 }
-
+/**
+ * Reject leave donation request
+ */
 public function rejectLeaveDonation(Request $request, $id)
 {
     $request->validate([
@@ -3913,16 +3866,40 @@ public function rejectLeaveDonation(Request $request, $id)
     ]);
 
     try {
+        // Get donation details first
+        $donation = LeaveDonation::with(['donor'])->findOrFail($id);
+        
+        if (!$donation->donor) {
+            throw new \Exception('Donor information not found');
+        }
+        
+        // Get donor's current balance (for reference only)
+        $leaveCredit = LeaveCredit::where('employee_id', $donation->donor->employee_id)->first();
+        $donorBalance = $leaveCredit ? $leaveCredit->vl_balance : 0;
+
         $result = $this->leaveDonationService->rejectDonation(
             $id,
             $request->user()->id,
             $request->hr_remarks
         );
 
-        return redirect()->route('hr.leave-donations')->with('success', $result['message']);
+        $message = $result['message'] . " Donor's current VL balance remains at {$donorBalance} days.";
+
+        return redirect()->route('hr.leave-donations')->with('success', $message);
 
     } catch (\Exception $e) {
-        return back()->withErrors(['error' => $e->getMessage()]);
+        \Log::error('Error rejecting leave donation: ' . $e->getMessage());
+        return back()->withErrors(['error' => 'Failed to reject donation: ' . $e->getMessage()]);
     }
+}
+
+
+private function getPaternityLeaveTypeId()
+{
+    static $paternityId = null;
+    if ($paternityId === null) {
+        $paternityId = LeaveType::where('name', 'Paternity Leave')->value('id');
+    }
+    return $paternityId;
 }
 }

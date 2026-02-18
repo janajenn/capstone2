@@ -99,6 +99,9 @@ export default function HRNotificationDropdown() {
             }
         }
     };
+
+
+    
     const markAsRead = async (notificationId) => {
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -261,9 +264,9 @@ export default function HRNotificationDropdown() {
 
             {/* Audio element for notification sound */}
             <audio ref={audioRef} preload="auto">
-                <source src="/sounds/mixkit-bell-notification-933.wav" type="audio/wav" />
-                Your browser does not support the audio element.
-            </audio>
+    <source src="/sounds/mixkit-bell-notification-933.wav" type="audio/wav" />
+    Your browser does not support the audio element.
+</audio>
 
             {isOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">

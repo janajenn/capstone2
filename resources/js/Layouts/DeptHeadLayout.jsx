@@ -17,7 +17,8 @@ import {
     CalendarIcon,
     CurrencyDollarIcon,
     BuildingOfficeIcon,
-    ClipboardDocumentListIcon
+    ClipboardDocumentListIcon,
+    UserCircleIcon // Added for profile icon
 } from '@heroicons/react/24/outline';
 
 export default function DeptHeadLayout({ children }) {
@@ -65,8 +66,8 @@ export default function DeptHeadLayout({ children }) {
         { href: '/dept-head/leave-requests', label: 'Leave Approvals', icon: DocumentTextIcon },
         { href: '/dept-head/employees', label: 'Team Management', icon: UserGroupIcon },
         { href: '/dept-head/leave-calendar', label: 'Leave Calendar', icon: CalendarIcon },
-        { href: '/dept-head/credit-conversions', label: 'Credit Conversion', icon: CurrencyDollarIcon }, // Add this line
-        { href: '/dept-head/attendance-corrections', label: 'Attendance Corrections', icon: ClipboardDocumentListIcon }, // Add this line
+        { href: '/dept-head/credit-conversions', label: 'Credit Conversion', icon: CurrencyDollarIcon },
+        { href: '/dept-head/attendance-corrections', label: 'Attendance Corrections', icon: ClipboardDocumentListIcon },
     ];
 
     const employeeNavigation = [
@@ -249,7 +250,7 @@ export default function DeptHeadLayout({ children }) {
             <div className={`flex-1 flex flex-col min-h-screen transition-all duration-500 ${
                 collapsed ? 'ml-16' : 'ml-64'
             }`}>
-                {/* Enhanced Header with Logout */}
+                {/* Enhanced Header with User Profile Icon */}
                 <header className="bg-white/80 backdrop-blur-xl border-b border-white/20 shadow-lg z-10 sticky top-0">
                     <div className="flex items-center justify-between px-6 py-3">
                         <div>
@@ -260,12 +261,53 @@ export default function DeptHeadLayout({ children }) {
                                 {getDeptHeadPageSubtitle(url, props.auth.user.name)}
                             </p>
                         </div>
-                        <div className="flex items-center space-x-3">
+                        
+                        <div className="flex items-center space-x-4">
+                            {/* Dept Head Notification Dropdown */}
                             <DeptHeadNotificationDropdown />
                             
-                            {/* User Info and Logout in Header */}
-                            <div className="flex items-center space-x-3">
-                                {/* Logout Button in Header */}
+                            {/* User Profile Section */}
+                            <div className="flex items-center space-x-4">
+                                {/* Mode Indicator */}
+                                {/* <span className={`px-3 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r ${
+                                    mode === "dept_head" 
+                                        ? 'from-yellow-500 to-amber-600 text-white' 
+                                        : 'from-cyan-500 to-blue-600 text-white'
+                                } shadow-lg backdrop-blur-sm`}>
+                                    {mode === "dept_head" ? "👑 Dept Head" : "💼 Employee"}
+                                </span> */}
+                                
+                                {/* User Profile Icon with Dropdown */}
+                                <div className="relative group">
+                                    <button
+                                       onClick={() => router.get(`/profile?mode=${mode}`)} // Redirect to Profile page
+                                        className="flex items-center justify-center p-2 rounded-full bg-gradient-to-br from-yellow-100 to-amber-100 hover:from-yellow-200 hover:to-amber-200 transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg border border-yellow-200/50 hover:border-yellow-300"
+                                        title="View Profile"
+                                        aria-label="User Profile"
+                                    >
+                                        {/* User Icon from Heroicons */}
+                                        <div className="relative">
+                                            <div className="w-8 h-8 flex items-center justify-center">
+                                                {/* UserCircleIcon for profile */}
+                                                <UserCircleIcon className="w-7 h-7 text-yellow-600 group-hover:text-yellow-700 transition-colors duration-300" />
+                                            </div>
+                                            {/* Active Status Indicator */}
+                                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-gradient-to-r from-emerald-400 to-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                                        </div>
+                                    </button>
+                                    
+                                    {/* Profile Tooltip */}
+                                    <div className="absolute right-0 top-full mt-2 px-3 py-2 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10 pointer-events-none">
+                                        <div className="flex flex-col items-center">
+                                            <span className="font-semibold">My Profile</span>
+                                            <span className="text-gray-300 text-xs mt-0.5">Click to view profile</span>
+                                        </div>
+                                        {/* Tooltip arrow */}
+                                        <div className="absolute -top-1 right-3 border-4 border-transparent border-b-gray-900/95"></div>
+                                    </div>
+                                </div>
+                                
+                                {/* Logout Button */}
                                 <button
                                     onClick={handleLogout}
                                     className="group relative flex items-center p-2 rounded-xl bg-gradient-to-r from-rose-100 to-red-100/50 hover:from-rose-200 hover:to-red-200 backdrop-blur-sm border border-rose-200/50 hover:border-rose-300 hover:shadow-lg transition-all duration-300"
@@ -281,20 +323,12 @@ export default function DeptHeadLayout({ children }) {
                                     </div>
 
                                     {/* Tooltip */}
-                                    <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 px-2 py-1.5 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10">
+                                    <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 px-2 py-1.5 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10 pointer-events-none">
                                         Logout
-                                        <div className="absolute left-1/2 -top-1 transform -translate-x-1/2 border-3 border-transparent border-b-gray-900/95"></div>
+                                        <div className="absolute left-1/2 -top-1 transform -translate-x-1/2 border-4 border-transparent border-b-gray-900/95"></div>
                                     </div>
                                 </button>
                             </div>
-
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r ${
-                                mode === "dept_head" 
-                                    ? 'from-yellow-500 to-amber-600 text-white' 
-                                    : 'from-cyan-500 to-blue-600 text-white'
-                            } shadow-lg backdrop-blur-sm`}>
-                                {mode === "dept_head" ? "👑 Dept Head" : "💼 Employee"}
-                            </span>
                         </div>
                     </div>
                 </header>
@@ -323,8 +357,8 @@ function getDeptHeadPageTitle(url) {
         '/dept-head/leave-requests': 'Leave Approvals',
         '/dept-head/employees': 'Team Management',
         '/dept-head/leave-calendar': 'Leave Calendar',
-        '/dept-head/credit-conversions': 'Credit Conversion Approvals', // Add this line
-        '/dept-head/attendance-corrections': 'Attendance Correction Requests', // Add this line
+        '/dept-head/credit-conversions': 'Credit Conversion Approvals',
+        '/dept-head/attendance-corrections': 'Attendance Correction Requests',
         '/employee/dashboard': 'My Dashboard',
         '/employee/my-leave-requests': 'My Leave Requests',
         '/employee/leave-calendar': 'Leave Calendar',
@@ -345,7 +379,7 @@ function getDeptHeadPageSubtitle(url, userName) {
     } else if (url.startsWith('/dept-head/leave-requests')) {
         return 'Review and approve leave requests from your team';
     } else if (url.startsWith('/dept-head/attendance-corrections')) {
-        return 'Review and validate attendance correction requests from your team members'; // Add this line
+        return 'Review and validate attendance correction requests from your team members';
     } else if (url.startsWith('/dept-head/employees')) {
         return 'Manage team members and department structure';
     } else if (url.startsWith('/dept-head/leave-calendar')) {

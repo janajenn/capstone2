@@ -58,7 +58,7 @@ class LeaveTypeObserver
             'total_earned' => $leaveType->default_days ?? 0,
             'balance'      => \DB::raw("GREATEST(0, {$leaveType->default_days} - total_used)")
         ]);
-}
+}   
     /**
      * Handle the LeaveType "deleted" event.
      */

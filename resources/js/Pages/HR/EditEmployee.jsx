@@ -22,7 +22,7 @@ const EmployeeAvatar = ({ gender, name, className = "w-16 h-16" }) => {
             {getInitials(name)}
         </div>
     );
-};
+};  
 
 // Password input with show/hide toggle
 const PasswordInput = ({ value, onChange, placeholder, error }) => {
@@ -298,16 +298,29 @@ export default function EditEmployee() {
                                             Civil Status *
                                         </label>
                                         <select
-                                            value={data.civil_status}
-                                            onChange={(e) => setData('civil_status', e.target.value)}
-                                            className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
-                                            required
-                                        >
-                                            <option value="single">Single</option>
-                                            <option value="married">Married</option>
-                                            <option value="widowed">Widowed</option>
-                                            <option value="divorced">Divorced</option>
-                                        </select>
+    value={data.civil_status}
+    onChange={(e) => setData('civil_status', e.target.value)}
+    className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none transition bg-white/50 backdrop-blur-sm"
+    required
+>
+    <option value="">Select Civil Status</option>
+    <optgroup label="Single">
+        <option value="single_solo_parent">Single - Solo Parent</option>
+        <option value="single_non_solo_parent">Single - Non Solo Parent</option>
+    </optgroup>
+    <optgroup label="Married">
+        <option value="married_solo_parent">Married - Solo Parent</option>
+        <option value="married_non_solo_parent">Married - Non Solo Parent</option>
+    </optgroup>
+    <optgroup label="Widowed">
+        <option value="widowed_solo_parent">Widowed - Solo Parent</option>
+        <option value="widowed_non_solo_parent">Widowed - Non Solo Parent</option>
+    </optgroup>
+    <optgroup label="Divorced">
+        <option value="divorced_solo_parent">Divorced - Solo Parent</option>
+        <option value="divorced_non_solo_parent">Divorced - Non Solo Parent</option>
+    </optgroup>
+</select>
                                         {errors.civil_status && <p className="text-red-500 text-xs mt-1">{errors.civil_status}</p>}
                                     </div>
                                 </div>

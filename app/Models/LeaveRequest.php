@@ -59,6 +59,11 @@ class LeaveRequest extends Model
         return $this->hasMany(LeaveRecall::class, 'leave_request_id');
     }
 
+    public function balanceLogs()
+    {
+        return $this->hasMany(LeaveBalanceLog::class, 'leave_request_id');
+    }
+
 
 // app/Models/LeaveRequest.php - Add these methods
 

@@ -716,52 +716,49 @@ const duration = leave.total_days || Math.ceil((endDate - startDate) / (1000 * 6
                                     </div>
                                 </div>
 
-{/* Selected Dates - Only show the actual selected dates in boxes */}
-<div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
-    <label className="block text-sm font-semibold text-gray-700 mb-3">
-        Selected Dates ({selectedLeave.total_days} day{selectedLeave.total_days !== 1 ? 's' : ''})
-    </label>
-    
-    {selectedLeave.selected_dates && selectedLeave.selected_dates.length > 0 ? (
-        <div className="space-y-3">
-            {/* Show ONLY the selected dates in boxes */}
-            <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
-                {selectedLeave.selected_dates.map((date, index) => (
-                    <div 
-                        key={index}
-                        className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-3 text-center"
-                    >
-                        <div className="text-sm text-blue-600 font-semibold">
-                            {new Date(date).toLocaleDateString('en-US', { 
-                                weekday: 'short'
-                            })}
-                        </div>
-                        <div className="text-xs text-blue-800 mt-1">
-                            {new Date(date).toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric',
-                                year: 'numeric'
-                            })}
-                        </div>
-                    </div>
-                ))}
-            </div>
-            
-            {/* Only show total count */}
-            <div className="text-center text-xs text-gray-600 pt-2 border-t border-gray-200">
-                {selectedLeave.selected_dates.length} date{selectedLeave.selected_dates.length !== 1 ? 's' : ''} selected
-            </div>
-        </div>
-    ) : (
-        /* When no selected dates exist, show a simple message */
-        <div className="text-center text-gray-500 py-4">
-            <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p className="text-sm">Date range: {new Date(selectedLeave.date_from).toLocaleDateString()} - {new Date(selectedLeave.date_to).toLocaleDateString()}</p>
-        </div>
-    )}
-</div>
+                                {/* Selected Dates */}
+                                <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                        Selected Dates ({selectedLeave.total_days} day{selectedLeave.total_days !== 1 ? 's' : ''})
+                                    </label>
+                                    
+                                    {selectedLeave.selected_dates && selectedLeave.selected_dates.length > 0 ? (
+                                        <div className="space-y-3">
+                                            <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                                                {selectedLeave.selected_dates.map((date, index) => (
+                                                    <div 
+                                                        key={index}
+                                                        className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-3 text-center"
+                                                    >
+                                                        <div className="text-sm text-blue-600 font-semibold">
+                                                            {new Date(date).toLocaleDateString('en-US', { 
+                                                                weekday: 'short'
+                                                            })}
+                                                        </div>
+                                                        <div className="text-xs text-blue-800 mt-1">
+                                                            {new Date(date).toLocaleDateString('en-US', { 
+                                                                month: 'short', 
+                                                                day: 'numeric',
+                                                                year: 'numeric'
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            
+                                            <div className="text-center text-xs text-gray-600 pt-2 border-t border-gray-200">
+                                                {selectedLeave.selected_dates.length} date{selectedLeave.selected_dates.length !== 1 ? 's' : ''} selected
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center text-gray-500 py-4">
+                                            <svg className="w-8 h-8 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            <p className="text-sm">Date range: {new Date(selectedLeave.date_from).toLocaleDateString()} - {new Date(selectedLeave.date_to).toLocaleDateString()}</p>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Duration */}
                                 <div className="bg-white/50 p-4 rounded-xl border border-gray-200/50">
@@ -793,12 +790,21 @@ const duration = leave.total_days || Math.ceil((endDate - startDate) / (1000 * 6
                         {/* Right Column - Balance Information & Details */}
                         <div className="overflow-y-auto p-6">
                             <div className="space-y-6">
-                                {/* Leave Balance Information */}
-                                {selectedLeave.status === 'approved' && (
+                                {/* Balance Information */}
+                                {selectedLeave.status === 'approved' && selectedLeave.balance_before !== 'N/A' && selectedLeave.balance_after !== 'N/A' && (
                                     <div>
                                         <h4 className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-green-700 bg-clip-text text-transparent mb-4">
                                             Leave Balance Information
                                         </h4>
+                                        
+                                        {/* Show Source Information */}
+                                        {selectedLeave.has_balance_logs && (
+                                            <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                                <p className="text-xs text-blue-700">
+                                                    💾 Balance information retrieved from transaction logs
+                                                </p>
+                                            </div>
+                                        )}
                                         
                                         {['SL', 'VL'].includes(selectedLeave.leave_type?.code) ? (
                                             // For SL and VL - Show Leave Credits
@@ -808,16 +814,26 @@ const duration = leave.total_days || Math.ceil((endDate - startDate) / (1000 * 6
                                                     <div className="bg-white/80 p-3 rounded-xl border border-blue-200">
                                                         <div className="font-semibold text-blue-800 text-xs mb-1">Before</div>
                                                         <div className="text-xl font-bold text-blue-600">{selectedLeave.balance_before}</div>
+                                                        <div className="text-xs text-blue-600 mt-1">credits</div>
                                                     </div>
                                                     <div className="bg-white/80 p-3 rounded-xl border border-red-200">
                                                         <div className="font-semibold text-red-800 text-xs mb-1">Deducted</div>
                                                         <div className="text-xl font-bold text-red-600">-{selectedLeave.days_with_pay}</div>
+                                                        <div className="text-xs text-red-600 mt-1">credits</div>
                                                     </div>
                                                     <div className="bg-white/80 p-3 rounded-xl border border-green-200">
                                                         <div className="font-semibold text-green-800 text-xs mb-1">After</div>
                                                         <div className="text-xl font-bold text-green-600">{selectedLeave.balance_after}</div>
+                                                        <div className="text-xs text-green-600 mt-1">credits</div>
                                                     </div>
                                                 </div>
+                                                {selectedLeave.days_without_pay > 0 && (
+                                                    <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                                        <p className="text-sm text-yellow-800">
+                                                            ⚠️ {selectedLeave.days_without_pay} day(s) without pay due to insufficient credits
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
                                         ) : (
                                             // For other leave types - Show Leave Balance
@@ -827,18 +843,60 @@ const duration = leave.total_days || Math.ceil((endDate - startDate) / (1000 * 6
                                                     <div className="bg-white/80 p-3 rounded-xl border border-green-200">
                                                         <div className="font-semibold text-green-800 text-xs mb-1">Before</div>
                                                         <div className="text-xl font-bold text-green-600">{selectedLeave.balance_before}</div>
+                                                        <div className="text-xs text-green-600 mt-1">days</div>
                                                     </div>
                                                     <div className="bg-white/80 p-3 rounded-xl border border-red-200">
                                                         <div className="font-semibold text-red-800 text-xs mb-1">Used</div>
                                                         <div className="text-xl font-bold text-red-600">-{selectedLeave.days_with_pay}</div>
+                                                        <div className="text-xs text-red-600 mt-1">days</div>
                                                     </div>
                                                     <div className="bg-white/80 p-3 rounded-xl border border-blue-200">
                                                         <div className="font-semibold text-blue-800 text-xs mb-1">After</div>
                                                         <div className="text-xl font-bold text-blue-600">{selectedLeave.balance_after}</div>
+                                                        <div className="text-xs text-blue-600 mt-1">days</div>
                                                     </div>
                                                 </div>
                                             </div>
                                         )}
+                                        
+                                        {/* Show Transaction Logs if available */}
+                                        {selectedLeave.balance_logs && selectedLeave.balance_logs.length > 0 && (
+                                            <div className="mt-4">
+                                                <h5 className="font-semibold text-gray-700 mb-2 text-sm">Transaction Details:</h5>
+                                                <div className="space-y-2 max-h-32 overflow-y-auto">
+                                                    {selectedLeave.balance_logs.map((log, index) => (
+                                                        <div key={log.id} className="text-xs bg-gray-50 p-2 rounded border border-gray-200">
+                                                            <div className="flex justify-between">
+                                                                <span className="font-medium">{log.transaction_type}</span>
+                                                                <span className={log.amount < 0 ? 'text-red-600' : 'text-green-600'}>
+                                                                    {log.amount > 0 ? '+' : ''}{log.amount}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-gray-600 mt-1">{log.remarks}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* For non-approved leaves or leaves without balance info */}
+                                {selectedLeave.status !== 'approved' && (
+                                    <div className="bg-gradient-to-r from-gray-50 to-gray-100/30 p-6 rounded-xl border border-gray-200">
+                                        <h5 className="font-bold text-gray-900 mb-4 text-lg">Balance Information</h5>
+                                        <p className="text-gray-600 text-center">
+                                            Balance information will be available after the leave request is fully approved.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {selectedLeave.status === 'approved' && (selectedLeave.balance_before === 'N/A' || selectedLeave.balance_after === 'N/A') && (
+                                    <div className="bg-gradient-to-r from-yellow-50 to-yellow-100/30 p-6 rounded-xl border border-yellow-200">
+                                        <h5 className="font-bold text-yellow-900 mb-4 text-lg">Balance Information</h5>
+                                        <p className="text-yellow-700 text-center">
+                                            Balance information is not available for this leave request.
+                                        </p>
                                     </div>
                                 )}
 
@@ -910,7 +968,6 @@ const duration = leave.total_days || Math.ceil((endDate - startDate) / (1000 * 6
         </motion.div>
     </div>
 )}
-
 
             {/* Apply Reschedule Modal - Landscape Style */}
 {/* Apply Reschedule Modal - Landscape Style */}

@@ -75,6 +75,7 @@ export default function HRLayout({ children }) {
         { href: '/hr/leave-recordings', label: 'Leave Recordings', icon: ClipboardDocumentListIcon },
         { href: '/hr/leave-donations', label: 'Leave Donations', icon: HeartIcon }, // Added Leave Donations
         { href: '/hr/attendance/logs', label: 'Attendance Logs', icon: ChartBarIcon },
+        { href: '/themes', label: 'Theme Management', icon: Cog6ToothIcon }, // Add this line
     ];
 
     const employeeNavigation = [
@@ -257,57 +258,117 @@ export default function HRLayout({ children }) {
             <div className={`flex-1 flex flex-col min-h-screen transition-all duration-500 ${
                 collapsed ? 'ml-16' : 'ml-64'
             }`}>
-                {/* Enhanced Header with Logout */}
-                <header className="bg-white/80 backdrop-blur-xl border-b border-white/20 shadow-lg z-10 sticky top-0">
-                    <div className="flex items-center justify-between px-6 py-3">
-                        <div>
-                            <h2 className="text-xl font-bold bg-gradient-to-r from-gray-800 to-indigo-800 bg-clip-text text-transparent">
-                                {getHRPageTitle(url)}
-                            </h2>
-                            <p className="text-sm text-gray-600 mt-0.5">
-                                {getHRPageSubtitle(url, props.auth.user.name)}
-                            </p>
-                        </div>
-                        <div className="flex items-center space-x-3">
-                            <HRNotificationDropdown />
-                            
-                            {/* User Info and Logout in Header */}
-                            <div className="flex items-center space-x-3">
-                                
-                                {/* Logout Button in Header */}
-                                <button
-                                    onClick={handleLogout}
-                                    className="group relative flex items-center p-2 rounded-xl bg-gradient-to-r from-rose-100 to-red-100/50 hover:from-rose-200 hover:to-red-200 backdrop-blur-sm border border-rose-200/50 hover:border-rose-300 hover:shadow-lg transition-all duration-300"
-                                    title="Logout"
-                                >
-                                    {/* Animated background */}
-                                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500 to-red-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl"></div>
-                                    
-                                    <div className="relative z-10 flex items-center">
-                                        <div className="p-1.5 rounded-lg bg-white/80 group-hover:bg-white/20 transition-all duration-300">
-                                            <ArrowRightOnRectangleIcon className="h-4 w-4 text-rose-600 group-hover:text-white transition-colors" />
-                                        </div>
-                                    </div>
+               
 
-                                    {/* Tooltip */}
-                                    <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 px-2 py-1.5 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10">
-                                        Logout
-                                        <div className="absolute left-1/2 -top-1 transform -translate-x-1/2 border-3 border-transparent border-b-gray-900/95"></div>
-                                    </div>
-                                </button>
-                            </div>
-
-                            <span className={`px-3 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r ${
-                                mode === "hr" 
-                                    ? 'from-indigo-500 to-purple-600 text-white' 
-                                    : 'from-cyan-500 to-blue-600 text-white'
-                            } shadow-lg backdrop-blur-sm`}>
-                                {mode === "hr" ? "👔 HR" : "💼 Employee"}
-                            </span>
+{/* Enhanced Header with User Profile Icon */}
+<header className="bg-white/80 backdrop-blur-xl border-b border-white/20 shadow-lg z-10 sticky top-0">
+    <div className="flex items-center justify-between px-6 py-3">
+        <div>
+            <h2 className="text-xl font-bold bg-gradient-to-r from-gray-800 to-indigo-800 bg-clip-text text-transparent">
+                {getHRPageTitle(url)}
+            </h2>
+            <p className="text-sm text-gray-600 mt-0.5">
+                {getHRPageSubtitle(url, props.auth.user.name)}
+            </p>
+        </div>
+        
+        <div className="flex items-center space-x-4">
+            {/* HR Notification Dropdown */}
+            <HRNotificationDropdown />
+            
+            {/* User Profile Section */}
+            <div className="flex items-center space-x-4">
+                {/* Mode Indicator
+                <span className={`px-3 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r ${
+                    mode === "hr" 
+                        ? 'from-indigo-500 to-purple-600' 
+                        : 'from-cyan-500 to-blue-600'
+                } text-white shadow-lg backdrop-blur-sm`}>
+                    {mode === "hr" ? "👔 HR" : "💼 Employee"}
+                </span>
+                 */}
+               <div className="relative group">
+    <button
+        onClick={() => router.get(`/profile?mode=${mode}`)}// Redirect to Profile page
+        className="flex items-center justify-center p-2 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 hover:from-indigo-200 hover:to-purple-200 transition-all duration-300 group-hover:scale-105 group-hover:shadow-lg border border-indigo-200/50 hover:border-indigo-300"
+        title="View Profile"
+        aria-label="User Profile"
+    >
+        {/* User Icon from Heroicons */}
+        <div className="relative">
+            <div className="w-8 h-8 flex items-center justify-center">
+                {/* You can use any of these user icons */}
+                {/* Option 1: Simple User Icon
+                <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    viewBox="0 0 24 24" 
+                    fill="currentColor" 
+                    className="w-6 h-6 text-indigo-600 group-hover:text-indigo-700 transition-colors duration-300"
+                >
+                    <path 
+                        fillRule="evenodd" 
+                        d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" 
+                        clipRule="evenodd" 
+                    />
+                </svg> */}
+                
+               
+                {
+                <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    viewBox="0 0 24 24" 
+                    fill="currentColor" 
+                    className="w-7 h-7 text-indigo-600 group-hover:text-indigo-700 transition-colors duration-300"
+                >
+                    <path 
+                        fillRule="evenodd" 
+                        d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" 
+                        clipRule="evenodd" 
+                    />
+                </svg>
+                }
+            </div>
+            {/* Active Status Indicator */}
+            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-gradient-to-r from-emerald-400 to-green-500 rounded-full border-2 border-white shadow-sm"></div>
+        </div>
+    </button>
+    
+    {/* Profile Tooltip */}
+    <div className="absolute right-0 top-full mt-2 px-3 py-2 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10 pointer-events-none">
+        <div className="flex flex-col items-center">
+            <span className="font-semibold">My Profile</span>
+            <span className="text-gray-300 text-xs mt-0.5">Click to view profile</span>
+        </div>
+        {/* Tooltip arrow */}
+        <div className="absolute -top-1 right-3 border-4 border-transparent border-b-gray-900/95"></div>
+    </div>
+</div>
+                
+                {/* Logout Button */}
+                <button
+                    onClick={handleLogout}
+                    className="group relative flex items-center p-2 rounded-xl bg-gradient-to-r from-rose-100 to-red-100/50 hover:from-rose-200 hover:to-red-200 backdrop-blur-sm border border-rose-200/50 hover:border-rose-300 hover:shadow-lg transition-all duration-300"
+                    title="Logout"
+                >
+                    {/* Animated background */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-rose-500 to-red-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl"></div>
+                    
+                    <div className="relative z-10 flex items-center">
+                        <div className="p-1.5 rounded-lg bg-white/80 group-hover:bg-white/20 transition-all duration-300">
+                            <ArrowRightOnRectangleIcon className="h-4 w-4 text-rose-600 group-hover:text-white transition-colors" />
                         </div>
                     </div>
-                </header>
-                
+
+                    {/* Tooltip */}
+                    <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2 px-2 py-1.5 bg-gray-900/95 backdrop-blur-sm text-white rounded-lg text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-xl z-50 border border-white/10 pointer-events-none">
+                        Logout
+                        <div className="absolute left-1/2 -top-1 transform -translate-x-1/2 border-4 border-transparent border-b-gray-900/95"></div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+</header>
                 {/* Page Content */}
                 <main className="flex-1 overflow-auto">
                     <PageTransition animation="fade-slide-up" duration={400} delay={100} className="p-6">

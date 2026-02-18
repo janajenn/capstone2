@@ -276,6 +276,8 @@ const processedComparisonData = comparisonData.map(entry => {
         filtered_differences_count: filteredDifferences.length
     };
 });
+
+
     // Filter for records that have data to show
     const recordsWithData = processedComparisonData.filter(entry => 
         entry.has_processed || entry.has_raw || entry.status === 'mismatch'

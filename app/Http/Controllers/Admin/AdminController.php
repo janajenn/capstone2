@@ -22,6 +22,7 @@ use App\Models\Employee;
 use App\Models\Department;  
 use App\Models\CreditConversion;
 use App\Services\CreditConversionService;
+use App\Models\LeaveBalanceLog;
 
 
 class AdminController extends Controller

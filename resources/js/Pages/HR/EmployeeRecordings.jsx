@@ -8,21 +8,22 @@ const EmployeeRecordings = () => {
     const [editingRemarks, setEditingRemarks] = useState(null);
     const [remarksValue, setRemarksValue] = useState('');
 
-    // Helper function to safely format numbers
+    console.log('First recording inclusive_dates:', recordings[0]?.inclusive_dates);
+
+    // Helper functions remain unchanged
     const safeToFixed = (value, decimals = 3) => {
         if (value === null || value === undefined || value === '–') return '–';
         const num = typeof value === 'string' ? parseFloat(value) : Number(value);
         return Number.isNaN(num) ? '–' : num.toFixed(decimals);
     };
 
-    // Helper function to safely convert to number for comparisons
     const safeNumber = (value) => {
         if (value === null || value === undefined || value === '–') return 0;
         const num = typeof value === 'string' ? parseFloat(value) : Number(value);
         return Number.isNaN(num) ? 0 : num;
     };
 
-    // Parse date range to individual days (for display only)
+    // Parse date range to individual days – used only for display
     const parseDateRangeToDays = (fromDate, toDate) => {
         try {
             const start = new Date(fromDate);
@@ -106,14 +107,14 @@ const EmployeeRecordings = () => {
 
     const getStatusBadge = (status) => {
         const statusColors = {
-            'approved': 'bg-green-100 text-green-800 border-green-200',
-            'pending': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-            'rejected': 'bg-red-100 text-red-800 border-red-200',
-            'default': 'bg-gray-100 text-gray-800 border-gray-200'
+            'approved': 'bg-green-100 text-green-800',
+            'pending': 'bg-yellow-100 text-yellow-800',
+            'rejected': 'bg-red-100 text-red-800',
+            'default': 'bg-gray-100 text-gray-800'
         };
         
         const colorClass = statusColors[status?.toLowerCase()] || statusColors.default;
-        return `inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${colorClass}`;
+        return `inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colorClass}`;
     };
 
     return (
@@ -121,8 +122,8 @@ const EmployeeRecordings = () => {
             <Head title={`Leave Recordings - ${employee.firstname} ${employee.lastname}`} />
 
             <div className="py-6">
-                <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    {/* Header */}
+                <div className="max-w-full mx-auto sm:px-4 lg:px-6">
+                    {/* Header with back button, employee info, and year filter */}
                     <div className="bg-white overflow-hidden shadow-lg sm:rounded-lg mb-6 border border-gray-200">
                         <div className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
                             <div className="flex items-center justify-between">
@@ -186,42 +187,39 @@ const EmployeeRecordings = () => {
                     {/* Recordings Table */}
                     <div className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
                         <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                {/* Table header and body remain exactly as before */}
                                 <thead className="bg-gray-50">
                                     <tr>
-                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                                        <th rowSpan={2} className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
                                             Month
                                         </th>
-                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                                        <th rowSpan={2} className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
                                             Leave Dates
                                         </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                                        <th rowSpan={2} className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
                                             Lates
                                         </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                            VL Earned
+                                        <th colSpan={3} className="px-4 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 bg-blue-50">
+                                            Vacation Leave
                                         </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                            VL Used
+                                        <th colSpan={3} className="px-4 py-2 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 bg-green-50">
+                                            Sick Leave
                                         </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                            VL Balance
-                                        </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                            SL Earned
-                                        </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                            SL Used
-                                        </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                                            SL Balance
-                                        </th>
-                                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                                        <th rowSpan={2} className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
                                             Total
                                         </th>
-                                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                                        <th rowSpan={2} className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                                             Remarks
                                         </th>
+                                    </tr>
+                                    <tr>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 border-r border-gray-200">Earned</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 border-r border-gray-200">Used</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 border-r border-gray-200">Balance</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 border-r border-gray-200">Earned</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 border-r border-gray-200">Used</th>
+                                        <th className="px-2 py-2 text-center text-xs font-medium text-gray-600 border-r border-gray-200">Balance</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
@@ -232,116 +230,73 @@ const EmployeeRecordings = () => {
                                                 index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
                                             }`}
                                         >
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200">
-                                                <div className="font-semibold">{recording.date_month}</div>
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                    Backend Data
-                                                </div>
+                                            <td className="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-900 border-r border-gray-200">
+                                                {recording.date_month}
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-900 max-w-xs border-r border-gray-200">
+                                            <td className="px-4 py-3 text-xs text-gray-900 border-r border-gray-200 max-w-xs">
                                                 {recording.inclusive_dates && recording.inclusive_dates.length > 0 ? (
-                                                    <div className="space-y-2">
+                                                    <div className="space-y-1">
                                                         {recording.inclusive_dates.map((date, idx) => {
                                                             const dayNumbers = parseDateRangeToDays(date.from, date.to);
                                                             const statusBadge = getStatusBadge(date.status);
                                                             return (
-                                                                <div key={idx} className="p-2 bg-blue-50 rounded-lg border border-blue-100">
-                                                                    <div className="flex items-center justify-between mb-1">
-                                                                        <span className="text-xs font-medium text-blue-800">
-                                                                            {dayNumbers.length > 0 ? (
-                                                                                <span className="font-semibold">
-                                                                                    {dayNumbers.join(', ')}
-                                                                                </span>
-                                                                            ) : (
-                                                                                <span className="text-red-400">Invalid date range</span>
-                                                                            )}
-                                                                        </span>
-                                                                        <span className={statusBadge}>
-                                                                            {date.status || 'Pending'}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="text-xs text-gray-600 flex items-center">
-                                                                        <span className="bg-gray-100 px-2 py-1 rounded border border-gray-200">
-                                                                            {date.type}
-                                                                        </span>
-                                                                        {date.code && (
-                                                                            <span className="ml-2 bg-purple-100 text-purple-800 px-2 py-1 rounded border border-purple-200">
-                                                                                {date.code}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
+                                                                <div key={idx} className="flex items-center gap-1 flex-wrap">
+                                                                    <span className="font-mono text-gray-700">
+                                                                        {dayNumbers.length > 0 ? dayNumbers.join(', ') : 'Invalid'}
+                                                                    </span>
+                                                                    <span className={statusBadge}>
+                                                                        {date.status || 'Pending'}
+                                                                    </span>
+                                                                    <span className="text-gray-500 text-xs">
+                                                                        {date.type} {date.code && `(${date.code})`}
+                                                                    </span>
                                                                 </div>
                                                             );
                                                         })}
                                                     </div>
                                                 ) : (
-                                                    <div className="text-center py-2">
-                                                        <span className="text-gray-400 text-sm italic">No leaves recorded</span>
-                                                    </div>
+                                                    <span className="text-gray-400 italic">No leaves</span>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
+                                            <td className="px-4 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
                                                 {hasLates(recording.total_lates) ? (
-                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 border border-red-200">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                                                         {formatLateDays(recording.total_lates)}
                                                     </span>
                                                 ) : (
-                                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                         {formatLateDays(recording.total_lates)}
                                                     </span>
                                                 )}
                                             </td>
-                                            {/* VL Earned - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className="text-green-600 font-semibold">
-                                                    {safeToFixed(recording.vl_earned)}
-                                                </span>
+                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-green-600 font-semibold">
+                                                {safeToFixed(recording.vl_earned)}
                                             </td>
-                                            {/* VL Used - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className="text-gray-900 font-medium">
-                                                    {safeToFixed(recording.vl_used)}
-                                                </span>
+                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-gray-900 font-medium">
+                                                {safeToFixed(recording.vl_used)}
                                             </td>
-                                            {/* VL Balance - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className={`font-bold ${
-                                                    (safeNumber(recording.vl_balance)) > 5 
-                                                        ? 'text-green-600' 
-                                                        : (safeNumber(recording.vl_balance)) > 2 
-                                                        ? 'text-yellow-600' 
-                                                        : 'text-red-600'
-                                                }`}>
-                                                    {safeToFixed(recording.vl_balance)}
-                                                </span>
+                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 font-bold"
+                                                style={{
+                                                    color: safeNumber(recording.vl_balance) > 5 ? '#059669' :
+                                                           safeNumber(recording.vl_balance) > 2 ? '#D97706' : '#DC2626'
+                                                }}>
+                                                {safeToFixed(recording.vl_balance)}
                                             </td>
-                                            {/* SL Earned - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className="text-green-600 font-semibold">
-                                                    {safeToFixed(recording.sl_earned)}
-                                                </span>
+                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-green-600 font-semibold">
+                                                {safeToFixed(recording.sl_earned)}
                                             </td>
-                                            {/* SL Used - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className="text-gray-900 font-medium">
-                                                    {safeToFixed(recording.sl_used)}
-                                                </span>
+                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-gray-900 font-medium">
+                                                {safeToFixed(recording.sl_used)}
                                             </td>
-                                            {/* SL Balance - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className={`font-bold ${
-                                                    (safeNumber(recording.sl_balance)) > 5 
-                                                        ? 'text-green-600' 
-                                                        : (safeNumber(recording.sl_balance)) > 2 
-                                                        ? 'text-yellow-600' 
-                                                        : 'text-red-600'
-                                                }`}>
-                                                    {safeToFixed(recording.sl_balance)}
-                                                </span>
+                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 font-bold"
+                                                style={{
+                                                    color: safeNumber(recording.sl_balance) > 5 ? '#059669' :
+                                                           safeNumber(recording.sl_balance) > 2 ? '#D97706' : '#DC2626'
+                                                }}>
+                                                {safeToFixed(recording.sl_balance)}
                                             </td>
-                                            {/* Total - Direct from backend */}
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200">
-                                                <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-lg border border-blue-200 font-bold">
+                                            <td className="px-4 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
+                                                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded border border-blue-200 font-bold">
                                                     {safeToFixed(recording.total_vl_sl)}
                                                 </span>
                                             </td>
@@ -428,9 +383,10 @@ const EmployeeRecordings = () => {
                         )}
                     </div>
 
-                    {/* Summary Cards - Using backend data only */}
+                    {/* Summary Cards */}
                     {recordings.length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                            {/* Cards content unchanged */}
                             <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                 <div className="flex items-center">
                                     <div className="bg-blue-100 p-3 rounded-lg">

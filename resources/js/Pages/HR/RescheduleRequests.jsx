@@ -123,6 +123,12 @@ export default function RescheduleRequests() {
     { id: 'rejected', name: 'Rejected', count: tabCounts.rejected },
   ];
 
+
+  const handleBack = () => {
+    window.history.back(); // Go back to previous page
+  };
+
+
   const handleViewDetails = (request) => {
     setSelectedRequest(request);
     setIsViewModalOpen(true);
@@ -261,19 +267,40 @@ export default function RescheduleRequests() {
   };
 
   return (
-    <HRLayout>
+       <HRLayout>
       {/* WIDENED CONTAINER - Changed from max-w-7xl to max-w-screen-2xl */}
       <div className="max-w-screen-2xl mx-auto px-6 sm:px-8 lg:px-10 py-8">
-        {/* Header Section */}
+        {/* Header Section with Back Button */}
         <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-            <div className="relative">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-900 to-indigo-900 bg-clip-text text-transparent mb-2">
-                Reschedule Requests
-              </h1>
-              <p className="text-gray-600 text-lg">Manage employee leave reschedule requests</p>
-              <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"></div>
+            <div className="flex items-center mb-4 md:mb-0">
+              {/* Back Button */}
+              <button
+                onClick={handleBack}
+                className="flex items-center text-gray-600 hover:text-purple-700 transition-colors duration-200 mr-6 group"
+              >
+                <svg 
+                  className="w-5 h-5 mr-2 transform group-hover:-translate-x-1 transition-transform duration-200" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span className="font-medium"></span>
+              </button>
+              
+              {/* Title Section */}
+              <div className="relative">
+                <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-900 to-indigo-900 bg-clip-text text-transparent mb-2">
+                  Reschedule Requests
+                </h1>
+                <p className="text-gray-600 text-lg">Manage employee leave reschedule requests</p>
+                <div className="absolute -bottom-2 left-0 w-24 h-1 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full"></div>
+              </div>
             </div>
+            
+            {/* Optional: Add other header elements like filters or search here */}
           </div>
         </div>
 
@@ -712,4 +739,4 @@ export default function RescheduleRequests() {
       </div>
     </HRLayout>
   );
-}
+} 

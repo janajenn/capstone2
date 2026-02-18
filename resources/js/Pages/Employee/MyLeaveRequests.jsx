@@ -268,24 +268,27 @@ export default function MyLeaveRequests() {
                                                     </td>
 
                                                     {/* Status Column */}
-                                                    <td className="px-6 py-4">
-                                                        <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium shadow-sm ${
-                                                            isRecalled
-                                                                ? 'bg-gradient-to-r from-red-100 to-red-200 text-red-800'
-                                                                : request.status === 'approved'
-                                                                ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-800'
-                                                                : request.status === 'rejected'
-                                                                ? 'bg-gradient-to-r from-red-100 to-red-200 text-red-800'
-                                                                : request.status === 'pending'
-                                                                ? 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800'
-                                                                : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800'
-                                                        }`}>
-                                                            {isRecalled ? 'Recalled' : 
-                                                             request.status === 'approved' ? 'Approved' :
-                                                             request.status === 'rejected' ? 'Rejected' :
-                                                             request.status === 'pending' ? 'Pending' : request.status}
-                                                        </span>
-                                                    </td>
+<td className="px-6 py-4">
+    <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium shadow-sm ${
+        isRecalled
+            ? 'bg-gradient-to-r from-red-100 to-red-200 text-red-800'
+            : request.status === 'approved'
+            ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-800'
+            : request.status === 'rejected'
+            ? 'bg-gradient-to-r from-red-100 to-red-200 text-red-800'
+            : request.status === 'pending_hr' || request.status === 'pending_dept_head' || request.status === 'pending_admin' || request.status === 'pending'
+            ? 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800'
+            : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800'
+    }`}>
+        {isRecalled ? 'Recalled' : 
+         request.status === 'approved' ? 'Approved' :
+         request.status === 'rejected' ? 'Rejected' :
+         request.status === 'pending_hr' ? 'Pending HR' :
+         request.status === 'pending_dept_head' ? 'Pending Dept Head' :
+         request.status === 'pending_admin' ? 'Pending Admin' :
+         request.status === 'pending' ? 'Pending' : request.status}
+    </span>
+</td>
 
                                                     {/* Progress Column */}
                                                     <td className="px-6 py-4">

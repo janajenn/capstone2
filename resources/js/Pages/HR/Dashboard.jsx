@@ -17,6 +17,7 @@ import {
     Area,
     PieChart,
     Pie,
+    Legend,
     Cell
 } from 'recharts';
 
@@ -77,7 +78,8 @@ export default function Dashboard() {
         currentYear,
         currentMonth,
         filters,
-        leaveReportsData
+        leaveReportsData,
+        monthlyLeaveTypeStats 
     } = props;
 
     // State to track previous data for comparison
@@ -237,6 +239,9 @@ export default function Dashboard() {
     };
 
 
+    
+
+
 
 
     const handleFilterChange = (newFilters) => {
@@ -372,7 +377,7 @@ export default function Dashboard() {
                 console.error('Error fetching dashboard data:', error);
                 setIsPolling(false);
             }
-        }, 70000);
+        }, 60000);
 
         return () => clearInterval(interval);
     }, [previousData, localFilters]);
@@ -391,6 +396,30 @@ export default function Dashboard() {
         }
         return null;
     };
+
+
+    const prepareMonthlyLeaveTypeData = () => {
+        if (!monthlyLeaveTypeStats || monthlyLeaveTypeStats.length === 0) return [];
+    
+        // Get unique months
+        const months = [...new Set(monthlyLeaveTypeStats.map(item => item.month))];
+        // Get unique leave types
+        const leaveTypes = [...new Set(monthlyLeaveTypeStats.map(item => item.leave_type))];
+    
+        // Create data array
+        return months.map(month => {
+            const monthData = { month };
+            leaveTypes.forEach(type => {
+                const entry = monthlyLeaveTypeStats.find(
+                    item => item.month === month && item.leave_type === type
+                );
+                monthData[type] = entry ? entry.count : 0;
+            });
+            return monthData;
+        });
+    };
+    
+    const monthlyLeaveTypeData = prepareMonthlyLeaveTypeData();
 
     return (
         <HRLayout>
@@ -766,8 +795,65 @@ export default function Dashboard() {
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
+
+                    </div>
+
+{/* Monthly Leave Distribution – Stacked Bar (Simple) */}
+<div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-3xl shadow-2xl p-8 mb-6 hover:shadow-2xl transition-all duration-300">
+    <div className="flex items-center justify-between mb-8">
+        <div>
+            <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-indigo-800 bg-clip-text text-transparent">
+                Monthly Leave Requests by Type
+            </h3>
+            <p className="text-gray-600 mt-1">Total requests per month (colored by leave type)</p>
+        </div>
+        <div className="p-3 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-600 shadow-lg">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+        </div>
+    </div>
+    <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthlyLeaveTypeData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis 
+                    dataKey="month" 
+                    stroke="#6b7280" 
+                    fontSize={12} 
+                    angle={-20} 
+                    textAnchor="end" 
+                    height={60}
+                />
+                <YAxis stroke="#6b7280" fontSize={12} />
+                <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                    formatter={(value, name) => [`${value} requests`, name]}
+                />
+                <Legend 
+                    verticalAlign="top" 
+                    height={36}
+                    wrapperStyle={{ fontSize: '12px', fontWeight: 500 }}
+                />
+                {monthlyLeaveTypeData.length > 0 &&
+                    Object.keys(monthlyLeaveTypeData[0])
+                        .filter(key => key !== 'month')
+                        .map((type, index) => (
+                            <Bar
+                                key={type}
+                                dataKey={type}
+                                stackId="a"
+                                fill={CHART_COLORS[Object.keys(CHART_COLORS)[index % Object.keys(CHART_COLORS).length]]}
+                                radius={[4, 4, 0, 0]}
+                            />
+                        ))
+                }
+            </BarChart>
+        </ResponsiveContainer>
+    </div>
+</div>
                 </div>
-            </div>
+            
         </HRLayout>
     );
 }

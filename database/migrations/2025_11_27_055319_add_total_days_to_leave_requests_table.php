@@ -6,23 +6,17 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
+    public function up()
     {
         Schema::table('leave_requests', function (Blueprint $table) {
-            //
+            $table->integer('total_days')->default(0)->after('selected_dates');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
+    public function down()
     {
         Schema::table('leave_requests', function (Blueprint $table) {
-            //
+            $table->dropColumn('total_days');
         });
     }
 };

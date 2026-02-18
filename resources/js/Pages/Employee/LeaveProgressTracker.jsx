@@ -25,10 +25,9 @@ const LeaveProgressTracker = ({
                         </svg>
                     </motion.div>
 
-                    {/* Recalled Title */}
+                    {/* Rest of recalled section remains the same */}
                     <h3 className="text-lg font-semibold text-red-700 mb-2">Leave Recalled</h3>
                     
-                    {/* Recall Details */}
                     <div className="bg-red-50 border border-red-200 rounded-lg p-4 max-w-md mx-auto">
                         <div className="text-sm text-red-800 space-y-2">
                             <div className="flex justify-between">
@@ -59,7 +58,6 @@ const LeaveProgressTracker = ({
                         </div>
                     </div>
 
-                    {/* View Only Notice */}
                     <div className="mt-4 flex items-center justify-center text-xs text-gray-600 bg-gray-100 px-3 py-2 rounded-full">
                         <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -123,6 +121,19 @@ const LeaveProgressTracker = ({
         return approval?.status || 'pending';
     };
 
+    // Check if any step has been rejected
+    const hasRejection = () => {
+        if (!approvals) return false;
+        return approvals.some(a => a.status === 'rejected');
+    };
+
+    // Get the first rejected step
+    const getFirstRejectedStep = () => {
+        if (!approvals) return null;
+        const rejectedApproval = approvals.find(a => a.status === 'rejected');
+        return rejectedApproval?.role;
+    };
+
     // Get approval details for each role
     const getApprovalDetails = (role) => {
         if (!approvals) return null;
@@ -169,25 +180,28 @@ const LeaveProgressTracker = ({
         });
     };
 
-    // Determine which step is current - with dept head and admin bypass logic
+    // FIXED: Determine which step is current - now handles rejections properly
     const getCurrentStepIndex = () => {
+        // If there's a rejection, the current step should be the rejected step
+        if (hasRejection()) {
+            const rejectedRole = getFirstRejectedStep();
+            const rejectedStepIndex = steps.findIndex(step => step.id === rejectedRole);
+            return rejectedStepIndex !== -1 ? rejectedStepIndex : steps.length - 1;
+        }
+
         if (isDeptHead || isAdmin) {
             // For department heads and admins: submitted -> hr -> admin (3 steps)
-            if (getStatus('admin') === 'approved') return steps.length - 1; // Admin approved
-            if (getStatus('admin') === 'rejected') return steps.length - 1; // Admin rejected
-            if (getStatus('hr') === 'approved') return 2; // HR approved, waiting for admin
-            if (getStatus('hr') === 'rejected') return 2; // HR rejected
-            if (getStatus('hr') === 'pending') return 1; // Waiting for HR
-            return 0; // Just submitted
+            if (getStatus('admin') === 'approved') return steps.length - 1;
+            if (getStatus('hr') === 'approved') return 2;
+            if (getStatus('hr') === 'pending') return 1;
+            return 0;
         } else {
             // For regular employees: submitted -> hr -> dept_head -> admin (4 steps)
             if (getStatus('admin') === 'approved') return steps.length - 1;
-            if (getStatus('admin') === 'rejected') return steps.length - 1;
             if (getStatus('dept_head') === 'approved') return 3;
-            if (getStatus('dept_head') === 'rejected') return 3;
             if (getStatus('hr') === 'approved') return 2;
-            if (getStatus('hr') === 'rejected') return 2;
-            return 1; // Default to HR step if just submitted
+            if (getStatus('hr') === 'pending') return 1;
+            return 0;
         }
     };
 
@@ -219,8 +233,45 @@ const LeaveProgressTracker = ({
         )
     };
 
+    // FIXED: Get step icon based on status, not just completion
+    const getStepIcon = (step, index, isCompleted, isCurrent, status) => {
+        // If this step has been rejected, show X icon
+        if (status === 'rejected') {
+            return (
+                <svg className="w-5 h-5 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            );
+        }
+        
+        // If completed and approved, show checkmark
+        if (isCompleted) {
+            return (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+            );
+        }
+        
+        // Otherwise show the step icon
+        return (
+            <div className={`${isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>
+                {step.icon}
+            </div>
+        );
+    };
+
     // Get appropriate status message based on current step and user type
     const getStatusMessage = () => {
+        // If there's a rejection, show rejection message
+        if (hasRejection()) {
+            const rejectedRole = getFirstRejectedStep();
+            if (rejectedRole === 'hr') return "Your request has been rejected by HR";
+            if (rejectedRole === 'dept_head') return "Your request has been rejected by Department Head";
+            if (rejectedRole === 'admin') return "Your request has been rejected by Admin";
+            return "Your request has been rejected";
+        }
+
         const currentStep = steps[currentStepIndex];
         
         if (isDeptHead || isAdmin) {
@@ -230,16 +281,12 @@ const LeaveProgressTracker = ({
             } else if (currentStep.id === 'hr') {
                 if (getStatus('hr') === 'approved') {
                     return "Approved by HR - Awaiting Admin approval";
-                } else if (getStatus('hr') === 'rejected') {
-                    return "Rejected by HR";
                 } else {
                     return "Awaiting HR review";
                 }
             } else if (currentStep.id === 'admin') {
                 if (getStatus('admin') === 'approved') {
                     return "Approved by Admin - Your leave has been fully approved";
-                } else if (getStatus('admin') === 'rejected') {
-                    return "Rejected by Admin";
                 } else {
                     return "Awaiting Admin approval - Department Head approval bypassed";
                 }
@@ -249,42 +296,60 @@ const LeaveProgressTracker = ({
             if (currentStep.id === 'submitted') {
                 return "Your request has been submitted and is awaiting HR review";
             } else if (currentStep.id === 'hr') {
-                return getStatus('hr') === 'pending' 
-                    ? "Awaiting HR approval" 
-                    : `${getStatus('hr') === 'approved' ? 'Approved' : 'Rejected'} by HR`;
+                return getStatus('hr') === 'approved' 
+                    ? "Approved by HR - Awaiting Department Head approval"
+                    : "Awaiting HR approval";
             } else if (currentStep.id === 'dept_head') {
-                return getStatus('dept_head') === 'pending' 
-                    ? "Awaiting Department Head approval" 
-                    : `${getStatus('dept_head') === 'approved' ? 'Approved' : 'Rejected'} by Department Head`;
+                return getStatus('dept_head') === 'approved' 
+                    ? "Approved by Department Head - Awaiting Admin approval"
+                    : "Awaiting Department Head approval";
             } else if (currentStep.id === 'admin') {
-                return getStatus('admin') === 'pending' 
-                    ? "Awaiting Admin approval" 
-                    : `${getStatus('admin') === 'approved' ? 'Approved' : 'Rejected'} by Admin`;
+                return getStatus('admin') === 'approved' 
+                    ? "Approved by Admin - Your leave has been fully approved"
+                    : "Awaiting Admin approval";
             }
         }
         
         return "Processing your leave request";
     };
 
+    // FIXED: Get step background color based on status
+    const getStepBackgroundColor = (index, isCompleted, isCurrent, status) => {
+        if (status === 'rejected') {
+            return 'bg-rose-500 border-rose-600 text-white shadow-sm';
+        }
+        if (isCompleted) {
+            return 'bg-emerald-500 border-emerald-600 text-white shadow-sm';
+        }
+        if (isCurrent) {
+            return 'bg-white border-blue-500 text-blue-600 shadow-md';
+        }
+        return 'bg-white border-gray-200 text-gray-400 shadow-sm';
+    };
+
     return (
         <div className="w-full px-6 py-8">
             <div className="relative">
-                {/* Progress line */}
-                <div className="absolute top-7 left-16 right-16 h-0.5 bg-gray-100 rounded-full z-0">
-                    <motion.div
-                        className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-400 to-emerald-400 rounded-full z-0"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${(currentStepIndex / (steps.length - 1)) * 100}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut" }}
-                    />
-                </div>
+                {/* Progress line - HIDE if there's a rejection */}
+                {!hasRejection() && (
+                    <>
+                        <div className="absolute top-7 left-16 right-16 h-0.5 bg-gray-100 rounded-full z-0">
+                            <motion.div
+                                className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-400 to-emerald-400 rounded-full z-0"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(currentStepIndex / (steps.length - 1)) * 100}%` }}
+                                transition={{ duration: 0.8, ease: "easeOut" }}
+                            />
+                        </div>
+                    </>
+                )}
 
                 <div className="flex justify-between relative z-10">
                     {steps.map((step, index) => {
-                        const isCompleted = index < currentStepIndex;
+                        const status = step.id === 'submitted' ? 'pending' : getStatus(step.id);
+                        const isCompleted = !hasRejection() && index < currentStepIndex;
                         const isCurrent = index === currentStepIndex;
                         const isPending = index > currentStepIndex;
-                        const status = step.id === 'submitted' ? 'pending' : getStatus(step.id);
                         const approvalDetails = step.id !== 'submitted' ? getApprovalDetails(step.id) : null;
                         const approverName = approvalDetails ? formatApproverName(approvalDetails) : null;
                         const approvalDate = approvalDetails?.approved_at ? formatApprovalDate(approvalDetails.approved_at) : null;
@@ -293,30 +358,20 @@ const LeaveProgressTracker = ({
                             <div key={step.id} className="flex flex-col items-center flex-1">
                                 {/* Step indicator */}
                                 <motion.div
-                                    className={`flex items-center justify-center w-14 h-14 rounded-full border-2 mb-3 transition-all duration-200
-                                        ${isCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-sm' :
-                                          isCurrent ? 'bg-white border-blue-500 text-blue-600 shadow-md' :
-                                          'bg-white border-gray-200 text-gray-400 shadow-sm'}`}
+                                    className={`flex items-center justify-center w-14 h-14 rounded-full border-2 mb-3 transition-all duration-200 ${getStepBackgroundColor(index, isCompleted, isCurrent, status)}`}
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
                                     initial={{ scale: 0.9 }}
                                     animate={{ scale: 1 }}
                                     transition={{ type: "spring", stiffness: 400, damping: 10 }}
                                 >
-                                    {isCompleted ? (
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    ) : (
-                                        <div className={`${isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>
-                                            {step.icon}
-                                        </div>
-                                    )}
+                                    {getStepIcon(step, index, isCompleted, isCurrent, status)}
                                 </motion.div>
 
                                 {/* Step label and status */}
                                 <div className="text-center px-2">
                                     <div className={`text-sm font-medium mb-1 ${
+                                        status === 'rejected' ? 'text-rose-600' :
                                         isCompleted ? 'text-gray-900' : 
                                         isCurrent ? 'text-blue-600' : 
                                         'text-gray-500'
@@ -336,7 +391,7 @@ const LeaveProgressTracker = ({
                                         </motion.div>
                                     )}
 
-                                    {/* Approver Name and Date - Show for completed steps */}
+                                    {/* Approver Name and Date - Show for completed/rejected steps */}
                                     {approverName && approvalDate && status !== 'pending' && (
                                         <motion.div
                                             className="mt-2 text-xs text-gray-600 space-y-1"
@@ -359,32 +414,51 @@ const LeaveProgressTracker = ({
                 </div>
             </div>
 
-            {/* Status details card - THIS IS THE PART THAT WAS MISSING */}
+            {/* Status details card */}
             <motion.div
-                className="mt-8 bg-white p-4 rounded-lg border border-gray-100 shadow-xs"
+                className={`mt-8 p-4 rounded-lg border shadow-xs ${
+                    hasRejection() 
+                        ? 'bg-rose-50 border-rose-200' 
+                        : 'bg-white border-gray-100'
+                }`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
             >
-                <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center">
-                    <svg className="w-4 h-4 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <h4 className={`text-sm font-semibold mb-3 flex items-center ${
+                    hasRejection() ? 'text-rose-800' : 'text-gray-900'
+                }`}>
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    Current Status
+                    {hasRejection() ? 'Rejection Details' : 'Current Status'}
                 </h4>
                 <div className="flex items-start">
                     <div className={`w-2 h-2 rounded-full mt-2 mr-3 flex-shrink-0 ${
+                        hasRejection() ? 'bg-rose-500' :
                         steps[currentStepIndex].id === 'submitted' ? 'bg-blue-500' :
                         getStatus(steps[currentStepIndex].id) === 'approved' ? 'bg-emerald-500' :
                         getStatus(steps[currentStepIndex].id) === 'rejected' ? 'bg-rose-500' : 'bg-amber-500'
                     }`} />
-                    <p className="text-sm text-gray-700 leading-relaxed">
+                    <p className={`text-sm leading-relaxed ${
+                        hasRejection() ? 'text-rose-700 font-medium' : 'text-gray-700'
+                    }`}>
                         {getStatusMessage()}
                     </p>
                 </div>
                 
+                {/* Show rejection remarks if available */}
+                {hasRejection() && (
+                    <div className="mt-3 p-3 bg-rose-100 rounded border border-rose-200">
+                        <p className="text-xs text-rose-800">
+                            <span className="font-semibold">Rejection remarks: </span>
+                            {getApprovalDetails(getFirstRejectedStep())?.remarks || 'No remarks provided'}
+                        </p>
+                    </div>
+                )}
+                
                 {/* Special note for department heads and admins */}
-                {(isDeptHead || isAdmin) && currentStepIndex >= 1 && (
+                {(isDeptHead || isAdmin) && currentStepIndex >= 1 && !hasRejection() && (
                     <div className="mt-2 flex items-start text-xs text-blue-600 bg-blue-50 p-2 rounded">
                         <svg className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />

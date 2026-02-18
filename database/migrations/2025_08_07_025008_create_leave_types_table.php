@@ -19,7 +19,7 @@ return new class extends Migration
     $table->boolean('deductible')->default(false);
     $table->boolean('document_required')->default(false);
     $table->timestamps();
-});
+}); 
 }
 
 

@@ -20,6 +20,8 @@ use App\Models\CreditConversion;
 use App\Services\CreditConversionService;
 use App\Models\AttendanceCorrection; // Add this import
 use App\Models\LeaveRescheduleRequest;
+use App\Models\LeaveBalanceLog;
+
 
 
 class DeptHeadController extends Controller
@@ -512,7 +514,9 @@ public function getUpdatedRequests(Request $request)
                 $leaveRequest = LeaveRequest::with(['employee', 'leaveType', 'employee.user'])->findOrFail($id);
         
                 // Check if request is in correct status for dept head approval
-                $allowedStatuses = ['pending', 'pending_dept_head', 'pending_hr_to_dept'];
+                // ❌ FIX: Dept Head should ONLY see pending_dept_head status
+                // (HR routes regular employees to pending_dept_head)
+                $allowedStatuses = ['pending_dept_head']; 
                 if (!in_array($leaveRequest->status, $allowedStatuses)) {
                     throw new \Exception('This request is not pending department head approval. Current status: ' . $leaveRequest->status);
                 }
@@ -536,24 +540,13 @@ public function getUpdatedRequests(Request $request)
                     'approved_at' => now(),
                 ]);
     
-                // ✅ FIXED: Simplified logic based on employee role
-                $employeeRole = $leaveRequest->employee->user->role;
+                // ✅ UPDATE STATUS - ALWAYS GO TO ADMIN AFTER DEPT HEAD
+                $leaveRequest->update(['status' => 'pending_admin']);
                 
-                if ($employeeRole === 'dept_head' || $employeeRole === 'admin') {
-                    // Department heads and admins go directly to admin after dept head approval
-                    $leaveRequest->update(['status' => 'pending_admin']);
-                    \Log::info("Department Head/Admin request approved by Dept Head. Status: pending_admin", [
-                        'request_id' => $id,
-                        'employee_role' => $employeeRole
-                    ]);
-                } else {
-                    // Regular employees: After Dept Head approval, it should go to Admin
-                    $leaveRequest->update(['status' => 'pending_admin']);
-                    \Log::info("Regular employee request approved by Dept Head. Status: pending_admin", [
-                        'request_id' => $id,
-                        'employee_role' => $employeeRole
-                    ]);
-                }
+                \Log::info("Department Head approved. Status updated to pending_admin", [
+                    'request_id' => $id,
+                    'applicant' => $leaveRequest->employee->firstname . ' ' . $leaveRequest->employee->lastname
+                ]);
     
                 // Use the centralized notification service
                 $notificationService = new NotificationService();
@@ -567,8 +560,7 @@ public function getUpdatedRequests(Request $request)
     
                 \Log::info("Department Head approval completed", [
                     'request_id' => $id,
-                    'final_status' => $leaveRequest->status,
-                    'employee_role' => $employeeRole
+                    'new_status' => 'pending_admin'
                 ]);
             });
     
@@ -584,56 +576,75 @@ public function getUpdatedRequests(Request $request)
             return redirect()->back()->with('error', 'Failed to approve leave request: ' . $e->getMessage());
         }
     }
-
     /**
      * Reject a leave request
      */
-    public function rejectLeaveRequest(Request $request, $id)
-    {
+   /**
+ * Reject a leave request (Dept Head action)
+ */
+public function rejectLeaveRequest(Request $request, $id)
+{
+    // Validate – if fails, Laravel automatically throws ValidationException (422 response)
+    $validated = $request->validate([
+        'remarks' => 'required|string|max:500',
+    ]);
+
+    // All business logic inside a transaction
+    DB::transaction(function () use ($request, $id, $validated) {
         $user = $request->user();
-        
-        $request->validate([
-            'remarks' => 'required|string|max:500',
-        ]);
+        $deptHeadDeptId = $user->employee->department_id ?? null;
 
-        $leaveRequest = LeaveRequest::with(['employee', 'leaveType'])->findOrFail($id);
-
-        // Check if already processed by dept head
-        $existingApproval = LeaveApproval::where('leave_id', $id)
-            ->where('role', 'dept_head')
-            ->first();
-
-        if ($existingApproval) {
-            return redirect()->back()->with('error', 'This request has already been processed.');
+        if (!$deptHeadDeptId) {
+            throw new \Exception('You are not assigned to any department.');
         }
 
-        // Create approval record
+        // 👇 Add 'leaveType' here
+        $leaveRequest = LeaveRequest::with(['employee', 'approvals', 'leaveType'])->findOrFail($id);
+
+        
+        if (!$deptHeadDeptId) {
+            throw new \Exception('You are not assigned to any department.');
+        }
+
+        $leaveRequest = LeaveRequest::with(['employee', 'approvals'])->findOrFail($id);
+
+        if ($leaveRequest->employee->department_id !== $deptHeadDeptId) {
+            throw new \Exception('This employee does not belong to your department.');
+        }
+
+        if (!in_array($leaveRequest->status, ['pending_dept_head', 'pending', 'pending_hr_to_dept'])) {
+            throw new \Exception('This request cannot be rejected at this stage.');
+        }
+
+        if ($leaveRequest->approvals->where('role', 'dept_head')->isNotEmpty()) {
+            throw new \Exception('This request has already been processed by the department head.');
+        }
+
         LeaveApproval::create([
-            'leave_id' => $leaveRequest->id,
+            'leave_id'    => $leaveRequest->id,
             'approved_by' => $user->id,
-            'role' => 'dept_head',
-            'status' => 'rejected',
-            'remarks' => $request->remarks,
+            'role'        => 'dept_head',
+            'status'      => 'rejected',
+            'remarks'     => $validated['remarks'],
             'approved_at' => now(),
         ]);
 
-        // Update leave request status to rejected
         $leaveRequest->update(['status' => 'rejected']);
 
-        // Send notification to employee - UPDATED STATUS
-        $notificationService = new NotificationService();
-        $notificationService->createLeaveRequestNotification(
+        $this->notificationService->createLeaveRequestNotification(
             $leaveRequest->employee_id,
-            'dept_head_rejected', // Changed from 'rejected' to 'dept_head_rejected'
-            $id,
+            'dept_head_rejected',
+            $leaveRequest->id,
             $leaveRequest->leaveType->name ?? 'Leave',
             $leaveRequest->date_from,
             $leaveRequest->date_to,
-            $request->remarks
+            $validated['remarks']
         );
+    });
 
-        return redirect()->back()->with('success', 'Leave request rejected successfully.');
-    }
+    // Success – redirect with flash
+    return redirect()->back()->with('success', 'Leave request rejected successfully.');
+}
 
     /**
      * Show leave request details

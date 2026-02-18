@@ -10,6 +10,8 @@ use App\Services\NotificationService;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Services\LeaveRecordingService;
+use Carbon\Carbon;
 
 class LeaveCreditService
 {
@@ -21,22 +23,17 @@ class LeaveCreditService
         return DB::transaction(function () use ($leaveRequest) {
             Log::info('📦 Transaction started');
 
-            // Get leave type CODE from relationship (not the name)
             $leaveTypeCode = $leaveRequest->leaveType->code;
             Log::info('📋 Leave Type Code: ' . $leaveTypeCode);
 
-            // Only process SL and VL leave types (checking the CODE now)
             if (!in_array($leaveTypeCode, ['SL', 'VL'])) {
                 Log::info("⏭️ Skipping deduction for non-SL/VL leave type code: {$leaveTypeCode}");
                 return null;
             }
 
-            // ✅ FIXED: Use selected_dates for accurate duration calculation
             $workingDays = $this->calculateWorkingDaysFromSelectedDates($leaveRequest);
-            
             Log::info("📅 Working days to deduct: {$workingDays}");
 
-            // Get leave credit record
             $leaveCredit = LeaveCredit::where('employee_id', $leaveRequest->employee_id)->first();
 
             if (!$leaveCredit) {
@@ -46,7 +43,6 @@ class LeaveCreditService
 
             Log::info("💳 Current balances - SL: {$leaveCredit->sl_balance}, VL: {$leaveCredit->vl_balance}");
 
-            // ✅ NEW LOGIC: Always deduct but leave at least 1 credit
             $balanceField = $this->getBalanceField($leaveTypeCode);
             $currentBalance = $leaveCredit->{$balanceField};
 
@@ -54,33 +50,25 @@ class LeaveCreditService
             $daysWithoutPay = $workingDays;
 
             if ($currentBalance > 1) {
-                // We have more than 1 credit, deduct as much as possible while leaving 1
                 $daysToDeduct = min($workingDays, $currentBalance - 1);
                 $daysWithoutPay = $workingDays - $daysToDeduct;
-                
-                Log::info("✅ NEW LOGIC: Deducting {$daysToDeduct} days, leaving 1 credit. {$daysWithoutPay} days without pay.");
+                Log::info("✅ Deducting {$daysToDeduct} days, leaving 1 credit. {$daysWithoutPay} days without pay.");
             } else {
-                // We have 1 or fewer credits, don't deduct any (leave as is)
                 $daysToDeduct = 0;
                 $daysWithoutPay = $workingDays;
-                Log::info("⚠️ NEW LOGIC: Insufficient credits (≤1), deducting 0 days. All {$daysWithoutPay} days without pay.");
+                Log::info("⚠️ Insufficient credits (≤1), deducting 0 days. All {$daysWithoutPay} days without pay.");
             }
 
-            // Update the leave credit balance
             $balanceBefore = $currentBalance;
             $newBalance = $currentBalance - $daysToDeduct;
-
-            // Ensure we don't go below 0 (safety check)
             $newBalance = max(0, $newBalance);
 
-            // Update the balance
             $leaveCredit->{$balanceField} = $newBalance;
             $leaveCredit->last_updated = now();
             $leaveCredit->save();
 
             Log::info("💰 Balance updated: {$balanceBefore} - {$daysToDeduct} = {$newBalance}");
 
-            // Update the leave request with days with/without pay
             $leaveRequest->update([
                 'days_with_pay' => $daysToDeduct,
                 'days_without_pay' => $daysWithoutPay
@@ -88,10 +76,19 @@ class LeaveCreditService
 
             Log::info("📊 Leave request updated - With Pay: {$daysToDeduct}, Without Pay: {$daysWithoutPay}");
 
-            // Log the deduction
             $this->createCreditLog($leaveRequest, $leaveTypeCode, $daysToDeduct, $newBalance);
 
+            // ✅ Regenerate monthly recordings for the affected year(s)
+            $yearFrom = Carbon::parse($leaveRequest->date_from)->year;
+            $yearTo   = Carbon::parse($leaveRequest->date_to)->year;
+
+            app(LeaveRecordingService::class)->generateForEmployeeYear($leaveRequest->employee_id, $yearFrom);
+            if ($yearTo !== $yearFrom) {
+                app(LeaveRecordingService::class)->generateForEmployeeYear($leaveRequest->employee_id, $yearTo);
+            }
+
             Log::info('🎉 LEAVE CREDIT SERVICE COMPLETED SUCCESSFULLY');
+
             return [
                 'success' => true,
                 'message' => "Deducted {$daysToDeduct} days, {$daysWithoutPay} days without pay.",

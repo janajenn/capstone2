@@ -7,6 +7,7 @@ use App\Models\LeaveCreditLog;
 use App\Observers\LeaveCreditLogObserver;
 use App\Models\LeaveType;
 use App\Observers\LeaveTypeObserver;
+
 class AppServiceProvider extends ServiceProvider
 {
     /**
