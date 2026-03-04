@@ -482,99 +482,130 @@ const debugRescheduleData = () => {
     setSelectedRequestForForm(null);
   };
 
-  // Prepare data for LeaveForm component
-const prepareFormData = (request) => {
-  if (!request) return null;
-
-  // Transform leave request data to match LeaveForm component expectations
-  const leaveRequestData = {
-    id: request.id,
-    leave_type: request.leave_type?.code || request.leave_type?.name,
-    start_date: request.date_from,
-    end_date: request.date_to,
-    created_at: request.created_at,
-    status: getApprovalStatus(request),
-    reason: request.reason || '',
-    remarks: request.details?.[0]?.details || '',
-    details: request.details || [],
-    days_with_pay: request.days_with_pay || 0,
-    days_without_pay: request.days_without_pay || 0,
-    selected_dates: request.selected_dates || [] // ADD THIS LINE
-  };
-
-  // Get leave credit logs for the specific leave type
-  const getLeaveCreditData = (leaveType) => {
-    if (!request.employee?.leave_credit_logs) return null;
-    
-    // Find the most recent log for this leave type
-    const relevantLogs = request.employee.leave_credit_logs.filter(log => 
-      log.type === leaveType
-    );
-    
-    if (relevantLogs.length === 0) return null;
-    
-    // Get the most recent log
-    const latestLog = relevantLogs[0];
-    
+  const prepareFormData = (request) => {
+    if (!request) return null;
+  
+    // Transform leave request data
+    const leaveRequestData = {
+      id: request.id,
+      leave_type: request.leave_type?.code || request.leave_type?.name,
+      start_date: request.date_from,
+      end_date: request.date_to,
+      created_at: request.created_at,
+      status: getApprovalStatus(request),
+      reason: request.reason || '',
+      remarks: request.details?.[0]?.details || '',
+      details: request.details || [],
+      days_with_pay: request.days_with_pay || 0,
+      days_without_pay: request.days_without_pay || 0,
+      selected_dates: request.selected_dates || []
+    };
+  
+    // Helper for default positions
+    const getDefaultPosition = (role) => {
+      const defaultPositions = {
+        'hr': 'HRMO-Designate',
+        'dept_head': 'Department Head',
+        'admin': 'Municipal Vice Mayor'
+      };
+      return defaultPositions[role] || 'Approver';
+    };
+  
+    // Build approvers array WITH salutation
+    const approversData = request.approvals?.map(approval => {
+      const approverPosition = approval.approver?.employee?.position || getDefaultPosition(approval.role);
+      return {
+        name: approval.approver?.name || 'System User',
+        salutation: approval.approver?.employee?.salutation || '', // ✅ important
+        role: approval.role === 'hr' ? 'HRMO-Designate' : 
+              approval.role === 'dept_head' ? 'Department Head' : 
+              approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver',
+        position: approverPosition,
+        approved_at: approval.approved_at
+      };
+    }) || [];
+  
+    // Return the props expected by LeaveForm
     return {
-      total_earned: latestLog.balance_before,
-      less_application: latestLog.points_deducted,
-      balance: latestLog.balance_after
+      leaveRequest: leaveRequestData,
+      employee: request.employee, // ✅ pass the full employee object (includes salutation)
+      approvers: approversData
     };
   };
 
-  // Transform employee data
-  const employeeData = {
-    full_name: `${request.employee?.firstname || ''} ${request.employee?.lastname || ''}`.trim(),
-    position: request.employee?.position || 'N/A',
-    salary: request.employee?.monthly_salary || 0,
-    department: {
-      name: request.employee?.department?.name || 'N/A'
-    },
-    leave_credits: {
-      vacation_leave: 0,
-      sick_leave: 0
-    },
-    leave_credit_logs: request.employee?.leave_credit_logs || []
-  };
-
-  // Helper function to get default position based on role
-  const getDefaultPosition = (role) => {
-    const defaultPositions = {
-      'hr': 'HRMO-Designate',
-      'dept_head': 'Department Head',
-      'admin': 'Municipal Vice Mayor'
-    };
-    return defaultPositions[role] || 'Approver';
-  };
-
-  // Transform approvers data WITH POSITION
-  const approversData = request.approvals?.map(approval => {
-    // Get the approver's actual position if available, otherwise use default
-    const approverPosition = approval.approver?.employee?.position || getDefaultPosition(approval.role);
+//   // Get leave credit logs for the specific leave type
+//   const getLeaveCreditData = (leaveType) => {
+//     if (!request.employee?.leave_credit_logs) return null;
     
-    return {
-      name: approval.approver?.name || 'System User',
-      role: approval.role === 'hr' ? 'HRMO-Designate' : 
-            approval.role === 'dept_head' ? 'Department Head' : 
-            approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver',
-      position: approverPosition, // ADD POSITION HERE
-      approved_at: approval.approved_at
-    };
-  }) || [];
+//     // Find the most recent log for this leave type
+//     const relevantLogs = request.employee.leave_credit_logs.filter(log => 
+//       log.type === leaveType
+//     );
+    
+//     if (relevantLogs.length === 0) return null;
+    
+//     // Get the most recent log
+//     const latestLog = relevantLogs[0];
+    
+//     return {
+//       total_earned: latestLog.balance_before,
+//       less_application: latestLog.points_deducted,
+//       balance: latestLog.balance_after
+//     };
+//   };
 
-  return {
-    leaveRequest: leaveRequestData,
-    employee: employeeData,
-    approvers: approversData
-  };
-};
+//   // Transform employee data
+//   const employeeData = {
+//     full_name: `${request.employee?.firstname || ''} ${request.employee?.lastname || ''}`.trim(),
+//     position: request.employee?.position || 'N/A',
+//     salary: request.employee?.monthly_salary || 0,
+//     department: {
+//       name: request.employee?.department?.name || 'N/A'
+//     },
+//     leave_credits: {
+//       vacation_leave: 0,
+//       sick_leave: 0
+//     },
+//     leave_credit_logs: request.employee?.leave_credit_logs || []
+//   };
 
-  // Check if a request can be approved (only pending requests)
-  const canApprove = (request) => {
-    const status = getApprovalStatus(request);
-    return status === 'hr_pending' || status === 'dept_head_pending';
-  };
+//   // Helper function to get default position based on role
+//   const getDefaultPosition = (role) => {
+//     const defaultPositions = {
+//       'hr': 'HRMO-Designate',
+//       'dept_head': 'Department Head',
+//       'admin': 'Municipal Vice Mayor'
+//     };
+//     return defaultPositions[role] || 'Approver';
+//   };
+
+//   // Transform approvers data WITH POSITION
+//   const approversData = request.approvals?.map(approval => {
+//     // Get the approver's actual position if available, otherwise use default
+//     const approverPosition = approval.approver?.employee?.position || getDefaultPosition(approval.role);
+    
+//     return {
+//       name: approval.approver?.name || 'System User',
+//       role: approval.role === 'hr' ? 'HRMO-Designate' : 
+//             approval.role === 'dept_head' ? 'Department Head' : 
+//             approval.role === 'admin' ? 'Municipal Vice Mayor' : 'Approver',
+//       position: approverPosition, // ADD POSITION HERE
+//       approved_at: approval.approved_at
+//     };
+//   }) || [];
+
+//   return {
+//     leaveRequest: leaveRequestData,
+//     employee: employeeData,
+//     approvers: approversData
+//   };
+// };
+
+//   // Check if a request can be approved (only pending requests)
+//   const canApprove = (request) => {
+//     const status = getApprovalStatus(request);
+//     return status === 'hr_pending' || status === 'dept_head_pending';
+//   };
 
   // Check if a request can generate form (only fully approved requests)
   const canGenerateForm = (request) => {

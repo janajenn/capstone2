@@ -171,6 +171,11 @@ Route::get('/hr/leave-credits/{employee}', [HRController::class, 'showLeaveCredi
 
      Route::put('/leave-credits/{employee}', [HRController::class, 'update'])->name('hr.leave-credits.update');
 
+
+     //leave balance update
+     Route::put('/hr/leave-credits/{employee}/fixed/{balance}', [HRController::class, 'updateFixedLeaveBalance'])
+     ->name('hr.leave-credits.fixed.update');  
+
     // Add these to your HR routes
 Route::get('/hr/leave-donations', [HRController::class, 'leaveDonations'])->name('hr.leave-donations');
 Route::get('/hr/leave-donations/pending', [HRController::class, 'pendingLeaveDonations'])->name('hr.leave-donations.pending');
@@ -206,10 +211,7 @@ Route::post('/hr/leave-requests/{id}/approve', [HRController::class, 'approveLea
 Route::post('/hr/leave-requests/{id}/reject', [HRController::class, 'rejectLeaveRequest'])->name('hr.leave-requests.reject');
 Route::post('/hr/leave-requests/bulk-action', [HRController::class, 'bulkAction'])->name('hr.leave-requests.bulk-action');
 
-// Leave Recall Request Routes (HR)
-// Route::get('/hr/recall-requests', [HRController::class, 'recallRequests'])->name('hr.recall-requests');
-// Route::post('/hr/recall-requests/{id}/approve', [HRController::class, 'approveRecallRequest'])->name('hr.recall-requests.approve');
-// Route::post('/hr/recall-requests/{id}/reject', [HRController::class, 'rejectRecallRequest'])->name('hr.recall-requests.reject');
+
 
 
 
@@ -316,6 +318,10 @@ Route::prefix('hr')->group(function () {
 Route::get('/hr/leave-recordings', [HRController::class, 'leaveRecordings'])->name('hr.leave-recordings');
 Route::get('/hr/leave-recordings/{employee}', [HRController::class, 'showEmployeeRecordings'])->name('hr.leave-recordings.employee');
 Route::put('/hr/leave-recordings/{id}/remarks', [HRController::class, 'updateRemarks'])->name('hr.leave-recordings.update-remarks');
+
+
+Route::put('/hr/leave-recordings/recording/{id}', [HRController::class, 'updateRecording'])
+    ->name('hr.leave-recordings.update-recording');
 
 
 Route::get('/hr/leave-recordings/export/department', [HRController::class, 'exportDepartmentRecordings'])

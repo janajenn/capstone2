@@ -572,6 +572,8 @@ public function myLeaveRequests(Request $request)
         'employee' => $user->employee->load('user'),
     ]);
 }
+
+
 //leave balance
 
 /**

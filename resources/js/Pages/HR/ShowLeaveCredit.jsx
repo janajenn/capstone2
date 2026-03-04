@@ -1,6 +1,6 @@
 // resources/js/Pages/HR/ShowLeaveCredit.jsx
 import HRLayout from '@/Layouts/HRLayout';
-import { usePage, Link } from '@inertiajs/react';
+import { usePage, Link, useForm } from '@inertiajs/react'; // Added useForm
 import { useState } from 'react';
 
 // Import Heroicons v2
@@ -23,8 +23,11 @@ import {
     UserGroupIcon,
     ArrowTrendingUpIcon,
     ClipboardDocumentListIcon,
-    ClipboardDocumentCheckIcon
+    ClipboardDocumentCheckIcon,
+    PencilIcon // <-- Added for edit button
 } from '@heroicons/react/24/outline';
+
+// ... (all existing helper components remain unchanged) ...
 
 // Enhanced avatar component with gradient options
 const EmployeeAvatar = ({ employee, size = "lg" }) => {
@@ -152,8 +155,19 @@ const LeaveTypeIcon = ({ code, size = "w-6 h-6" }) => {
     );
 };
 
-// Enhanced leave balance card
-const LeaveBalanceCard = ({ type, code, balance, description, defaultDays, isEarnable, usedDays = 0 }) => {
+// ================== MODIFIED LeaveBalanceCard ==================
+// Enhanced leave balance card (now accepts edit props)
+const LeaveBalanceCard = ({ 
+    type, 
+    code, 
+    balance, 
+    description, 
+    defaultDays, 
+    isEarnable, 
+    usedDays = 0,
+    showEdit = false,
+    onEdit = null 
+}) => {
     const getConfig = (code) => {
         const configs = {
             'SL': { 
@@ -239,11 +253,22 @@ const LeaveBalanceCard = ({ type, code, balance, description, defaultDays, isEar
                     {isFixed ? `Used: ${usedDays}d` : 'Earnable'}
                 </span>
             </div>
+
+            {/* ========== NEW: Edit button for fixed leaves ========== */}
+            {showEdit && onEdit && (
+                <button
+                    onClick={onEdit}
+                    className="mt-3 text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center"
+                >
+                    <PencilIcon className="w-3 h-3 mr-1" />
+                    Adjust Balance
+                </button>
+            )}
         </div>
     );
 };
 
-// Stats card component
+// Stats card component (unchanged)
 const StatCard = ({ title, value, subtitle, color = 'blue', Icon }) => {
     const colors = {
         blue: { 
@@ -292,7 +317,7 @@ const StatCard = ({ title, value, subtitle, color = 'blue', Icon }) => {
     );
 };
 
-// Tab component with icons
+// Tab component with icons (unchanged)
 const TabButton = ({ active, onClick, icon: Icon, label, count }) => (
     <button
         onClick={onClick}
@@ -320,7 +345,42 @@ export default function ShowLeaveCredit() {
     const { employee, earnableLeaveCredits, nonEarnableLeaveBalances } = usePage().props;
     const [activeTab, setActiveTab] = useState('overview');
 
-    // Calculate usage statistics
+    // ========== NEW: State and form for editing fixed leave ==========
+    const [editingBalance, setEditingBalance] = useState(null);
+    const { data, setData, put, processing, errors, reset } = useForm({
+        balance: '',
+        remarks: ''
+    });
+
+    const openEditModal = (balance) => {
+        setEditingBalance(balance);
+        setData({
+            balance: balance.balance,
+            remarks: ''
+        });
+    };
+
+    const closeEditModal = () => {
+        setEditingBalance(null);
+        reset();
+    };
+
+    const handleUpdate = (e) => {
+        e.preventDefault();
+        put(route('hr.leave-credits.fixed.update', {
+            employee: employee.employee_id,
+            balance: editingBalance.id
+        }), {
+            onSuccess: () => {
+                closeEditModal();
+            },
+            onError: () => {
+                // errors will be displayed in the modal
+            }
+        });
+    };
+
+    // Calculate usage statistics (unchanged)
     const calculateUsageStats = () => {
         const fixedLeaves = nonEarnableLeaveBalances.filter(leave => leave.default_days);
         
@@ -341,14 +401,14 @@ export default function ShowLeaveCredit() {
 
     const usageStats = calculateUsageStats();
     
-    // Format numbers
+    // Format numbers (unchanged)
     const formatNumber = (num) => {
         if (num === null || num === undefined) return '0';
         const formatted = parseFloat(num).toFixed(2);
         return formatted.replace(/\.00$/, '');
     };
 
-    // Calculate totals
+    // Calculate totals (unchanged)
     const totalEarnable = earnableLeaveCredits.reduce((total, credit) => {
         return total + (parseFloat(credit.balance) || 0);
     }, 0);
@@ -364,7 +424,7 @@ export default function ShowLeaveCredit() {
         return `${employee.firstname || ''} ${employee.lastname || ''}`.trim();
     };
 
-    // Tab configurations
+    // Tab configurations (unchanged)
     const tabs = [
         { id: 'overview', label: 'Overview', icon: ChartBarIcon, count: null },
         { id: 'earnable', label: 'Earnable', icon: ArrowTrendingUpIcon, count: earnableLeaveCredits.length },
@@ -374,7 +434,7 @@ export default function ShowLeaveCredit() {
     return (
         <HRLayout>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {/* Header with Breadcrumb */}
+                {/* Header with Breadcrumb (unchanged) */}
                 <div className="mb-6">
                     <nav className="flex items-center text-sm text-gray-600">
                         <Link href={route('hr.dashboard')} className="hover:text-indigo-600 transition-colors">
@@ -389,7 +449,7 @@ export default function ShowLeaveCredit() {
                     </nav>
                 </div>
 
-                {/* Main Header */}
+                {/* Main Header (unchanged) */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center space-x-4">
@@ -431,7 +491,7 @@ export default function ShowLeaveCredit() {
                     </div>
                 </div>
 
-                {/* Stats Overview */}
+                {/* Stats Overview (unchanged) */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     <StatCard
                         title="Total Leave Balance"
@@ -466,7 +526,7 @@ export default function ShowLeaveCredit() {
                     />
                 </div>
 
-                {/* Fixed Leaves Usage Summary */}
+                {/* Fixed Leaves Usage Summary (unchanged) */}
                 {usageStats.totalAllocated > 0 && (
                     <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-8 shadow-sm">
                         <div className="flex items-center justify-between mb-4">
@@ -528,7 +588,7 @@ export default function ShowLeaveCredit() {
                     </div>
                 )}
 
-                {/* Tab Navigation */}
+                {/* Tab Navigation (unchanged) */}
                 <div className="mb-6">
                     <div className="flex space-x-2">
                         {tabs.map((tab) => (
@@ -549,7 +609,7 @@ export default function ShowLeaveCredit() {
                     {/* Overview Tab */}
                     {activeTab === 'overview' && (
                         <div className="space-y-6">
-                            {/* Earnable Leaves Section */}
+                            {/* Earnable Leaves Section (unchanged) */}
                             <div>
                                 <div className="flex items-center justify-between mb-4">
                                     <div>
@@ -572,6 +632,7 @@ export default function ShowLeaveCredit() {
                                                 balance={formatNumber(credit.balance)}
                                                 description={credit.description}
                                                 isEarnable={true}
+                                                // No edit button for earnable leaves
                                             />
                                         ))}
                                     </div>
@@ -583,7 +644,7 @@ export default function ShowLeaveCredit() {
                                 )}
                             </div>
 
-                            {/* Fixed Leaves Section */}
+                            {/* Fixed Leaves Section (now with edit buttons) */}
                             <div>
                                 <div className="flex items-center justify-between mb-4">
                                     <div>
@@ -612,6 +673,9 @@ export default function ShowLeaveCredit() {
                                                     defaultDays={balance.default_days ? formatNumber(balance.default_days) : null}
                                                     usedDays={Math.max(0, usedDays)}
                                                     isEarnable={false}
+                                                    // ========== NEW: Enable edit for fixed leaves ==========
+                                                    showEdit={true}
+                                                    onEdit={() => openEditModal(balance)}
                                                 />
                                             );
                                         })}
@@ -626,7 +690,7 @@ export default function ShowLeaveCredit() {
                         </div>
                     )}
 
-                    {/* Individual Tabs */}
+                    {/* Earnable Tab (unchanged, no edit buttons) */}
                     {activeTab === 'earnable' && (
                         <div className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -644,6 +708,7 @@ export default function ShowLeaveCredit() {
                         </div>
                     )}
 
+                    {/* Fixed Tab (now with edit buttons) */}
                     {activeTab === 'fixed' && (
                         <div className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -661,6 +726,8 @@ export default function ShowLeaveCredit() {
                                             defaultDays={balance.default_days ? formatNumber(balance.default_days) : null}
                                             usedDays={Math.max(0, usedDays)}
                                             isEarnable={false}
+                                            showEdit={true}
+                                            onEdit={() => openEditModal(balance)}
                                         />
                                     );
                                 })}
@@ -669,7 +736,7 @@ export default function ShowLeaveCredit() {
                     )}
                 </div>
 
-                {/* Information Footer */}
+                {/* Information Footer (unchanged) */}
                 <div className="mt-8 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl p-6">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
@@ -693,6 +760,64 @@ export default function ShowLeaveCredit() {
                         </Link>
                     </div>
                 </div>
+
+                {/* ========== NEW: Edit Balance Modal ========== */}
+                {editingBalance && (
+                    <div className="fixed inset-0 bg-gray-900/50 flex items-center justify-center z-50">
+                        <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+                            <h3 className="text-lg font-bold mb-2">Adjust Leave Balance</h3>
+                            <p className="text-sm text-gray-600 mb-4">
+                                {editingBalance.type} ({editingBalance.code})
+                            </p>
+                            <form onSubmit={handleUpdate}>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        New Balance (days)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        value={data.balance}
+                                        onChange={e => setData('balance', e.target.value)}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        required
+                                    />
+                                    {errors.balance && (
+                                        <p className="text-red-500 text-xs mt-1">{errors.balance}</p>
+                                    )}
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Remarks (optional)
+                                    </label>
+                                    <textarea
+                                        value={data.remarks}
+                                        onChange={e => setData('remarks', e.target.value)}
+                                        rows="2"
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        type="button"
+                                        onClick={closeEditModal}
+                                        className="px-4 py-2 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={processing}
+                                        className="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50"
+                                    >
+                                        {processing ? 'Updating...' : 'Update'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )}
             </div>
         </HRLayout>
     );

@@ -8,6 +8,10 @@ const EmployeeRecordings = () => {
     const [editingRemarks, setEditingRemarks] = useState(null);
     const [remarksValue, setRemarksValue] = useState('');
 
+    // New state for inline cell editing
+    const [editingCell, setEditingCell] = useState(null); // { id, field }
+    const [editValue, setEditValue] = useState('');
+
     console.log('First recording inclusive_dates:', recordings[0]?.inclusive_dates);
 
     // Helper functions remain unchanged
@@ -60,6 +64,7 @@ const EmployeeRecordings = () => {
         router.visit(route('hr.leave-recordings'));
     };
 
+    // Remarks handlers (existing)
     const startEditRemarks = (employeeId, year, month, currentRemarks) => {
         setEditingRemarks({ employeeId, year, month });
         setRemarksValue(currentRemarks || '');
@@ -86,6 +91,41 @@ const EmployeeRecordings = () => {
                 alert('Failed to update remarks. Please try again.');
             }
         });
+    };
+
+    // New handlers for inline cell editing
+    const startEditing = (id, field, currentValue) => {
+        setEditingCell({ id, field });
+        setEditValue(currentValue ?? '');
+    };
+
+    const saveCell = (id, field, value) => {
+        // If value is empty string or invalid, cancel edit
+        if (value === '' || isNaN(parseFloat(value))) {
+            setEditingCell(null);
+            return;
+        }
+
+        router.put(route('hr.leave-recordings.update-recording', id), {
+            [field]: parseFloat(value),
+        }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setEditingCell(null);
+            },
+            onError: (errors) => {
+                alert('Update failed. Please check the value.');
+                setEditingCell(null);
+            }
+        });
+    };
+
+    const handleKeyDown = (e, id, field) => {
+        if (e.key === 'Enter') {
+            saveCell(id, field, editValue);
+        } else if (e.key === 'Escape') {
+            setEditingCell(null);
+        }
     };
 
     const formatLateDays = (days) => {
@@ -188,7 +228,6 @@ const EmployeeRecordings = () => {
                     <div className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200 text-sm">
-                                {/* Table header and body remain exactly as before */}
                                 <thead className="bg-gray-50">
                                     <tr>
                                         <th rowSpan={2} className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
@@ -258,23 +297,68 @@ const EmployeeRecordings = () => {
                                                     <span className="text-gray-400 italic">No leaves</span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
-                                                {hasLates(recording.total_lates) ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                                        {formatLateDays(recording.total_lates)}
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                                        {formatLateDays(recording.total_lates)}
-                                                    </span>
-                                                )}
-                                            </td>
+
+                                            {/* Lates column - editable */}
+                                            {editingCell?.id === recording.id && editingCell?.field === 'total_lates' ? (
+                                                <td className="px-4 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
+                                                    <input
+                                                        type="number"
+                                                        step="0.001"
+                                                        min="0"
+                                                        value={editValue}
+                                                        onChange={(e) => setEditValue(e.target.value)}
+                                                        onBlur={() => saveCell(recording.id, 'total_lates', editValue)}
+                                                        onKeyDown={(e) => handleKeyDown(e, recording.id, 'total_lates')}
+                                                        autoFocus
+                                                        className="w-20 px-1 py-0.5 border border-gray-300 rounded text-sm focus:ring-blue-500 focus:border-blue-500"
+                                                    />
+                                                </td>
+                                            ) : (
+                                                <td
+                                                    onClick={() => startEditing(recording.id, 'total_lates', recording.total_lates)}
+                                                    className="cursor-pointer hover:bg-yellow-50 px-4 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200"
+                                                >
+                                                    {hasLates(recording.total_lates) ? (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                            {formatLateDays(recording.total_lates)}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                            {formatLateDays(recording.total_lates)}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            )}
+
+                                            {/* VL Earned - not editable */}
                                             <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-green-600 font-semibold">
                                                 {safeToFixed(recording.vl_earned)}
                                             </td>
-                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-gray-900 font-medium">
-                                                {safeToFixed(recording.vl_used)}
-                                            </td>
+
+                                            {/* VL Used - editable */}
+                                            {editingCell?.id === recording.id && editingCell?.field === 'vl_used' ? (
+                                                <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
+                                                    <input
+                                                        type="number"
+                                                        step="0.001"
+                                                        min="0"
+                                                        value={editValue}
+                                                        onChange={(e) => setEditValue(e.target.value)}
+                                                        onBlur={() => saveCell(recording.id, 'vl_used', editValue)}
+                                                        onKeyDown={(e) => handleKeyDown(e, recording.id, 'vl_used')}
+                                                        autoFocus
+                                                        className="w-16 px-1 py-0.5 border border-gray-300 rounded text-sm"
+                                                    />
+                                                </td>
+                                            ) : (
+                                                <td
+                                                    onClick={() => startEditing(recording.id, 'vl_used', recording.vl_used)}
+                                                    className="cursor-pointer hover:bg-yellow-50 px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-gray-900 font-medium"
+                                                >
+                                                    {safeToFixed(recording.vl_used)}
+                                                </td>
+                                            )}
+
                                             <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 font-bold"
                                                 style={{
                                                     color: safeNumber(recording.vl_balance) > 5 ? '#059669' :
@@ -282,12 +366,36 @@ const EmployeeRecordings = () => {
                                                 }}>
                                                 {safeToFixed(recording.vl_balance)}
                                             </td>
+
+                                            {/* SL Earned - not editable */}
                                             <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-green-600 font-semibold">
                                                 {safeToFixed(recording.sl_earned)}
                                             </td>
-                                            <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-gray-900 font-medium">
-                                                {safeToFixed(recording.sl_used)}
-                                            </td>
+
+                                            {/* SL Used - editable */}
+                                            {editingCell?.id === recording.id && editingCell?.field === 'sl_used' ? (
+                                                <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
+                                                    <input
+                                                        type="number"
+                                                        step="0.001"
+                                                        min="0"
+                                                        value={editValue}
+                                                        onChange={(e) => setEditValue(e.target.value)}
+                                                        onBlur={() => saveCell(recording.id, 'sl_used', editValue)}
+                                                        onKeyDown={(e) => handleKeyDown(e, recording.id, 'sl_used')}
+                                                        autoFocus
+                                                        className="w-16 px-1 py-0.5 border border-gray-300 rounded text-sm"
+                                                    />
+                                                </td>
+                                            ) : (
+                                                <td
+                                                    onClick={() => startEditing(recording.id, 'sl_used', recording.sl_used)}
+                                                    className="cursor-pointer hover:bg-yellow-50 px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 text-gray-900 font-medium"
+                                                >
+                                                    {safeToFixed(recording.sl_used)}
+                                                </td>
+                                            )}
+
                                             <td className="px-2 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200 font-bold"
                                                 style={{
                                                     color: safeNumber(recording.sl_balance) > 5 ? '#059669' :
@@ -295,11 +403,14 @@ const EmployeeRecordings = () => {
                                                 }}>
                                                 {safeToFixed(recording.sl_balance)}
                                             </td>
+
                                             <td className="px-4 py-3 whitespace-nowrap text-xs text-center border-r border-gray-200">
                                                 <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded border border-blue-200 font-bold">
                                                     {safeToFixed(recording.total_vl_sl)}
                                                 </span>
                                             </td>
+
+                                            {/* Remarks column (existing) */}
                                             <td className="px-6 py-4 text-sm text-gray-900 max-w-xs">
                                                 {editingRemarks &&
                                                     editingRemarks.employeeId === employee.employee_id &&
@@ -386,7 +497,6 @@ const EmployeeRecordings = () => {
                     {/* Summary Cards */}
                     {recordings.length > 0 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                            {/* Cards content unchanged */}
                             <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
                                 <div className="flex items-center">
                                     <div className="bg-blue-100 p-3 rounded-lg">

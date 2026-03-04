@@ -59,6 +59,8 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
         return approvers.find(approver => approver.role === displayRole) || null;
     };
 
+    
+
     const getDisplayPosition = (approver, role) => {
         if (approver?.position) {
             return approver.position;
@@ -256,6 +258,20 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
         });
     };
 
+
+    const formatApproverName = (approver) => {
+        if (!approver) return '';
+        // If we have structured name fields, use them
+        if (approver.first_name || approver.last_name) {
+            const first = approver.first_name || '';
+            const middle = approver.middle_name ? ` ${approver.middle_name.charAt(0)}.` : '';
+            const last = approver.last_name || '';
+            return `${first}${middle} ${last}`.trim();
+        }
+        // Fallback to plain name field
+        return approver.name || '';
+    };
+
     return (
         <div className="leave-form-container">
             <div style={{ textAlign: 'right', marginBottom: '10px' }}>
@@ -299,14 +315,14 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                             <tr>
                                 <td className="left-section" style={{ minWidth: '500px' }}>
                                     <strong style={{ marginRight: '220px' }}>1. Office/Department: {employee?.department?.name || 'N/A'}</strong>
-                                    <strong>2. Name: {employee?.full_name || 'N/A'}</strong>
+                                    <strong>2. Name: {employee?.salutation ? employee.salutation + ' ' : ''}{employee?.firstname} {employee?.middlename} {employee?.lastname}</strong>
                                 </td>
                             </tr>
                             <tr>
                                 <td className="left-section">
                                     <strong style={{ marginRight: '216px' }}>3. Date of filing: {formatDate(leaveRequest?.created_at)}</strong>
                                     <strong style={{ marginRight: '140px' }}>4. Position: {employee?.position || 'N/A'}</strong>
-                                    <strong>5. Salary: ₱{employee?.salary ? Number(employee.salary).toLocaleString() : 'N/A'}</strong>
+                                    <strong>5. Salary: ___________</strong>
                                 </td>
                             </tr>
                         </tbody>
@@ -561,16 +577,16 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                     </table>
 
 
+                                    {/* Section 7.A Certification of Leave Credits - Signature */}
+                                    
                                     <div className="signature-section">
-                                        <div className="approver-signature-line">
-                                            {(() => {
-                                                const hrApprover = getApproverByRole('hr');
-                                                return hrApprover?.name || 'HRMO-Designate';
-                                            })()}
-                                        </div>
-                                        <div className="verification-text">Reviewed and Certified by</div>
-                                        <div className="signature-label">(HRMO-Designate)</div>
-                                    </div>
+    <div className="approver-signature-line">
+        Joseph A. Actub
+    </div>
+    <div className="verification-text">Reviewed and Certified by</div>
+    <div className="signature-label">(HRMO-Designate)</div>
+</div>
+
                                 </td>
 
                                 <td style={{ width: '50%' }}>
@@ -579,9 +595,13 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                                     <span className="checkbox"></span> For disapproval due to: _____________________________________<br />
                                     ___________________________________________________________<br /><br />
                                     <div className="signature-section">
-                                        <div className="approver-signature-line">
-                                            {getApproverByRole('dept_head')?.name || 'Department Head'}
-                                        </div>
+                                    <div className="approver-signature-line">
+    {(() => {
+        const deptHead = getApproverByRole('dept_head');
+        if (!deptHead) return 'Department Head';
+        return deptHead.salutation ? `${deptHead.salutation} ${deptHead.name}` : deptHead.name;
+    })()}
+</div>
                                         <div className="verification-text"> Approval Duly Recorded and Authorized in the System by</div>
                                         <div className="signature-label">(Department Head/Authorized Personnel)</div>
                                     </div>
@@ -610,15 +630,19 @@ export default function LeaveForm({ leaveRequest, employee, approvers }) {
                             <tr>
                                 <td colSpan="2" style={{ textAlign: 'center', paddingTop: '20px' }}>
                                     <div className="approver-signature">
-                                        <div className="approver-signature-line">
-                                            {getApproverByRole('admin')?.name || 'Municipal Vice Mayor'}
-                                        </div>
+                                    <div className="approver-signature-line">
+    {(() => {
+        const admin = getApproverByRole('admin');
+        if (!admin) return 'Municipal Vice Mayor';
+        return admin.salutation ? `${admin.salutation} ${admin.name}` : admin.name;
+    })()}
+</div>
                                         <div className="approver-role">
                                             {getDisplayPosition(getApproverByRole('admin'), 'admin')}
                                         </div>
                                         <div className="verification-text">Approval Duly Recorded and Authorized in the System by</div>
                                     </div>
-                                    <br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />
+                                    <br /><br /><br /><br /><br /><br /><br /><br />
                                 </td>
                             </tr>
                         </tbody>

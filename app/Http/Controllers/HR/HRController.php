@@ -33,7 +33,8 @@ use App\Models\LeaveBalanceLog;
 use App\Models\LeaveBalance;
 use App\Services\LeaveRecordingService;
 use App\Models\EmployeeMonthlyRecording;
-
+use App\Models\EmployeeMonthlyRecordingLog;
+use Illuminate\Support\Facades\Auth;
 
 
 
@@ -116,6 +117,7 @@ public function storeEmployee(Request $request)
         'firstname' => 'required|string|max:255',
         'middlename' => 'nullable|string|max:255',
         'lastname' => 'required|string|max:255',
+        'salutation' => 'nullable|string|max:20',
         'gender' => 'required|in:male,female',
         'date_of_birth' => 'required|date',
         'position' => 'required|string|max:255',
@@ -141,6 +143,7 @@ public function storeEmployee(Request $request)
             'firstname' => $validated['firstname'],
             'middlename' => $validated['middlename'],
             'lastname' => $validated['lastname'],
+            'salutation' => $validated['salutation'] ?? null,
             'gender' => $validated['gender'],
             'date_of_birth' => $validated['date_of_birth'],
             'position' => $validated['position'],
@@ -358,6 +361,7 @@ public function editEmployee(Employee $employee)
             'firstname' => 'nullable|string|max:255',
             'middlename' => 'nullable|string|max:255',
             'lastname' => 'nullable|string|max:255',
+            'salutation' => 'nullable|string|max:20',
             'gender' => 'nullable|in:male,female',
             'date_of_birth' => 'nullable|date',
             'position' => 'nullable|string|max:255',
@@ -580,25 +584,26 @@ public function showLeaveCredit($employee_id)
         ]
     ];
 
-    // Get non-earnable leave balances from leave_balances table
     $nonEarnableLeaveBalances = \App\Models\LeaveBalance::with('leaveType')
-        ->where('employee_id', $employee_id)
-        ->whereHas('leaveType', function($query) {
-            $query->where('earnable', false);
-        })
-        ->get()
-        ->map(function($balance) {
-            return [
-                'type' => $balance->leaveType->name,
-                'code' => $balance->leaveType->code,
-                'balance' => $balance->balance,
-                'total_earned' => $balance->total_earned,
-                'total_used' => $balance->total_used,
-                'default_days' => $balance->leaveType->default_days,
-                'earnable' => false,
-                'description' => 'Fixed allocation'
-            ];
-        });
+    ->where('employee_id', $employee_id)
+    ->whereHas('leaveType', function($query) {
+        $query->where('earnable', false);
+    })
+    ->get()
+    ->map(function($balance) {
+        return [
+
+            'id' => $balance->id, // ✅ Add this line
+            'type' => $balance->leaveType->name,
+            'code' => $balance->leaveType->code,
+            'balance' => $balance->balance,
+            'total_earned' => $balance->total_earned,
+            'total_used' => $balance->total_used,
+            'default_days' => $balance->leaveType->default_days,
+            'earnable' => false,
+            'description' => 'Fixed allocation'
+        ];
+    });
 
     return Inertia::render('HR/ShowLeaveCredit', [
         'employee' => $employee,
@@ -1498,15 +1503,15 @@ public function showLeaveRequest($id)
         ])
         ->findOrFail($id);
 
-    // Get approvers with their positions
-    $approvers = $leaveRequest->approvals->map(function ($approval) {
-        return [
-            'name' => $approval->approver->name,
-            'role' => $approval->role,
-            'position' => $approval->approver->employee->position ?? $this->getDefaultPosition($approval->role),
-            'approved_at' => $approval->approved_at,
-        ];
-    });
+        $approvers = $leaveRequest->approvals->map(function ($approval) {
+            return [
+                'name' => $approval->approver->name,
+                'salutation' => $approval->approver->employee->salutation ?? '',
+                'role' => $approval->role,
+                'position' => $approval->approver->employee->position ?? $this->getDefaultPosition($approval->role),
+                'approved_at' => $approval->approved_at,
+            ];
+        });
 
     // FIXED: Use selected_dates for accurate duration calculation
     $selectedDates = [];
@@ -2736,71 +2741,7 @@ public function showEmployeeRecordings($employeeId, Request $request)
     ]);
 }
 
-/**
- * Get available years for filtering
- */
 
-
-/**
- * Calculate the imported balance for a leave type
- */
-
-
-/**
- * Get monthly used leaves from logs
- */
-/**
- * Get monthly used leaves from logs (excluding late deductions)
- */
-/**
- * 
- * Get monthly used leaves from logs (INCLUDING all deductions)
- */
-
-/**
- * Get leave earned for the month
- */
-
-
-
-
-
-
-/**
- * Calculate working days from inclusive dates
- */
-
-/**
- * Get regular monthly used leaves (EXCLUDING late deductions)
- */
-
-
-
-
-
-/**
- * Get inclusive dates from leave requests (SL and VL only)
- */
-/**
- * Get inclusive dates from leave requests (SL and VL only) - ONLY FULLY APPROVED
- */
-/**
- * Get inclusive dates from leave requests (SL and VL only) - ONLY admin approved leaves
- */
-/**
- * Get inclusive dates from leave requests (SL and VL only) - ONLY admin approved leaves
- */
-
-/**
- * Get total lates from attendance logs
- */
-/**
- * Get total late deductions from leave_credit_logs for VL type with "Late" remarks
- */
-
-/**
- * Get remarks for the month from the latest log entry
- */
 
 
 /**
@@ -2831,6 +2772,58 @@ public function updateRemarks(Request $request, $id)
     );
 
     return response()->json(['success' => true, 'message' => 'Remarks updated successfully.']);
+}
+
+
+
+public function updateRecording(Request $request, $id)
+{
+    $recording = EmployeeMonthlyRecording::findOrFail($id);
+
+    $validated = $request->validate([
+        'total_lates' => 'nullable|numeric|min:0',
+        'vl_used'     => 'nullable|numeric|min:0',
+        'sl_used'     => 'nullable|numeric|min:0',
+        'remarks'     => 'nullable|string|max:500',
+    ]);
+
+    // Capture old values for logging (only the fields that are present in the request)
+    $oldValues = [];
+    foreach (array_keys($validated) as $field) {
+        $oldValues[$field] = $recording->$field;
+    }
+
+    // Update the recording
+    $recording->fill($validated);
+
+    // Optional: automatically recalc balances if you want consistency
+    // if ($request->has('vl_used')) {
+    //     $recording->vl_balance = $recording->vl_earned - $recording->vl_used;
+    // }
+    // if ($request->has('sl_used')) {
+    //     $recording->sl_balance = $recording->sl_earned - $recording->sl_used;
+    // }
+    // $recording->total_vl_sl = $recording->vl_balance + $recording->sl_balance;
+
+    $recording->save();
+
+    // Log each changed field
+    foreach ($validated as $field => $newValue) {
+        $oldValue = $oldValues[$field] ?? null;
+        // Use a loose comparison because values may be strings vs numbers
+        if ($oldValue != $newValue) {
+            EmployeeMonthlyRecordingLog::create([
+                'recording_id' => $recording->id,
+                'field'        => $field,
+                'old_value'    => $oldValue,
+                'new_value'    => $newValue,
+                'user_id'      => Auth::id(),
+            ]);
+        }
+    }
+
+    // Redirect back with a success flash message (optional)
+    return redirect()->back()->with('success', 'Recording updated successfully.');
 }
 
 /**
@@ -3022,6 +3015,9 @@ public function fixMissingDeductions($leaveRequestId)
 }
 
 
+
+
+
 public function exportDepartmentRecordings(Request $request)
 {
     $request->validate([
@@ -3062,70 +3058,7 @@ public function exportAllRecordings(Request $request)
 
 
 
-// public function generatePDF(Request $request)
-// {
-//     try {
-//         $leaveRequestId = $request->input('leave_request_id');
-        
-//         if (!$leaveRequestId) {
-//             return back()->with('error', 'Leave request ID is required');
-//         }
-        
-//         // First, get the leave request without relationships to debug
-//         $leaveRequest = LeaveRequest::find($leaveRequestId);
-        
-//         if (!$leaveRequest) {
-//             return back()->with('error', 'Leave request not found');
-//         }
-        
-//         // Debug: Check what relationships are available
-//         \Log::info('LeaveRequest relationships: ' . implode(', ', array_keys($leaveRequest->getRelations())));
-        
-//         // Load relationships one by one to find the correct names
-//         $leaveRequest->load([
-//             'employee.department',
-//             'employee.leaveCreditLogs',
-//             'details',
-//         ]);
-        
-//         // Try to load approvals with different names
-//         if (method_exists($leaveRequest, 'approvals')) {
-//             $leaveRequest->load(['approvals.approver']);
-//             $approvers = $leaveRequest->approvals;
-//         } elseif (method_exists($leaveRequest, 'leaveApprovals')) {
-//             $leaveRequest->load(['leaveApprovals.approver']);
-//             $approvers = $leaveRequest->leaveApprovals;
-//         } elseif (method_exists($leaveRequest, 'approvers')) {
-//             $leaveRequest->load(['approvers']);
-//             $approvers = $leaveRequest->approvers;
-//         } else {
-//             $approvers = collect(); // Empty collection if no relationship found
-//         }
-        
-//         // Prepare data for PDF
-//         $data = [
-//             'leaveRequest' => $leaveRequest,
-//             'employee' => $leaveRequest->employee,
-//             'approvers' => $approvers,
-//         ];
 
-//         // Generate PDF
-//         $pdf = PDF::loadView('pdf.leave-form', $data)
-//             ->setPaper('a4', 'portrait')
-//             ->setOptions([
-//                 'dpi' => 150,
-//                 'defaultFont' => 'Arial',
-//                 'isHtml5ParserEnabled' => true,
-//                 'isRemoteEnabled' => true,
-//             ]);
-
-//         return $pdf->download("leave-request-{$leaveRequest->id}.pdf");
-
-//     } catch (\Exception $e) {
-//         \Log::error('PDF Generation Error: ' . $e->getMessage());
-//         return back()->with('error', 'Failed to generate PDF: ' . $e->getMessage());
-//     }
-// }
 
 
 public function holidays(Request $request)
@@ -3901,5 +3834,76 @@ private function getPaternityLeaveTypeId()
         $paternityId = LeaveType::where('name', 'Paternity Leave')->value('id');
     }
     return $paternityId;
+}
+
+
+
+/**
+ * Update a fixed (non-earnable) leave balance for an employee.
+ */
+public function updateFixedLeaveBalance(Request $request, $employee_id, $balance_id)
+{
+    $request->validate([
+        'balance' => 'required|numeric|min:0',
+        'remarks' => 'nullable|string|max:500',
+    ]);
+
+    try {
+        DB::beginTransaction();
+
+        // Find the leave balance record
+        $leaveBalance = LeaveBalance::with('leaveType')
+            ->where('employee_id', $employee_id)
+            ->where('id', $balance_id)
+            ->firstOrFail();
+
+        // Ensure it's a non-earnable leave type (safety check)
+        if ($leaveBalance->leaveType->earnable) {
+            throw new \Exception('Cannot update earnable leave types (SL/VL) through this endpoint.');
+        }
+
+        $oldBalance = $leaveBalance->balance;
+        $newBalance = $request->balance;
+
+        if ($oldBalance == $newBalance) {
+            return redirect()->back()->with('info', 'No changes detected.');
+        }
+
+        // Recalculate total_used based on total_earned and new balance
+        $oldUsed = $leaveBalance->total_used;
+        $totalEarned = $leaveBalance->total_earned;
+        $newUsed = $totalEarned - $newBalance;
+
+        if ($newUsed < 0) {
+            throw new \Exception('New balance cannot exceed total earned (' . $totalEarned . ' days).');
+        }
+
+        // Update the record
+        $leaveBalance->balance = $newBalance;
+        $leaveBalance->total_used = $newUsed;
+        $leaveBalance->save();
+
+        // Create a log entry (using LeaveBalanceLog)
+        LeaveBalanceLog::create([
+            'employee_id' => $employee_id,
+            'leave_type_id' => $leaveBalance->leave_type_id,
+            'year' => $leaveBalance->year,
+            'transaction_type' => 'adjustment',
+            'amount' => $newBalance - $oldBalance, // positive if added, negative if deducted
+            'balance_before' => $oldBalance,
+            'balance_after' => $newBalance,
+            'remarks' => $request->remarks ?? 'Manual adjustment by HR',
+            'reference_type' => 'manual',
+            'created_by' => auth()->id(),
+        ]);
+
+        DB::commit();
+
+        return redirect()->back()->with('success', 'Leave balance updated successfully.');
+    } catch (\Exception $e) {
+        DB::rollback();
+        Log::error('Error updating fixed leave balance: ' . $e->getMessage());
+        return redirect()->back()->withErrors(['error' => 'Failed to update balance: ' . $e->getMessage()]);
+    }
 }
 }

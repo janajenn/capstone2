@@ -118,6 +118,7 @@ export default function Employees({ employees, departments, filters }) {
         firstname: '',
         middlename: '',
         lastname: '',
+        salutation: '',
         gender: 'male',
         date_of_birth: '',
         position: '',
@@ -528,6 +529,18 @@ export default function Employees({ employees, departments, filters }) {
                                                     />
                                                     {errors.lastname && <div className="text-red-500 text-xs mt-1">{errors.lastname}</div>}
                                                 </div>
+
+                                                <div>
+    <label className="block text-sm font-medium text-gray-700 mb-2">Salutation</label>
+    <input
+        type="text"
+        placeholder="e.g., Mr., Ms., Dr., Atty."
+        value={data.salutation}
+        onChange={e => setData('salutation', e.target.value)}
+        className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+    />
+    {errors.salutation && <div className="text-red-500 text-xs mt-1">{errors.salutation}</div>}
+</div>
 
                                                 <div>
                                                     <label className="block text-sm font-medium text-gray-700 mb-2">Gender *</label>
