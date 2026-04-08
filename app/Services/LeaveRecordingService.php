@@ -163,38 +163,42 @@ class LeaveRecordingService
     // Existing helper methods (unchanged)
     // ------------------------------------------------------------------------
 
-    private function getInclusiveDatesArray($employeeId, $year, $month)
-    {
-        $startDate = "{$year}-{$month}-01";
-        $endDate = date('Y-m-t', strtotime($startDate));
+    /**
+ * Get an array of inclusive dates for a given employee, year, and month.
+ * Returns all approved leave requests that intersect the month.
+ */
+private function getInclusiveDatesArray($employeeId, $year, $month)
+{
+    $startDate = "{$year}-{$month}-01";
+    $endDate = date('Y-m-t', strtotime($startDate));
 
-        $leaveRequests = LeaveRequest::where('employee_id', $employeeId)
-            ->where('status', 'approved')
-            ->whereHas('approvals', fn($q) => $q->where('role', 'admin')->where('status', 'approved'))
-            ->whereHas('leaveType', fn($q) => $q->whereIn('code', ['VL', 'SL']))
-            ->where(function ($q) use ($startDate, $endDate) {
-                $q->whereBetween('date_from', [$startDate, $endDate])
-                  ->orWhereBetween('date_to', [$startDate, $endDate])
-                  ->orWhere(function ($qq) use ($startDate, $endDate) {
-                      $qq->where('date_from', '<=', $startDate)
-                         ->where('date_to', '>=', $endDate);
-                  });
-            })
-            ->with(['leaveType', 'approvals'])
-            ->get();
+    $leaveRequests = LeaveRequest::where('employee_id', $employeeId)
+        ->where('status', 'approved')
+        ->whereHas('approvals', fn($q) => $q->where('role', 'admin')->where('status', 'approved'))
+        ->where(function ($q) use ($startDate, $endDate) {
+            $q->whereBetween('date_from', [$startDate, $endDate])
+              ->orWhereBetween('date_to', [$startDate, $endDate])
+              ->orWhere(function ($qq) use ($startDate, $endDate) {
+                  $qq->where('date_from', '<=', $startDate)
+                     ->where('date_to', '>=', $endDate);
+              });
+        })
+        ->with(['leaveType', 'approvals'])
+        ->get();
 
-        return $leaveRequests->map(fn($r) => [
-            'from' => $r->date_from,
-            'to'   => $r->date_to,
-            'type' => $r->leaveType->name ?? 'Leave',
-            'code' => $r->leaveType->code ?? '',
-            'status' => $r->status,
-            'approvals' => $r->approvals->map(fn($a) => [
-                'role' => $a->role,
-                'status' => $a->status,
-            ]),
-        ])->toArray();
-    }
+    return $leaveRequests->map(fn($r) => [
+        'from' => $r->date_from,
+        'to'   => $r->date_to,
+        'type' => $r->leaveType->name ?? 'Leave',
+        'code' => $r->leaveType->code ?? '',
+        'status' => $r->status,
+        'approvals' => $r->approvals->map(fn($a) => [
+            'role' => $a->role,
+            'status' => $a->status,
+        ]),
+    ])->toArray();
+}
+
 
     private function getRemarks($employeeId, $year, $month)
     {
@@ -217,4 +221,10 @@ class LeaveRecordingService
             }
         });
     }
+
+
+    public function refreshForEmployeeYear($employeeId, $year)
+{
+    $this->generateForEmployeeYear($employeeId, $year);
+}
 }

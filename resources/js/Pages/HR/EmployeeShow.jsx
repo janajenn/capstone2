@@ -1,4 +1,3 @@
-// resources/js/Pages/HR/EmployeeShow.jsx
 import HRLayout from '@/Layouts/HRLayout';
 import { usePage, Link } from '@inertiajs/react';
 
@@ -16,7 +15,7 @@ const EmployeeAvatar = ({ gender, name, className = "w-16 h-16" }) => {
             </div>
         );
     }
-    
+
     // Default to male avatar
     return (
         <div className={`${className} bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg`}>
@@ -28,8 +27,8 @@ const EmployeeAvatar = ({ gender, name, className = "w-16 h-16" }) => {
 // Status badge component
 const StatusBadge = ({ status }) => (
     <span className={`inline-flex items-center px-4 py-2 rounded-2xl text-sm font-medium ${
-        status === 'active' 
-            ? 'bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800 border border-emerald-200' 
+        status === 'active'
+            ? 'bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800 border border-emerald-200'
             : 'bg-gradient-to-r from-rose-100 to-red-100 text-rose-800 border border-rose-200'
     }`}>
         <span className={`w-2 h-2 rounded-full mr-2 ${
@@ -44,8 +43,8 @@ const RoleBadge = ({ role, isPrimary }) => {
     const getRoleConfig = (role, isPrimary) => {
         const configs = {
             admin: {
-                gradient: isPrimary 
-                    ? 'from-purple-500 to-pink-600' 
+                gradient: isPrimary
+                    ? 'from-purple-500 to-pink-600'
                     : 'from-purple-400 to-pink-500',
                 text: isPrimary ? 'PRIMARY ADMIN' : 'ADMIN'
             },
@@ -62,7 +61,7 @@ const RoleBadge = ({ role, isPrimary }) => {
                 text: 'EMPLOYEE'
             }
         };
-        
+
         return configs[role] || configs.employee;
     };
 
@@ -129,7 +128,7 @@ export default function EmployeeShow() {
 
     return (
         <HRLayout>
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Header Section */}
                 <div className="mb-8">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between">
@@ -143,15 +142,15 @@ export default function EmployeeShow() {
                     </div>
                 </div>
 
-                {/* Main Content */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                    {/* Left Column - Profile Card */}
-                    <div className="lg:col-span-1">
+                {/* Main Content - Two Columns Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    {/* Left Column - Profile Card (3 columns) */}
+                    <div className="lg:col-span-3">
                         <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-3xl shadow-xl p-6 sticky top-8">
                             {/* Profile Avatar */}
                             <div className="text-center mb-6">
-                                <EmployeeAvatar 
-                                    gender={employee.gender} 
+                                <EmployeeAvatar
+                                    gender={employee.gender}
                                     name={fullName}
                                     className="w-24 h-24 mx-auto mb-4"
                                 />
@@ -159,89 +158,85 @@ export default function EmployeeShow() {
                                     {employee.firstname} {employee.lastname}
                                 </h2>
                                 <p className="text-gray-600 text-sm mb-4">{employee.position}</p>
-                                
+
                                 {/* Status and Role Badges */}
                                 <div className="space-y-3">
                                     <StatusBadge status={employee.status} />
                                     {employee.user && (
-                                        <RoleBadge 
-                                            role={employee.user.role} 
-                                            isPrimary={employee.user.is_primary} 
+                                        <RoleBadge
+                                            role={employee.user.role}
+                                            isPrimary={employee.user.is_primary}
                                         />
                                     )}
                                 </div>
                             </div>
-
-                           
                         </div>
                     </div>
 
-                    {/* Right Column - Details */}
-                    <div className="lg:col-span-3 space-y-6">
-                        {/* Personal Information */}
-                        <InfoCard title="Personal Information">
-                            <InfoRow label="Full Name" value={`${employee.firstname} ${employee.middlename} ${employee.lastname}`.trim()} />
-                            <InfoRow label="Gender" value={capitalizeWords(employee.gender)} />
-                            <InfoRow label="Date of Birth" value={formatDate(employee.date_of_birth)} />
-                            <InfoRow label="Civil Status" value={capitalizeWords(employee.civil_status)} />
-                            <InfoRow label="Contact Number" value={employee.contact_number} />
-                        </InfoCard>
-
-                        {/* Work Information */}
-                        <InfoCard title="Work Information">
-                            <InfoRow label="Department" value={employee.department?.name} />
-                            <InfoRow label="Position" value={employee.position} />
-                            <InfoRow label="Biometric ID" value={employee.biometric_id} />
-                            <InfoRow label="Employment Status" value={capitalizeWords(employee.status)} />
-                            <InfoRow label="Date Joined" value={formatDate(employee.created_at)} />
-                        </InfoCard>
-
-                        {/* Account Information */}
-                        <InfoCard title="Account Information">
-                            <InfoRow label="Email" value={employee.user?.email} />
-                            <InfoRow label="Role">
-                                {employee.user ? (
-                                    <RoleBadge 
-                                        role={employee.user.role} 
-                                        isPrimary={employee.user.is_primary} 
-                                    />
-                                ) : (
-                                    <span className="text-sm font-semibold text-gray-800">No Account</span>
-                                )}
-                            </InfoRow>
-                            <InfoRow label="Account Status">
-                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                                    employee.user 
-                                        ? 'bg-green-100 text-green-800' 
-                                        : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                    {employee.user ? 'Active' : 'Not Created'}
-                                </span>
-                            </InfoRow>
-                        </InfoCard>
-
-                        {/* Contact & Compensation */}
+                    {/* Right Column - Details (9 columns) */}
+                    <div className="lg:col-span-9 space-y-6">
+                        {/* First row: Personal & Work Information side by side */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Contact Information */}
-                            <InfoCard title="Contact Information">
-                                <InfoRow label="Address" value={employee.address} />
+                            <InfoCard title="Personal Information">
+                                <InfoRow label="Full Name" value={`${employee.firstname} ${employee.middlename} ${employee.lastname}`.trim()} />
+                                <InfoRow label="Gender" value={capitalizeWords(employee.gender)} />
+                                <InfoRow label="Date of Birth" value={formatDate(employee.date_of_birth)} />
+                                <InfoRow label="Civil Status" value={capitalizeWords(employee.civil_status)} />
+                                <InfoRow label="Contact Number" value={employee.contact_number} />
                             </InfoCard>
 
-                            {/* Compensation */}
+                            <InfoCard title="Work Information">
+                                <InfoRow label="Department" value={employee.department?.name} />
+                                <InfoRow label="Position" value={employee.position} />
+                                <InfoRow label="Biometric ID" value={employee.biometric_id} />
+                                <InfoRow label="Employment Status" value={capitalizeWords(employee.status)} />
+                                <InfoRow label="Date Joined" value={formatDate(employee.created_at)} />
+                            </InfoCard>
+                        </div>
+
+                        {/* Second row: Account & Compensation side by side */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <InfoCard title="Account Information">
+                                <InfoRow label="Email" value={employee.user?.email} />
+                                <InfoRow label="Role">
+                                    {employee.user ? (
+                                        <RoleBadge
+                                            role={employee.user.role}
+                                            isPrimary={employee.user.is_primary}
+                                        />
+                                    ) : (
+                                        <span className="text-sm font-semibold text-gray-800">No Account</span>
+                                    )}
+                                </InfoRow>
+                                <InfoRow label="Account Status">
+                                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                                        employee.user
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-gray-100 text-gray-800'
+                                    }`}>
+                                        {employee.user ? 'Active' : 'Not Created'}
+                                    </span>
+                                </InfoRow>
+                            </InfoCard>
+
                             <InfoCard title="Compensation">
-                                <InfoRow 
-                                    label="Monthly Salary" 
-                                    value={formatCurrency(employee.monthly_salary)} 
+                                <InfoRow
+                                    label="Monthly Salary"
+                                    value={formatCurrency(employee.monthly_salary)}
                                 />
-                                <InfoRow 
-                                    label="Daily Rate" 
-                                    value={formatCurrency(employee.daily_rate)} 
+                                <InfoRow
+                                    label="Daily Rate"
+                                    value={formatCurrency(employee.daily_rate)}
                                 />
                             </InfoCard>
                         </div>
 
-                       
-                        
+                        {/* Third row: Contact Information (full width) */}
+                        <div className="grid grid-cols-1 gap-6">
+                            <InfoCard title="Contact Information">
+                                <InfoRow label="Address" value={employee.address} />
+                            </InfoCard>
+                        </div>
 
                         {/* Action Buttons */}
                         <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-lg p-6">

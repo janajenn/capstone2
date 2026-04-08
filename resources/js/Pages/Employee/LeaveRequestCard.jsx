@@ -37,19 +37,7 @@ export default function LeaveRequestCard({ request }) {
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    {/* <div>
-                        <p className="text-sm text-gray-500">Date Range</p>
-                        <p className="text-sm font-medium">
-                            {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} -{' '}
-                            {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
-                    </div>
-                    <div>
-                        <p className="text-sm text-gray-500">Duration</p>
-                        <p className="text-sm font-medium">
-                        {request.selected_dates_count || duration} day{(request.selected_dates_count || duration) !== 1 ? 's' : ''}
-                        </p>
-                    </div> */}
+                    
                     <div>
                         <p className="text-sm text-gray-500">Reason</p>
                         <p className="text-sm font-medium line-clamp-1">
@@ -70,8 +58,8 @@ export default function LeaveRequestCard({ request }) {
 
                 <div className="pt-4">
     <h4 className="text-sm font-medium text-gray-700 mb-2">Approval Progress</h4>
-    <LeaveProgressTracker 
-        approvals={request.approvals} 
+    <LeaveProgressTracker
+        approvals={request.approvals}
         isDeptHead={request.is_dept_head_request}
     />
 </div>

@@ -132,31 +132,31 @@ export default function ShowLeaveRequest() {
             {/* Selected Dates Section - UPDATED */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 mb-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Selected Dates</h3>
-              
+
               {selectedDatesCount > 0 ? (
                 <div className="space-y-4">
                   {/* Show selected dates in boxes */}
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto">
                     {selectedDates.map((date, index) => (
-                      <div 
+                      <div
                         key={index}
                         className="bg-gradient-to-r from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-3 text-center"
                       >
                         <div className="text-sm text-blue-600 font-semibold">
-                          {new Date(date).toLocaleDateString('en-US', { 
+                          {new Date(date).toLocaleDateString('en-US', {
                             weekday: 'short'
                           })}
                         </div>
                         <div className="text-xs text-blue-800 mt-1">
-                          {new Date(date).toLocaleDateString('en-US', { 
-                            month: 'short', 
-                            day: 'numeric' 
+                          {new Date(date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric'
                           })}
                         </div>
                       </div>
                     ))}
                   </div>
-                  
+
                   {/* Summary */}
                   <div className="flex justify-between items-center text-sm text-gray-600 pt-3 border-t border-gray-200">
                     <span>Total: {selectedDatesCount} selected date{selectedDatesCount !== 1 ? 's' : ''}</span>

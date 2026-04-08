@@ -5,11 +5,14 @@ namespace App\Http\Controllers\HR;
 use App\Http\Controllers\Controller;
 use App\Services\AttendanceImportService;
 use App\Services\LeaveCreditService;
+use App\Services\LeaveRecordingService; // <-- NEW
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
 use App\Models\AttendanceCorrection;
+
+
 
 class AttendanceImportController extends Controller
 {
@@ -33,10 +36,182 @@ class AttendanceImportController extends Controller
 
     /**
      * Handle attendance import from Excel file
+   
+    // /**
+    //  * Handle attendance import from Excel file
+    //  */
+    // public function import(Request $request)
+    // {
+    //     \Log::info('Attendance import request', [
+    //         'has_file' => $request->hasFile('file'),
+    //         'all_files' => $request->allFiles(),
+    //         'all_input' => $request->all(),
+    //         'content_type' => $request->header('Content-Type')
+    //     ]);
+
+    //     $validator = Validator::make($request->all(), [
+    //         'file' => 'required|file|max:10240', // 10MB max
+    //         'overwrite' => 'boolean'
+    //     ], [
+    //         'file.required' => 'Please select a file to upload.',
+    //         'file.file' => 'The uploaded file is not valid.',
+    //         'file.max' => 'The file may not be greater than 10MB.'
+    //     ]);
+
+    //     // Custom validation for file extension
+    //     if ($request->hasFile('file')) {
+    //         $file = $request->file('file');
+    //         $extension = strtolower($file->getClientOriginalExtension());
+    //         $allowedExtensions = ['xlsx', 'xls', 'csv'];
+
+    //         if (!in_array($extension, $allowedExtensions)) {
+    //             $validator->errors()->add('file', 'The file must be a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
+    //         }
+    //     }
+
+    //     if ($validator->fails()) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Validation failed',
+    //             'errors' => $validator->errors(),
+    //             'debug' => [
+    //                 'has_file' => $request->hasFile('file'),
+    //                 'file_size' => $request->hasFile('file') ? $request->file('file')->getSize() : 'no file',
+    //                 'file_mime' => $request->hasFile('file') ? $request->file('file')->getMimeType() : 'no file',
+    //                 'overwrite' => $request->input('overwrite'),
+    //                 'all_input' => $request->all(),
+    //                 'content_type' => $request->header('Content-Type'),
+    //                 'method' => $request->method()
+    //             ]
+    //         ], 422);
+    //     }
+
+    //     try {
+    //         $file = $request->file('file');
+    //         $overwrite = $request->boolean('overwrite', false);
+
+    //         // Store and process file
+    //         $filePath = $file->store('temp/attendance-imports');
+    //         $fullPath = storage_path('app/' . $filePath);
+
+    //         // Process the import (updated service returns affected_dates)
+    //         $result = $this->importService->importFromExcel($fullPath, [
+    //             'overwrite' => $overwrite
+    //         ]);
+
+    //         // Clean up temporary file
+    //         Storage::delete($filePath);
+
+    //         if (!$result['success']) {
+    //             return redirect()->back()->with([
+    //                 'error' => 'Import failed: ' . ($result['message'] ?? 'Unknown error occurred'),
+    //                 'importResult' => $result
+    //             ]);
+    //         }
+
+    //         if ($result['success_count'] === 0) {
+    //             \Log::warning('Import completed but 0 records were imported', $result);
+    //             return redirect()->back()->with([
+    //                 'warning' => 'No records were imported. This could be because:',
+    //                 'importResult' => $result,
+    //                 'reasons' => [
+    //                     'The file format may not match the expected template',
+    //                     'All records in the file may already exist in the system',
+    //                     'The file may contain invalid or duplicate data',
+    //                     'No valid employee records were found in the file'
+    //                 ]
+    //             ]);
+    //         }
+
+    //         // ------------------------------------------------------------------
+    //         // NEW: Reprocess late deductions for all affected dates if overwrite
+    //         // ------------------------------------------------------------------
+    //         $leaveCreditService = new LeaveCreditService();
+    //         $reprocessedCount = 0;
+    //         $reprocessedFailed = 0;
+
+    //         if ($overwrite && !empty($result['affected_dates'])) {
+    //             foreach ($result['affected_dates'] as $empId => $dates) {
+    //                 $uniqueDates = array_unique($dates);
+    //                 foreach ($uniqueDates as $date) {
+    //                     // Fetch the attendance log to get late_minutes
+    //                     $log = \App\Models\AttendanceLog::where('employee_id', $empId)
+    //                         ->whereDate('work_date', $date)
+    //                         ->first();
+
+    //                     if ($log && $log->late_minutes > 0) {
+    //                         $res = $leaveCreditService->processLateForAttendanceLog(
+    //                             $empId,
+    //                             $date,
+    //                             $log->late_minutes,
+    //                             true // overwrite
+    //                         );
+    //                         if ($res['success']) {
+    //                             $reprocessedCount++;
+    //                         } else {
+    //                             $reprocessedFailed++;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             \Log::info("🔄 Reprocessed late deductions: {$reprocessedCount} succeeded, {$reprocessedFailed} failed");
+    //         }
+
+    //         // ------------------------------------------------------------------
+    //         // NEW: Refresh monthly recordings for all affected employees/years
+    //         // ------------------------------------------------------------------
+    //         $leaveRecordingService = app(LeaveRecordingService::class);
+    //         $refreshedEmployees = [];
+
+    //         if (!empty($result['affected_dates'])) {
+    //             foreach ($result['affected_dates'] as $empId => $dates) {
+    //                 foreach ($dates as $date) {
+    //                     $year = \Carbon\Carbon::parse($date)->year;
+    //                     $key = $empId . '_' . $year;
+    //                     if (!in_array($key, $refreshedEmployees)) {
+    //                         $leaveRecordingService->refreshForEmployeeYear($empId, $year);
+    //                         $refreshedEmployees[] = $key;
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         // ------------------------------------------------------------------
+    //         // Prepare success message
+    //         // ------------------------------------------------------------------
+    //         $lateCreditResult = $leaveCreditService->processLateCreditsForRecentImports();
+    //         $message = "Successfully imported {$result['success_count']} records. " .
+    //                    "Processed late credits for {$lateCreditResult['processed_count']} employees.";
+
+    //         if ($reprocessedCount > 0) {
+    //             $message .= " Reprocessed {$reprocessedCount} late deductions (overwrite).";
+    //         }
+    //         if (count($refreshedEmployees) > 0) {
+    //             $message .= " Refreshed monthly recordings for " . count($refreshedEmployees) . " employee-years.";
+    //         }
+
+    //         return redirect()->back()->with([
+    //             'success' => $message,
+    //             'importResult' => $result,
+    //             'lateCreditResult' => $lateCreditResult
+    //         ]);
+
+    //     } catch (\Exception $e) {
+    //         \Log::error('Import failed: ' . $e->getMessage());
+    //         return redirect()->back()->with([
+    //             'error' => 'Import failed: ' . $e->getMessage()
+    //         ]);
+    //     }
+    // }
+    /**
+     * Get attendance import template
+     */
+   
+    /**
+     * Handle attendance import from Excel file
      */
     public function import(Request $request)
     {
-        // Log the request for debugging
         \Log::info('Attendance import request', [
             'has_file' => $request->hasFile('file'),
             'all_files' => $request->allFiles(),
@@ -58,7 +233,7 @@ class AttendanceImportController extends Controller
             $file = $request->file('file');
             $extension = strtolower($file->getClientOriginalExtension());
             $allowedExtensions = ['xlsx', 'xls', 'csv'];
-            
+    
             if (!in_array($extension, $allowedExtensions)) {
                 $validator->errors()->add('file', 'The file must be a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
             }
@@ -89,7 +264,7 @@ class AttendanceImportController extends Controller
             $filePath = $file->store('temp/attendance-imports');
             $fullPath = storage_path('app/' . $filePath);
     
-            // Process the import
+            // Process the import (the service must return an 'affected_dates' array)
             $result = $this->importService->importFromExcel($fullPath, [
                 'overwrite' => $overwrite
             ]);
@@ -97,82 +272,99 @@ class AttendanceImportController extends Controller
             // Clean up temporary file
             Storage::delete($filePath);
     
-            if ($result['success']) {
-                if ($result['success_count'] === 0) {
-                    \Log::warning('Import completed but 0 records were imported', $result);
-                    
-                    // FIX: Use Inertia redirect with data
-                    return redirect()->back()->with([
-                        'warning' => 'No records were imported. This could be because:',
-                        'importResult' => $result,
-                        'reasons' => [
-                            'The file format may not match the expected template',
-                            'All records in the file may already exist in the system',
-                            'The file may contain invalid or duplicate data',
-                            'No valid employee records were found in the file'
-                        ]
-                    ]);
+            if (!$result['success']) {
+                return redirect()->back()->with([
+                    'error' => 'Import failed: ' . ($result['message'] ?? 'Unknown error occurred'),
+                    'importResult' => $result
+                ]);
+            }
+    
+            if ($result['success_count'] === 0) {
+                \Log::warning('Import completed but 0 records were imported', $result);
+                return redirect()->back()->with([
+                    'warning' => 'No records were imported. This could be because:',
+                    'importResult' => $result,
+                    'reasons' => [
+                        'The file format may not match the expected template',
+                        'All records in the file may already exist in the system',
+                        'The file may contain invalid or duplicate data',
+                        'No valid employee records were found in the file'
+                    ]
+                ]);
+            }
+    
+            // ------------------------------------------------------------------
+            // Process late deductions for every affected date
+            // ------------------------------------------------------------------
+            $leaveCreditService = new LeaveCreditService();
+            $processedLateCount = 0;
+            $failedLateCount = 0;
+    
+            if (!empty($result['affected_dates'])) {
+                foreach ($result['affected_dates'] as $empId => $dates) {
+                    $uniqueDates = array_unique($dates);
+                    foreach ($uniqueDates as $date) {
+                        $log = \App\Models\AttendanceLog::where('employee_id', $empId)
+                            ->whereDate('work_date', $date)
+                            ->first();
+    
+                        if ($log && $log->late_minutes > 0) {
+                            // processLateForAttendanceLog must exist in LeaveCreditService
+                            $res = $leaveCreditService->processLateForAttendanceLog(
+                                $empId,
+                                $date,
+                                $log->late_minutes,
+                                $overwrite  // true or false
+                            );
+                            if ($res['success']) {
+                                $processedLateCount++;
+                            } else {
+                                $failedLateCount++;
+                                \Log::warning('Late deduction failed', $res);
+                            }
+                        }
+                    }
                 }
+            }
     
-                // ✅ CRITICAL: Process late credits IMMEDIATELY after successful import
-                $leaveCreditService = new LeaveCreditService();
-                $lateCreditResult = $leaveCreditService->processLateCreditsForRecentImports();
-                
-                \Log::info("✅ Automatic late credit processing completed", $lateCreditResult);
+            // ------------------------------------------------------------------
+            // Refresh monthly recordings for all affected employees/years
+            // ------------------------------------------------------------------
+            $leaveRecordingService = app(LeaveRecordingService::class);
+            $refreshedEmployees = [];
     
-                 // FIX: Use Inertia redirect with data
+            if (!empty($result['affected_dates'])) {
+                foreach ($result['affected_dates'] as $empId => $dates) {
+                    foreach (array_unique($dates) as $date) {
+                        $year = \Carbon\Carbon::parse($date)->year;
+                        $key = $empId . '_' . $year;
+                        if (!in_array($key, $refreshedEmployees)) {
+                            $leaveRecordingService->refreshForEmployeeYear($empId, $year);
+                            $refreshedEmployees[] = $key;
+                        }
+                    }
+                }
+            }
+    
+            // ------------------------------------------------------------------
+            // Prepare success message
+            // ------------------------------------------------------------------
+            $message = "Successfully imported {$result['success_count']} records. " .
+                       "Processed late credits for {$processedLateCount} days (failed: {$failedLateCount}). " .
+                       "Refreshed monthly recordings for " . count($refreshedEmployees) . " employee-years.";
+    
             return redirect()->back()->with([
-                'success' => "Successfully imported {$result['success_count']} records. " . 
-                           "Processed late credits for {$lateCreditResult['processed_count']} employees.",
-                'importResult' => $result,
-                'lateCreditResult' => $lateCreditResult
-            ]);
-        } else {
-            // FIX: Use Inertia redirect with error
-            return redirect()->back()->with([
-                'error' => 'Import failed: ' . ($result['message'] ?? 'Unknown error occurred'),
+                'success' => $message,
                 'importResult' => $result
             ]);
+    
+        } catch (\Exception $e) {
+            \Log::error('Import failed: ' . $e->getMessage());
+            return redirect()->back()->with([
+                'error' => 'Import failed: ' . $e->getMessage()
+            ]);
         }
-
-    } catch (\Exception $e) {
-        // FIX: Use Inertia redirect with error
-        return redirect()->back()->with([
-            'error' => 'Import failed: ' . $e->getMessage()
-        ]);
     }
-}
-
-    /**
-     * Get attendance import template
-     */
-    public function downloadTemplate()
-    {
-        $templateData = [
-            ['Employee Name', 'Biometric Code', 'Work Date', 'Schedule Start', 'Schedule End', 'Time In', 'Time Out', 'Break Start', 'Break End'],
-            ['John Doe', '22', '2024-01-15', '08:00', '17:00', '2024-01-15 08:05', '2024-01-15 17:00', '12:00', '13:00'],
-            ['Jane Smith', '23', '2024-01-15', '08:00', '17:00', '2024-01-15 07:55', '2024-01-15 17:05', '12:00', '13:00']
-        ];
-
-        $filename = 'attendance_import_template.csv';
-        $filepath = storage_path('app/temp/' . $filename);
-
-        // Create directory if it doesn't exist
-        if (!file_exists(dirname($filepath))) {
-            mkdir(dirname($filepath), 0755, true);
-        }
-
-        $file = fopen($filepath, 'w');
-        
-        foreach ($templateData as $row) {
-            fputcsv($file, $row);
-        }
-        
-        fclose($file);
-
-        return response()->download($filepath, $filename)->deleteFileAfterSend(true);
-    }
-
     /**
      * Show HR attendance logs index page
      */

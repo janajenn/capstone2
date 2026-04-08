@@ -71,7 +71,7 @@ export default function MyLeaveRequests() {
         <EmployeeLayout>
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-100 py-8">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                   
+
                     {/* Header Section */}
                     <motion.div
                         className="mb-8"
@@ -97,7 +97,7 @@ export default function MyLeaveRequests() {
                                     </p>
                                 </div>
                             </div>
-                            
+
                             <Link
                                 href={route('employee.leave-history')}
                                 className="mt-4 sm:mt-0 inline-flex items-center px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-600 border border-transparent rounded-xl font-semibold text-sm text-white uppercase tracking-wider hover:from-emerald-600 hover:to-green-700 focus:from-emerald-600 focus:to-green-700 active:from-emerald-700 active:to-green-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all duration-200 transform hover:scale-105 focus:scale-105 shadow-lg hover:shadow-xl"
@@ -186,10 +186,10 @@ export default function MyLeaveRequests() {
                                         data.map((request) => {
                                             const startDate = new Date(request.date_from);
                                             const endDate = new Date(request.date_to);
-                                            
+
                                             // FIXED: Use total_days from backend which now uses selected_dates count
                                             const duration = request.total_days;
-                                            
+
                                             const isRecalled = request.is_recalled;
                                             const recallData = request.recall_data;
 
@@ -207,8 +207,8 @@ export default function MyLeaveRequests() {
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-start space-x-4">
                                                             <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center shadow-md ${
-                                                                isRecalled 
-                                                                    ? 'bg-gradient-to-r from-gray-400 to-gray-500' 
+                                                                isRecalled
+                                                                    ? 'bg-gradient-to-r from-gray-400 to-gray-500'
                                                                     : 'bg-gradient-to-r from-blue-400 to-blue-500'
                                                             }`}>
                                                                 <span className="text-white text-lg">
@@ -252,8 +252,8 @@ export default function MyLeaveRequests() {
                                                     <td className="px-6 py-4">
                                                         <div className="flex flex-col space-y-1">
                                                             <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-medium shadow-sm ${
-                                                                isRecalled 
-                                                                    ? 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700' 
+                                                                isRecalled
+                                                                    ? 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700'
                                                                     : 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800'
                                                             }`}>
                                                                 {duration} day{duration !== 1 ? 's' : ''}
@@ -280,7 +280,7 @@ export default function MyLeaveRequests() {
             ? 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800'
             : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-800'
     }`}>
-        {isRecalled ? 'Recalled' : 
+        {isRecalled ? 'Recalled' :
          request.status === 'approved' ? 'Approved' :
          request.status === 'rejected' ? 'Rejected' :
          request.status === 'pending_hr' ? 'Pending HR' :
@@ -292,8 +292,8 @@ export default function MyLeaveRequests() {
 
                                                     {/* Progress Column */}
                                                     <td className="px-6 py-4">
-                                                        <CompactProgressIndicator 
-                                                            approvals={request.approvals} 
+                                                        <CompactProgressIndicator
+                                                            approvals={request.approvals}
                                                             isDeptHead={request.is_dept_head_request || employee?.user?.role === 'dept_head'}
                                                             isAdmin={employee?.user?.role === 'admin'}
                                                             isRecalled={isRecalled}
@@ -394,7 +394,7 @@ export default function MyLeaveRequests() {
                                                     ) {
                                                         const pageLink = links.find(link => link.label === page.toString());
                                                         const url = pageLink ? pageLink.url : `?page=${page}`;
-                                                        
+
                                                         return (
                                                             <Link
                                                                 key={page}

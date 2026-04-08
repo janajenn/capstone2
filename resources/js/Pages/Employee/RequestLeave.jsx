@@ -349,7 +349,7 @@ const LeaveTypeCard = ({ leaveType, isSelected, onClick, leaveCredits, leaveBala
       onClick={onClick}
       className={`
         w-full p-6 text-left transition-all duration-200 ease-in-out
-        rounded-xl border-2 bg-white border-gray-200 shadow-sm 
+        rounded-xl border-2 bg-white border-gray-200 shadow-sm
         hover:shadow-md hover:border-gray-300 hover:scale-[1.01] cursor-pointer
         ${isSelected
           ? 'border-blue-500 shadow-lg shadow-blue-100 transform scale-[1.02]'
@@ -421,6 +421,9 @@ export default function RequestLeave({ prefill }) {
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // NEW: State to control which date selection method is active
+  const [dateSelectionMode, setDateSelectionMode] = useState('duration'); // 'duration' or 'specific'
+
   // Get employee gender and civil status from auth or props
   const employeeGender = auth?.user?.employee?.gender || props.employeeGender;
   const employeeCivilStatus = auth?.user?.employee?.civil_status || props.employeeCivilStatus;
@@ -444,7 +447,7 @@ export default function RequestLeave({ prefill }) {
       if (gender === 'male') {
         // Male employees should not see maternity leave, Special Leave Benefits for Women, or VAWC leave
         if (
-          leaveTypeCode === 'ML' || 
+          leaveTypeCode === 'ML' ||
           leaveType.name.toLowerCase().includes('maternity') ||
           leaveTypeCode === 'SLBW' ||
           leaveTypeCode === '10DV' ||
@@ -457,17 +460,17 @@ export default function RequestLeave({ prefill }) {
 
       // Civil status-based restrictions for solo parent leave
       if (
-        leaveTypeCode === 'SOLOPL' || 
-        leaveTypeCode === 'SPL' || 
+        leaveTypeCode === 'SOLOPL' ||
+        leaveTypeCode === 'SPL' ||
         leaveType.name.toLowerCase().includes('solo parent')
       ) {
         const soloParentStatuses = [
           'single_solo_parent',
-          'married_solo_parent', 
+          'married_solo_parent',
           'divorced_solo_parent',
           'widowed_solo_parent  '
         ];
-        
+
         // Only show solo parent leave to employees with solo parent civil status
         if (!soloParentStatuses.includes(employeeCivilStatus)) {
           return false;
@@ -478,7 +481,7 @@ export default function RequestLeave({ prefill }) {
     });
   };
 
-  const filteredLeaveTypes = useMemo(() => 
+  const filteredLeaveTypes = useMemo(() =>
     filterLeaveTypes(leaveTypes),
     [leaveTypes, employeeGender, employeeCivilStatus]
   );
@@ -490,7 +493,7 @@ export default function RequestLeave({ prefill }) {
 
   // Get URL parameters for pre-filling
   const [urlParams, setUrlParams] = useState(new URLSearchParams(window.location.search));
-    
+
   const prefillDate = urlParams.get('prefill_date');
   const prefillForAbsence = urlParams.get('prefill_for_absence');
 
@@ -503,8 +506,8 @@ export default function RequestLeave({ prefill }) {
   useEffect(() => {
       if (prefillForAbsence && prefillDate) {
           // Find Sick Leave type
-          const sickLeaveType = leaveTypes?.find(lt => 
-              lt.code.toUpperCase() === 'SL' || 
+          const sickLeaveType = leaveTypes?.find(lt =>
+              lt.code.toUpperCase() === 'SL' ||
               lt.name.toLowerCase().includes('sick')
           );
 
@@ -518,7 +521,7 @@ export default function RequestLeave({ prefill }) {
           setData('number_of_days', 1);
           setData('selectedDates', [prefillDate]);
           setData('date_to', prefillDate);
-          
+
           // Auto-scroll to form section
           if (formSectionRef.current) {
               setTimeout(() => {
@@ -557,20 +560,20 @@ export default function RequestLeave({ prefill }) {
   // Calculate working days based on selected dates
   const workingDays = useMemo(() => {
     // If using specific dates
-    if (data.selectedDates && data.selectedDates.length > 0) {
+    if (dateSelectionMode === 'specific' && data.selectedDates && data.selectedDates.length > 0) {
       return data.selectedDates.filter(date => {
         const day = new Date(date).getDay();
         return day !== 0 && day !== 6;
       }).length;
     }
-    
+
     // If using number of days method
-    if (data.number_of_days && data.date_from && data.date_to) {
+    if (dateSelectionMode === 'duration' && data.number_of_days && data.date_from && data.date_to) {
       return calculateWorkingDays(data.date_from, data.date_to);
     }
-    
+
     return 0;
-  }, [data.selectedDates, data.number_of_days, data.date_from, data.date_to]);
+  }, [data.selectedDates, data.number_of_days, data.date_from, data.date_to, dateSelectionMode]);
 
   // Check if document is required for sick leave
   const isDocumentRequired = useMemo(() => {
@@ -640,69 +643,76 @@ export default function RequestLeave({ prefill }) {
   const submit = (e) => {
     e.preventDefault();
 
-    // Validate that we have either selected dates OR number of days with start date
-    if ((!data.selectedDates || data.selectedDates.length === 0) &&
-      (!data.number_of_days || !data.date_from)) {
-
-      return;
+    // Validate that we have the necessary data based on selected mode
+    if (dateSelectionMode === 'duration') {
+      if (!data.number_of_days || !data.date_from) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Missing Information',
+          text: 'Please enter number of days and start date.',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#3b82f6',
+        });
+        return;
+      }
+    } else {
+      if (!data.selectedDates || data.selectedDates.length === 0) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Missing Information',
+          text: 'Please select specific dates.',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#3b82f6',
+        });
+        return;
+      }
     }
 
     // If using number of days method, generate the date range
     let finalSelectedDates = data.selectedDates;
-    if (data.number_of_days && data.date_from && (!data.selectedDates || data.selectedDates.length === 0)) {
+    if (dateSelectionMode === 'duration' && data.number_of_days && data.date_from) {
       finalSelectedDates = generateDateRange(data.date_from, data.number_of_days);
       setData('selectedDates', finalSelectedDates);
     }
 
     // Validate fixed leave balance
     if (balanceInfo && balanceInfo.exceedsLimit) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Insufficient Leave Balance',
+        html: `Cannot submit leave request. You only have <strong>${balanceInfo.availableBalance} days</strong> available for ${balanceInfo.leaveTypeName}. Please adjust your dates.`,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#ef4444',
+      });
       return;
     }
 
     // Validate sick leave document requirement
     if (selectedType?.code.toUpperCase() === 'SL' && isDocumentRequired && !data.attachment) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Document Required',
+        text: 'A medical certificate is required for sick leaves exceeding 5 days.',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#f59e0b',
+      });
       return;
     }
 
     // Validate reason field
     if (!data.reason || data.reason.trim() === '') {
+      Swal.fire({
+        icon: 'info',
+        title: 'Reason Required',
+        text: 'Please provide a reason for your leave request.',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6',
+      });
       return;
     }
 
-    // Collect all dynamic field values
-    const details = specificFields.map((f) => ({
-      field_name: f.name,
-      field_value: data[f.name] || '',
-    }));
-
-    // Create submission data
-    const submissionData = {
-      leave_type_id: data.leave_type_id,
-      selectedDates: finalSelectedDates,
-      date_from: data.date_from,
-      date_to: data.date_to,
-      reason: data.reason,
-      details: JSON.stringify(details),
-      working_days: workingDays.toString(),
-      number_of_days: data.number_of_days,
-      attachment: data.attachment,
-    };
-
-    console.log('Submitting data:', submissionData);
-
-    router.post('/employee/leave', submissionData, {
-      onSuccess: () => {
-        reset();
-        setSelectedTypeId(null);
-        setShowBalanceWarning(false);
-        router.visit('/employee/my-leave-requests', {
-          data: { success: 'Leave request submitted successfully!' }
-        });
-      },
-      onError: (errors) => {
-        console.error('Validation errors:', errors);
-      },
-    });
+    // If all validations pass, show confirmation modal
+    setShowConfirmationModal(true);
   };
 
   // Helper function to generate date range from start date and number of days
@@ -754,20 +764,32 @@ export default function RequestLeave({ prefill }) {
 
   const handleSubmitClick = async (e) => {
     e.preventDefault();
-  
-    // Validate that we have either selected dates OR number of days with start date
-    if ((!data.selectedDates || data.selectedDates.length === 0) &&
-      (!data.number_of_days || !data.date_from)) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Missing Information',
-        text: 'Please either select specific dates OR enter number of days with start date.',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#3b82f6',
-      });
-      return;
+
+    // Validate based on mode
+    if (dateSelectionMode === 'duration') {
+      if (!data.number_of_days || !data.date_from) {
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Missing Information',
+          text: 'Please enter number of days and start date.',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#3b82f6',
+        });
+        return;
+      }
+    } else {
+      if (!data.selectedDates || data.selectedDates.length === 0) {
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Missing Information',
+          text: 'Please select specific dates.',
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#3b82f6',
+        });
+        return;
+      }
     }
-  
+
     // Validate fixed leave balance
     if (balanceInfo && balanceInfo.exceedsLimit) {
       await Swal.fire({
@@ -779,7 +801,7 @@ export default function RequestLeave({ prefill }) {
       });
       return;
     }
-  
+
     // Validate sick leave document requirement
     if (selectedType?.code.toUpperCase() === 'SL' && isDocumentRequired && !data.attachment) {
       await Swal.fire({
@@ -791,7 +813,7 @@ export default function RequestLeave({ prefill }) {
       });
       return;
     }
-  
+
     // Validate reason field
     if (!data.reason || data.reason.trim() === '') {
       await Swal.fire({
@@ -803,7 +825,7 @@ export default function RequestLeave({ prefill }) {
       });
       return;
     }
-  
+
     // If all validations pass, show confirmation modal
     setShowConfirmationModal(true);
   };
@@ -814,7 +836,7 @@ export default function RequestLeave({ prefill }) {
 
     // If using number of days method, generate the date range
     let finalSelectedDates = data.selectedDates;
-    if (data.number_of_days && data.date_from && (!data.selectedDates || data.selectedDates.length === 0)) {
+    if (dateSelectionMode === 'duration' && data.number_of_days && data.date_from) {
       finalSelectedDates = generateDateRange(data.date_from, data.number_of_days);
       setData('selectedDates', finalSelectedDates);
     }
@@ -865,6 +887,20 @@ export default function RequestLeave({ prefill }) {
     setShowConfirmationModal(false);
   };
 
+  // Handle mode change and clear data of the other mode
+  const handleModeChange = (mode) => {
+    setDateSelectionMode(mode);
+    if (mode === 'duration') {
+      // Clear specific dates data
+      setData('selectedDates', []);
+    } else {
+      // Clear duration data
+      setData('number_of_days', '');
+      setData('date_from', '');
+      setData('date_to', '');
+    }
+  };
+
   return (
     <EmployeeLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -873,7 +909,7 @@ export default function RequestLeave({ prefill }) {
           <h1 className="text-3xl font-bold text-gray-900 mb-3">Request a Leave</h1>
           <p className="text-lg text-gray-600">Select a leave type and fill out the required information</p>
         </div>
-  
+
         {/* Pre-fill Notice */}
         {prefillForAbsence && prefillDate && (
           <div className="mb-8 p-6 bg-blue-50 border-l-4 border-blue-400 rounded-lg shadow-sm">
@@ -888,14 +924,14 @@ export default function RequestLeave({ prefill }) {
                   Leave Request for Past Absence
                 </h3>
                 <p className="text-sm text-blue-700 mt-1">
-                  This leave request has been pre-filled for your absence on <strong className="font-semibold">{new Date(prefillDate).toLocaleDateString()}</strong>. 
+                  This leave request has been pre-filled for your absence on <strong className="font-semibold">{new Date(prefillDate).toLocaleDateString()}</strong>.
                   The leave type has been set to <strong className="font-semibold">Sick Leave</strong> by default.
                 </p>
               </div>
             </div>
           </div>
         )}
-  
+
         {/* Success Message */}
         {flash?.success && (
           <div className="mb-8 p-4 bg-green-50 border-l-4 border-green-400 rounded-lg shadow-sm">
@@ -907,7 +943,7 @@ export default function RequestLeave({ prefill }) {
             </div>
           </div>
         )}
-  
+
         {/* Leave Type Selection */}
         <section className="mb-10">
           <div className="mb-6">
@@ -915,14 +951,14 @@ export default function RequestLeave({ prefill }) {
             {employeeGender && (
               <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
                 <p className="text-sm text-indigo-800">
-                  <strong className="font-semibold">Note:</strong> Leave types are filtered based on your gender ({employeeGender}) 
-                  {employeeCivilStatus && ` and civil status (${employeeCivilStatus.replace('_', ' ')})`}. 
+                  <strong className="font-semibold">Note:</strong> Leave types are filtered based on your gender ({employeeGender})
+                  {employeeCivilStatus && ` and civil status (${employeeCivilStatus.replace('_', ' ')})`}.
                   Leave types that you are not eligible for are completely hidden from view.
                 </p>
               </div>
             )}
           </div>
-          
+
           {sortedLeaveTypes.length === 0 ? (
             <div className="text-center py-12 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-300">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -930,7 +966,7 @@ export default function RequestLeave({ prefill }) {
               </svg>
               <h3 className="mt-4 text-lg font-medium text-gray-900">No Available Leave Types</h3>
               <p className="mt-2 text-gray-500">
-                There are no leave types available for your current profile. 
+                There are no leave types available for your current profile.
                 Please contact HR if you believe this is an error.
               </p>
             </div>
@@ -949,7 +985,7 @@ export default function RequestLeave({ prefill }) {
             </div>
           )}
         </section>
-  
+
         {/* Dynamic Form */}
         {selectedType && (
           <form
@@ -965,14 +1001,14 @@ export default function RequestLeave({ prefill }) {
                 </h2>
                 <p className="text-lg text-blue-600 font-medium mt-2">{selectedType.name}</p>
               </div>
-  
+
               {errors.leave_type_id && (
                 <div className="mb-6 p-4 bg-rose-50 border-l-4 border-rose-400 rounded-lg">
                   <div className="text-sm text-rose-700">{errors.leave_type_id}</div>
                 </div>
               )}
               <input type="hidden" name="leave_type_id" value={data.leave_type_id} />
-  
+
               {/* Balance Warning */}
               {showBalanceWarning && (
                 <div className="mb-8 p-6 bg-rose-50 border-l-4 border-rose-400 rounded-lg">
@@ -999,7 +1035,7 @@ export default function RequestLeave({ prefill }) {
                   </div>
                 </div>
               )}
-  
+
               {/* Date Selection Notice */}
               <div className="mb-8 p-5 bg-blue-50 border-l-4 border-blue-400 rounded-lg">
                 <div className="flex items-start">
@@ -1026,282 +1062,310 @@ export default function RequestLeave({ prefill }) {
                   </div>
                 </div>
               </div>
-  
+
               {/* Balance Information */}
-{balanceInfo && data.date_from && data.date_to && (
-  <div className={`mb-8 p-6 border-l-4 rounded-lg ${
-    balanceInfo.exceedsLimit
-      ? 'bg-rose-50 border-rose-400'
-      : 'bg-blue-50 border-blue-400'
-  }`}>
-    <h4 className="text-lg font-semibold text-gray-900 mb-4">Leave Balance Information</h4>
-    
-    {/* NEW: Info Message about Leave Credit Reservation */}
-    {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') && (
-      <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-        <div className="flex items-start">
-          <svg className="w-5 h-5 text-amber-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-          <div className="text-sm text-amber-800">
-            <strong className="font-semibold">Note:</strong> Leave credits cannot be fully consumed. The system always reserves 1 day before starting unpaid leave calculation.
-          </div>
-        </div>
-      </div>
-    )}
-    
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div className="space-y-3">
-        <div>
-          <span className="font-medium text-gray-700">Leave Type:</span>
-          <span className="ml-2 text-gray-900">{balanceInfo.leaveTypeName}</span>
-        </div>
-        <div>
-          <span className="font-medium text-gray-700">Available Balance:</span>
-          <span className={`ml-2 font-semibold ${
-            balanceInfo.isFixedLeave && balanceInfo.availableBalance === 0 
-              ? 'text-rose-600' 
-              : 'text-green-600'
-          }`}>
-            {balanceInfo.availableBalance} days
-          </span>
-        </div>
-      </div>
-      <div className="space-y-3">
-        <div>
-          <span className="font-medium text-gray-700">Requested Duration:</span>
-          <span className="ml-2 text-gray-900">{balanceInfo.requestedDays} working days</span>
-        </div>
-      </div>
-      
-      {/* Rest of the balance info display remains the same */}
-      {balanceInfo.exceedsLimit ? (
-        <div className="md:col-span-2 p-4 bg-rose-100 border border-rose-200 rounded-lg">
-          <div className="font-semibold text-rose-800 flex items-center">
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            Request Exceeds Available Balance
-          </div>
-          <div className="mt-1 text-rose-700">
-            You cannot request more days than your available balance for fixed leave types.
-          </div>
-        </div>
-      ) : balanceInfo.isFixedLeave ? (
-        <div className="md:col-span-2 p-4 bg-green-100 border border-green-200 rounded-lg">
-          <div className="font-semibold text-green-800 flex items-center">
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            Balance Sufficient
-          </div>
-          <div className="mt-1 text-green-700">
-            Your request is within your available balance.
-          </div>
-        </div>
-      ) : balanceInfo.isInsufficient ? (
-        <div className="md:col-span-2 p-4 bg-amber-100 border border-amber-200 rounded-lg">
-          <div className="font-semibold text-amber-800 flex items-center">
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            Partial Leave Notice
-          </div>
-          <div className="mt-2 text-amber-800">
-            {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') ? (
-              <div className="space-y-2">
-                <div>Your request will be automatically split between paid and unpaid days:</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                  <div className="flex items-center text-green-700">
-                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                    <span>Days with pay: <strong>{Math.max(0, Math.floor(balanceInfo.availableBalance) - 1)}</strong></span>
-                  </div>
-                  <div className="flex items-center text-orange-700">
-                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                    <span>Days without pay: <strong>{Math.max(0, balanceInfo.requestedDays - (Math.floor(balanceInfo.availableBalance) - 1))}</strong></span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div>Your request will be automatically split between paid and unpaid days.</div>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="md:col-span-2 p-4 bg-green-100 border border-green-200 rounded-lg">
-          <div className="font-semibold text-green-800 flex items-center">
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            Full Pay Leave
-          </div>
-          <div className="mt-1 text-green-700">
-            Your leave will be fully paid.
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
-)}
-  
-              {/* Form Fields Grid */}
-              <div className="space-y-8">
-                {/* Date and Duration Inputs */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Number of Days Input */}
-                  <div>
-                    <label className="block text-base font-semibold text-gray-900 mb-3">
-                      Number of Days <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="365"
-                      className="w-full border border-gray-300 rounded-xl p-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-lg"
-                      value={data.number_of_days || ''}
-                      onChange={(e) => {
-                        const days = parseInt(e.target.value) || 0;
-                        setData('number_of_days', days);
-  
-                        if (data.date_from && days > 0) {
-                          calculateEndDate(data.date_from, days);
-                        }
-                      }}
-                      placeholder="Enter number of leave days"
-                    />
-                    {errors.number_of_days && (
-                      <div className="text-sm text-rose-600 mt-3 flex items-center">
-                        <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              {balanceInfo && data.date_from && data.date_to && (
+                <div className={`mb-8 p-6 border-l-4 rounded-lg ${
+                  balanceInfo.exceedsLimit
+                    ? 'bg-rose-50 border-rose-400'
+                    : 'bg-blue-50 border-blue-400'
+                }`}>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Leave Balance Information</h4>
+
+                  {/* Info Message about Leave Credit Reservation */}
+                  {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') && (
+                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-start">
+                        <svg className="w-5 h-5 text-amber-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        {errors.number_of_days}
-                      </div>
-                    )}
-                  </div>
-  
-                  {/* Start Date Input */}
-                  <div>
-                    <label className="block text-base font-semibold text-gray-900 mb-3">
-                      Start Date <span className="text-rose-500">*</span>
-                    </label>
-                    <DateInput
-                      value={data.date_from}
-                      onChange={(value) => {
-                        setData('date_from', value);
-  
-                        if (data.number_of_days && data.number_of_days > 0) {
-                          calculateEndDate(value, data.number_of_days);
-                        }
-                      }}
-                      disabledDates={existingRequests || []}
-                      allowPastDates={allowPastDates}
-                      minDate={allowPastDates ? null : new Date().toISOString().split('T')[0]}
-                      placeholder="Select start date"
-                    />
-                    {errors.date_from && (
-                      <div className="text-sm text-rose-600 mt-3 flex items-center">
-                        <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                        {errors.date_from}
-                      </div>
-                    )}
-                  </div>
-                </div>
-  
-                {/* End Date Display */}
-                {data.date_from && data.number_of_days && data.number_of_days > 0 && (
-                  <div className="p-5 bg-green-50 border-l-4 border-green-400 rounded-lg">
-                    <div className="text-base text-green-800">
-                      <div className="font-semibold mb-3">Leave Duration Calculation:</div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                          <span className="font-medium">Start Date:</span>
-                          <div className="text-green-700 font-semibold">{new Date(data.date_from).toLocaleDateString()}</div>
-                        </div>
-                        <div>
-                          <span className="font-medium">Number of Days:</span>
-                          <div className="text-green-700 font-semibold">{data.number_of_days}</div>
-                        </div>
-                        <div>
-                          <span className="font-medium">End Date:</span>
-                          <div className="text-green-700 font-bold">
-                            {calculateEndDate(data.date_from, data.number_of_days, true)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-  
-                {/* MultiDate Picker */}
-                <div>
-                  <label className="block text-base font-semibold text-gray-900 mb-3">
-                    Or Select Specific Dates (Optional)
-                  </label>
-                  <MultiDatePicker
-                    selectedDates={data.selectedDates || []}
-                    onDatesChange={(dates) => {
-                      setData('selectedDates', dates);
-                      if (dates.length > 0) {
-                        const sortedDates = dates.sort();
-                        setData('date_from', sortedDates[0]);
-                        setData('date_to', sortedDates[sortedDates.length - 1]);
-                        const totalDays = dates.length;
-                        setData('number_of_days', totalDays);
-                      } else {
-                        setData('date_from', '');
-                        setData('date_to', '');
-                        setData('number_of_days', '');
-                      }
-                    }}
-                    disabledDates={existingRequests || []}
-                    allowWeekends={selectedType?.code.toUpperCase() === 'SL'}
-                    allowHolidays={selectedType?.code.toUpperCase() === 'SL'}
-                    allowPastDates={allowPastDates}
-                    minDate={allowPastDates ? null : new Date().toISOString().split('T')[0]}
-                    placeholder="Click to select specific dates (optional)"
-                    className="w-full"
-                  />
-  
-                  {/* Selected Dates Summary */}
-                  {data.selectedDates && data.selectedDates.length > 0 && (
-                    <div className="mt-4 p-5 bg-blue-50 border-l-4 border-blue-400 rounded-lg">
-                      <div className="text-base text-blue-800">
-                        <div className="font-semibold mb-3">Selected Dates Summary:</div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <span className="font-medium">Total Days:</span>
-                            <div className="text-blue-700 font-semibold">{data.selectedDates.length}</div>
-                          </div>
-                          <div>
-                            <span className="font-medium">Working Days:</span>
-                            <div className="text-blue-700 font-semibold">
-                              {data.selectedDates.filter(date => {
-                                const day = new Date(date).getDay();
-                                return day !== 0 && day !== 6;
-                              }).length}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="font-medium">Date Range:</span>
-                            <div className="text-blue-700 font-semibold">
-                              {data.selectedDates.length > 0
-                                ? `${new Date(data.selectedDates[0]).toLocaleDateString()} to ${new Date(data.selectedDates[data.selectedDates.length - 1]).toLocaleDateString()}`
-                                : 'No dates selected'
-                              }
-                            </div>
-                          </div>
+                        <div className="text-sm text-amber-800">
+                          <strong className="font-semibold">Note:</strong> Leave credits cannot be fully consumed. The system always reserves 1 day before starting unpaid leave calculation.
                         </div>
                       </div>
                     </div>
                   )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <div>
+                        <span className="font-medium text-gray-700">Leave Type:</span>
+                        <span className="ml-2 text-gray-900">{balanceInfo.leaveTypeName}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Available Balance:</span>
+                        <span className={`ml-2 font-semibold ${
+                          balanceInfo.isFixedLeave && balanceInfo.availableBalance === 0
+                            ? 'text-rose-600'
+                            : 'text-green-600'
+                        }`}>
+                          {balanceInfo.availableBalance} days
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <span className="font-medium text-gray-700">Requested Duration:</span>
+                        <span className="ml-2 text-gray-900">{balanceInfo.requestedDays} working days</span>
+                      </div>
+                    </div>
+
+                    {balanceInfo.exceedsLimit ? (
+                      <div className="md:col-span-2 p-4 bg-rose-100 border border-rose-200 rounded-lg">
+                        <div className="font-semibold text-rose-800 flex items-center">
+                          <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                          Request Exceeds Available Balance
+                        </div>
+                        <div className="mt-1 text-rose-700">
+                          You cannot request more days than your available balance for fixed leave types.
+                        </div>
+                      </div>
+                    ) : balanceInfo.isFixedLeave ? (
+                      <div className="md:col-span-2 p-4 bg-green-100 border border-green-200 rounded-lg">
+                        <div className="font-semibold text-green-800 flex items-center">
+                          <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          Balance Sufficient
+                        </div>
+                        <div className="mt-1 text-green-700">
+                          Your request is within your available balance.
+                        </div>
+                      </div>
+                    ) : balanceInfo.isInsufficient ? (
+                      <div className="md:col-span-2 p-4 bg-amber-100 border border-amber-200 rounded-lg">
+                        <div className="font-semibold text-amber-800 flex items-center">
+                          <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                          Partial Leave Notice
+                        </div>
+                        <div className="mt-2 text-amber-800">
+                          {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') ? (
+                            <div className="space-y-2">
+                              <div>Your request will be automatically split between paid and unpaid days:</div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                <div className="flex items-center text-green-700">
+                                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                  <span>Days with pay: <strong>{Math.max(0, Math.floor(balanceInfo.availableBalance) - 1)}</strong></span>
+                                </div>
+                                <div className="flex items-center text-orange-700">
+                                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                  </svg>
+                                  <span>Days without pay: <strong>{Math.max(0, balanceInfo.requestedDays - (Math.floor(balanceInfo.availableBalance) - 1))}</strong></span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div>Your request will be automatically split between paid and unpaid days.</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="md:col-span-2 p-4 bg-green-100 border border-green-200 rounded-lg">
+                        <div className="font-semibold text-green-800 flex items-center">
+                          <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          Full Pay Leave
+                        </div>
+                        <div className="mt-1 text-green-700">
+                          Your leave will be fully paid.
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-  
+              )}
+
+              {/* NEW: Date Selection Mode Toggle */}
+              <div className="mb-6">
+                <label className="block text-base font-semibold text-gray-900 mb-3">
+                  How would you like to specify your leave dates?
+                </label>
+                <div className="flex space-x-4">
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange('duration')}
+                    className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-200 ${
+                      dateSelectionMode === 'duration'
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Enter number of days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange('specific')}
+                    className={`flex-1 py-3 px-4 rounded-xl font-medium transition-all duration-200 ${
+                      dateSelectionMode === 'specific'
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Select specific dates
+                  </button>
+                </div>
+              </div>
+
+              {/* Conditional Form Fields */}
+              <div className="space-y-8">
+                {dateSelectionMode === 'duration' && (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div>
+                        <label className="block text-base font-semibold text-gray-900 mb-3">
+                          Number of Days <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="365"
+                          className="w-full border border-gray-300 rounded-xl p-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-lg"
+                          value={data.number_of_days || ''}
+                          onChange={(e) => {
+                            const days = parseInt(e.target.value) || 0;
+                            setData('number_of_days', days);
+                            if (data.date_from && days > 0) {
+                              calculateEndDate(data.date_from, days);
+                            }
+                          }}
+                          placeholder="Enter number of leave days"
+                        />
+                        {errors.number_of_days && (
+                          <div className="text-sm text-rose-600 mt-3 flex items-center">
+                            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            {errors.number_of_days}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-base font-semibold text-gray-900 mb-3">
+                          Start Date <span className="text-rose-500">*</span>
+                        </label>
+                        <DateInput
+                          value={data.date_from}
+                          onChange={(value) => {
+                            setData('date_from', value);
+                            if (data.number_of_days && data.number_of_days > 0) {
+                              calculateEndDate(value, data.number_of_days);
+                            }
+                          }}
+                          disabledDates={existingRequests || []}
+                          allowPastDates={allowPastDates}
+                          minDate={allowPastDates ? null : new Date().toISOString().split('T')[0]}
+                          placeholder="Select start date"
+                        />
+                        {errors.date_from && (
+                          <div className="text-sm text-rose-600 mt-3 flex items-center">
+                            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                            </svg>
+                            {errors.date_from}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {data.date_from && data.number_of_days && data.number_of_days > 0 && (
+                      <div className="p-5 bg-green-50 border-l-4 border-green-400 rounded-lg">
+                        <div className="text-base text-green-800">
+                          <div className="font-semibold mb-3">Leave Duration Calculation:</div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <span className="font-medium">Start Date:</span>
+                              <div className="text-green-700 font-semibold">{new Date(data.date_from).toLocaleDateString()}</div>
+                            </div>
+                            <div>
+                              <span className="font-medium">Number of Days:</span>
+                              <div className="text-green-700 font-semibold">{data.number_of_days}</div>
+                            </div>
+                            <div>
+                              <span className="font-medium">End Date:</span>
+                              <div className="text-green-700 font-bold">
+                                {calculateEndDate(data.date_from, data.number_of_days, true)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {dateSelectionMode === 'specific' && (
+                  <div>
+                    <label className="block text-base font-semibold text-gray-900 mb-3">
+                      Select Specific Dates <span className="text-rose-500">*</span>
+                    </label>
+                    <MultiDatePicker
+                      selectedDates={data.selectedDates || []}
+                      onDatesChange={(dates) => {
+                        setData('selectedDates', dates);
+                        if (dates.length > 0) {
+                          const sortedDates = dates.sort();
+                          setData('date_from', sortedDates[0]);
+                          setData('date_to', sortedDates[sortedDates.length - 1]);
+                          const totalDays = dates.length;
+                          setData('number_of_days', totalDays);
+                        } else {
+                          setData('date_from', '');
+                          setData('date_to', '');
+                          setData('number_of_days', '');
+                        }
+                      }}
+                      disabledDates={existingRequests || []}
+                      allowWeekends={selectedType?.code.toUpperCase() === 'SL'}
+                      allowHolidays={selectedType?.code.toUpperCase() === 'SL'}
+                      allowPastDates={allowPastDates}
+                      minDate={allowPastDates ? null : new Date().toISOString().split('T')[0]}
+                      placeholder="Click to select specific dates"
+                      className="w-full"
+                    />
+
+                    {data.selectedDates && data.selectedDates.length > 0 && (
+                      <div className="mt-4 p-5 bg-blue-50 border-l-4 border-blue-400 rounded-lg">
+                        <div className="text-base text-blue-800">
+                          <div className="font-semibold mb-3">Selected Dates Summary:</div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                              <span className="font-medium">Total Days:</span>
+                              <div className="text-blue-700 font-semibold">{data.selectedDates.length}</div>
+                            </div>
+                            <div>
+                              <span className="font-medium">Working Days:</span>
+                              <div className="text-blue-700 font-semibold">
+                                {data.selectedDates.filter(date => {
+                                  const day = new Date(date).getDay();
+                                  return day !== 0 && day !== 6;
+                                }).length}
+                              </div>
+                            </div>
+                            <div>
+                              <span className="font-medium">Date Range:</span>
+                              <div className="text-blue-700 font-semibold">
+                                {data.selectedDates.length > 0
+                                  ? `${new Date(data.selectedDates[0]).toLocaleDateString()} to ${new Date(data.selectedDates[data.selectedDates.length - 1]).toLocaleDateString()}`
+                                  : 'No dates selected'
+                                }
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Reason Textarea */}
                 <div>
                   <label className="block text-base font-semibold text-gray-900 mb-3">Reason</label>
@@ -1316,7 +1380,7 @@ export default function RequestLeave({ prefill }) {
                     <div className="text-sm text-rose-600 mt-3">{errors.reason}</div>
                   )}
                 </div>
-  
+
                 {/* Additional Information */}
                 {specificFields.length > 0 && (
                   <div className="border-t border-gray-200 pt-8">
@@ -1357,122 +1421,122 @@ export default function RequestLeave({ prefill }) {
                     </div>
                   </div>
                 )}
-  
-               {/* File Upload */}
-<div className="border-t border-gray-200 pt-8">
-  <label className="block text-base font-semibold text-gray-900 mb-4">
-    Attachment {isDocumentRequired && <span className="text-rose-500">*</span>}
-  </label>
-  
-  {/* File Preview Section */}
-  {data.attachment ? (
-    <div className="mb-6 p-6 bg-green-50 border border-green-200 rounded-2xl">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <div className="flex-shrink-0">
-            {data.attachment.type.startsWith('image/') ? (
-              <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-300">
-                <img 
-                  src={URL.createObjectURL(data.attachment)} 
-                  alt="Attachment preview"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            ) : (
-              <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center border border-blue-200">
-                <svg className="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                </svg>
-              </div>
-            )}
-          </div>
-          <div className="ml-4">
-            <h4 className="text-lg font-semibold text-gray-900">{data.attachment.name}</h4>
-            <p className="text-sm text-gray-600">
-              {(data.attachment.size / 1024 / 1024).toFixed(2)} MB • {data.attachment.type}
-            </p>
-            <p className="text-sm text-green-600 font-medium mt-1">
-              ✓ File successfully uploaded
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setData('attachment', null)}
-          className="flex-shrink-0 p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-          title="Remove file"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-      </div>
-    </div>
-  ) : null}
 
-  {/* Upload Area */}
-  <div className="flex items-center justify-center w-full">
-    <label className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-200 ${
-      data.attachment 
-        ? 'border-green-300 bg-green-50 hover:bg-green-100' 
-        : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'
-    }`}>
-      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-        {data.attachment ? (
-          <>
-            <svg className="w-12 h-12 mb-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            <p className="mb-2 text-lg text-green-600 font-medium">
-              File Uploaded Successfully
-            </p>
-            <p className="text-sm text-green-500">
-              Click to change file or drag and drop a new one
-            </p>
-          </>
-        ) : (
-          <>
-            <svg className="w-12 h-12 mb-4 text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
-              <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
-            </svg>
-            <p className="mb-2 text-lg text-gray-500 font-medium">
-              <span className="font-semibold">Click to upload</span> or drag and drop
-            </p>
-            <p className="text-sm text-gray-500">JPEG, PNG, PDF, DOC (Max. 10MB)</p>
-          </>
-        )}
-      </div>
-      <input
-        type="file"
-        className="hidden"
-        onChange={(e) => setData('attachment', e.target.files[0])}
-        accept="image/*,application/pdf,.doc,.docx"
-        required={isDocumentRequired}
-      />
-    </label>
-  </div>
+                {/* File Upload */}
+                <div className="border-t border-gray-200 pt-8">
+                  <label className="block text-base font-semibold text-gray-900 mb-4">
+                    Attachment {isDocumentRequired && <span className="text-rose-500">*</span>}
+                  </label>
 
-  {/* Helper Text */}
-  {isDocumentRequired ? (
-    <div className="mt-4 text-base text-rose-600 flex items-center">
-      <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-      </svg>
-      Medical certificate is required for sick leaves exceeding 5 days
-    </div>
-  ) : selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 ? (
-    <div className="mt-4 text-base text-gray-500">
-      Medical certificate is optional for sick leaves of 1-5 days
-    </div>
-  ) : errors.attachment ? (
-    <div className="mt-4 text-base text-rose-600">{errors.attachment}</div>
-  ) : (
-    <div className="mt-4 text-base text-gray-500">
-      Supporting document - Optional
-    </div>
-  )}
-</div>
-  
+                  {/* File Preview Section */}
+                  {data.attachment ? (
+                    <div className="mb-6 p-6 bg-green-50 border border-green-200 rounded-2xl">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0">
+                            {data.attachment.type.startsWith('image/') ? (
+                              <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-300">
+                                <img
+                                  src={URL.createObjectURL(data.attachment)}
+                                  alt="Attachment preview"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center border border-blue-200">
+                                <svg className="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-4">
+                            <h4 className="text-lg font-semibold text-gray-900">{data.attachment.name}</h4>
+                            <p className="text-sm text-gray-600">
+                              {(data.attachment.size / 1024 / 1024).toFixed(2)} MB • {data.attachment.type}
+                            </p>
+                            <p className="text-sm text-green-600 font-medium mt-1">
+                              ✓ File successfully uploaded
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setData('attachment', null)}
+                          className="flex-shrink-0 p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Remove file"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Upload Area */}
+                  <div className="flex items-center justify-center w-full">
+                    <label className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-200 ${
+                      data.attachment
+                        ? 'border-green-300 bg-green-50 hover:bg-green-100'
+                        : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'
+                    }`}>
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        {data.attachment ? (
+                          <>
+                            <svg className="w-12 h-12 mb-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            <p className="mb-2 text-lg text-green-600 font-medium">
+                              File Uploaded Successfully
+                            </p>
+                            <p className="text-sm text-green-500">
+                              Click to change file or drag and drop a new one
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-12 h-12 mb-4 text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                              <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
+                            </svg>
+                            <p className="mb-2 text-lg text-gray-500 font-medium">
+                              <span className="font-semibold">Click to upload</span> or drag and drop
+                            </p>
+                            <p className="text-sm text-gray-500">JPEG, PNG, PDF, DOC (Max. 10MB)</p>
+                          </>
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => setData('attachment', e.target.files[0])}
+                        accept="image/*,application/pdf,.doc,.docx"
+                        required={isDocumentRequired}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Helper Text */}
+                  {isDocumentRequired ? (
+                    <div className="mt-4 text-base text-rose-600 flex items-center">
+                      <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      Medical certificate is required for sick leaves exceeding 5 days
+                    </div>
+                  ) : selectedType?.code.toUpperCase() === 'SL' && workingDays > 0 ? (
+                    <div className="mt-4 text-base text-gray-500">
+                      Medical certificate is optional for sick leaves of 1-5 days
+                    </div>
+                  ) : errors.attachment ? (
+                    <div className="mt-4 text-base text-rose-600">{errors.attachment}</div>
+                  ) : (
+                    <div className="mt-4 text-base text-gray-500">
+                      Supporting document - Optional
+                    </div>
+                  )}
+                </div>
+
                 {/* Submit Button */}
                 <div className="flex justify-end pt-8 border-t border-gray-200">
                   <button
@@ -1500,14 +1564,11 @@ export default function RequestLeave({ prefill }) {
           </form>
         )}
       </div>
-  
-
 
       {/* Confirmation Modal */}
-     {/* Confirmation Modal - Appears at current scroll position */}
-{showConfirmationModal && (
-  <div className="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-end justify-center p-4">
-    <div className="relative my-8 p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+      {showConfirmationModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-end justify-center p-4">
+          <div className="relative my-8 p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
             <div className="mt-3">
               {/* Header */}
               <div className="flex items-center justify-between p-4 border-b">
@@ -1590,71 +1651,69 @@ export default function RequestLeave({ prefill }) {
                   </div>
 
                   {balanceInfo && (
-  <div className="md:col-span-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
-    <h4 className="text-sm font-semibold text-blue-900 mb-2">Balance Impact</h4>
-    <div className="grid grid-cols-2 gap-4 text-sm">
-      <div>
-        <span className="text-gray-600">Available Balance:</span>
-        <span className="ml-2 font-semibold text-green-600">
-          {balanceInfo.availableBalance} days
-        </span>
-      </div>
-      <div>
-        <span className="text-gray-600">Requested Days:</span>
-        <span className="ml-2 font-semibold text-blue-600">
-          {balanceInfo.requestedDays} days
-        </span>
-      </div>
-      
-      {/* NEW: Info message about 1-day reservation */}
-      {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') && (
-        <div className="col-span-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <div className="flex items-start">
-            <svg className="w-4 h-4 text-amber-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <p className="text-xs text-amber-700">
-              <strong>Note:</strong> 1 day is always reserved from leave credits. Usable paid days: {Math.max(0, Math.floor(balanceInfo.availableBalance) - 1)}
-            </p>
-          </div>
-        </div>
-      )}
-      
-      {balanceInfo.isInsufficient ? (
-        <div className="col-span-2 p-3 bg-amber-100 rounded border border-amber-200">
-          <p className="text-sm text-amber-800 font-medium">
-            This request will be split between paid and unpaid leave
-          </p>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-            {/* UPDATED: Use new calculation with 1-day reservation */}
-            <span className="flex items-center text-green-700">
-              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-              Days with pay: {Math.min(Math.max(0, Math.floor(balanceInfo.availableBalance) - 1), balanceInfo.requestedDays)}
-            </span>
-            <span className="flex items-center text-orange-700">
-              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              Days without pay: {Math.max(0, balanceInfo.requestedDays - Math.max(0, Math.floor(balanceInfo.availableBalance) - 1))}
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="col-span-2 p-3 bg-green-100 rounded border border-green-200">
-          <p className="text-sm text-green-800 font-medium flex items-center">
-            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
-            Full Pay Leave - All days will be paid
-          </p>
-        </div>
-      )}
-    </div>
-  </div>
-)}
- </div>
+                    <div className="md:col-span-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h4 className="text-sm font-semibold text-blue-900 mb-2">Balance Impact</h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">Available Balance:</span>
+                          <span className="ml-2 font-semibold text-green-600">
+                            {balanceInfo.availableBalance} days
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">Requested Days:</span>
+                          <span className="ml-2 font-semibold text-blue-600">
+                            {balanceInfo.requestedDays} days
+                          </span>
+                        </div>
+
+                        {(balanceInfo.leaveTypeCode === 'SL' || balanceInfo.leaveTypeCode === 'VL') && (
+                          <div className="col-span-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                            <div className="flex items-start">
+                              <svg className="w-4 h-4 text-amber-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                              <p className="text-xs text-amber-700">
+                                <strong>Note:</strong> 1 day is always reserved from leave credits. Usable paid days: {Math.max(0, Math.floor(balanceInfo.availableBalance) - 1)}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {balanceInfo.isInsufficient ? (
+                          <div className="col-span-2 p-3 bg-amber-100 rounded border border-amber-200">
+                            <p className="text-sm text-amber-800 font-medium">
+                              This request will be split between paid and unpaid leave
+                            </p>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                              <span className="flex items-center text-green-700">
+                                <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                Days with pay: {Math.min(Math.max(0, Math.floor(balanceInfo.availableBalance) - 1), balanceInfo.requestedDays)}
+                              </span>
+                              <span className="flex items-center text-orange-700">
+                                <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                Days without pay: {Math.max(0, balanceInfo.requestedDays - Math.max(0, Math.floor(balanceInfo.availableBalance) - 1))}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="col-span-2 p-3 bg-green-100 rounded border border-green-200">
+                            <p className="text-sm text-green-800 font-medium flex items-center">
+                              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              Full Pay Leave - All days will be paid
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Important Notice */}
                 <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
@@ -1703,5 +1762,3 @@ export default function RequestLeave({ prefill }) {
     </EmployeeLayout>
   );
 }
-
-

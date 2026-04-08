@@ -20,6 +20,8 @@ class AttendanceImportService
     protected $processedRows = [];
     protected $currentEmployee = null;
     protected $currentImportBatch; // Track current import batch
+    protected $affectedDates = []; // array of [employee_id => [dates...]]
+
 
    
 
@@ -608,22 +610,25 @@ public function generateVisualPreview($filePath)
                 'error_count' => count($this->errors),
                 'errors' => $this->errors,
                 'processed_rows' => $this->processedRows,
-                'import_batch' => $this->currentImportBatch // Return batch ID for reference
+                'import_batch' => $this->currentImportBatch, // Return batch ID for reference
+                'affected_dates' => $this->affectedDates // new
             ];
 
         } catch (\Exception $e) {
-            Log::error('Attendance import failed: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'message' => 'Failed to process Excel file: ' . $e->getMessage(),
-                'errors' => $this->errors
-            ];
-        }
+            \Log::error('Attendance import failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
     }
+} 
 
 
    protected function processRow($row, $rowNumber, $options = [])
     {
+
+        \Log::debug("Processing row $rowNumber", ['row' => $row]);
+
+
+
         if (!is_array($row) || empty($row) || !isset($row[0])) {
             return;
         }
@@ -670,6 +675,9 @@ public function generateVisualPreview($filePath)
 
         // ✅ THEN: Process for main table (existing logic)
         $this->processForMainTable($row, $rowNumber, $workDate, $options);
+
+        $this->affectedDates[$this->currentEmployee->employee_id][] = $workDate->format('Y-m-d');
+
     }
 
     /**
